@@ -2,6 +2,7 @@
 and working out which pies would collide."""
 
 import bpy
+import sys
 import os
 import json
 from bpy.props import (
@@ -10,9 +11,6 @@ from bpy.props import (
 )
 from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 
-# The key this addon is registered under. Taken from the package rather
-# than __name__, which inside a submodule would be "cocopie.utils".
-ADDON_ID = __package__
 from .items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
     GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
@@ -21,9 +19,24 @@ from .items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 
-
-# __name__, which inside a submodule would be "cocopie.utils" and find nothing.
+# The key this addon is registered under, and the key its preferences are
+# stored against. Taken from the package rather than __name__, which inside a
+# submodule would be "CocoPie.utils" and match no registered addon.
 ADDON_ID = __package__
+
+
+def addon_version_string():
+    """The addon's version as "v1.8.0", read from bl_info when it is needed.
+
+    bl_info lives in the package __init__, which imports this module -- so it
+    cannot be imported from here. Looking it up at call time sidesteps that:
+    by the time anything draws, the package is fully loaded.
+    """
+    module = sys.modules.get(ADDON_ID)
+    info = getattr(module, "bl_info", None) if module else None
+    version = info.get("version") if info else None
+    return "v" + ".".join(str(v) for v in version) if version else ""
+
 
 def get_prefs(context=None):
     """Return the addon preferences, or None if the addon isn't registered yet"""

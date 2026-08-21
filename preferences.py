@@ -18,6 +18,7 @@ from .items import (
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    addon_version_string,
 )
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -111,7 +112,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         footer.alignment = 'RIGHT'
         footer.active = False
         footer.scale_y = 0.8
-        footer.label(text="v" + ".".join(str(v) for v in bl_info["version"]))
+        footer.label(text=addon_version_string())
 
 
     def draw_right_column(self, layout):
