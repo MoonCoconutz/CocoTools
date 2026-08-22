@@ -148,8 +148,14 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.zenuv_stack_similar()"},
                 {"label": "Orient World", "icon": 'WORLD', "position": 6, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_world_orient()"},
+                # Explicit rather than defaults: Zen UV's own default for
+                # "Orient by" is Bounding Box, but the user wants By Selection.
+                # The other three already matched Zen UV's defaults, spelled
+                # out anyway so the whole setting is visible in one place and
+                # will not drift if Zen UV's defaults ever change.
                 {"label": "Orient to Axis", "icon": 'ORIENTATION_GIMBAL', "position": 7, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_orient_island()"},
+                 "command": "bpy.ops.uv.zenuv_orient_island(order='ONE_BY_ONE', "
+                            "mode='BY_SELECTION', orient_direction='AUTO', rotate_direction='CCW')"},
             ],
         },
         {
