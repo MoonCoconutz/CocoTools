@@ -63,6 +63,34 @@ def _load_slot_arrows(collection):
     return loaded
 
 
+# What a file actually is, read from its first bytes. Renaming an image does
+# not convert it, and Blender loads a mislabelled file as a blank preview with
+# no error -- which looks like the addon losing the icon rather than the file
+# being the wrong format.
+_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"\x00\x00\x01\x00", "ICO"),
+    (b"\x00\x00\x02\x00", "CUR"),
+    (b"GIF8", "GIF"),
+    (b"BM", "BMP"),
+    (b"RIFF", "WEBP"),
+)
+
+
+def _real_format(path):
+    """The format a file really is, by its header, or None if unrecognised"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+    except Exception:
+        return None
+    for magic, name in _MAGIC:
+        if head.startswith(magic):
+            return name
+    return None
+
+
 def _load_custom(collection):
     names, seen = [], set()
     for folder in custom_icon_dirs():
@@ -73,6 +101,13 @@ def _load_custom(collection):
             # seen guards against the same name in two folders, harmless while
             # there is only one but kept so adding another cannot double-load
             if ext.lower() not in _LOADABLE or stem in seen:
+                continue
+
+            actual = _real_format(os.path.join(folder, filename))
+            if actual not in ("PNG", "JPEG"):
+                print(f"CocoPie: {filename} is named like an image but is "
+                      f"{actual or 'an unrecognised format'} inside, so it "
+                      f"would load blank -- convert it to a real PNG")
                 continue
             try:
                 collection.load(CUSTOM_PREFIX + stem,
