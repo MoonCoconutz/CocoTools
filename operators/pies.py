@@ -163,7 +163,13 @@ class COCOPIE_OT_show_position_menu(Operator):
         # does not render as a full-height column divider — Blender degrades it
         # to a short dash at the cell boundary — so the vertical ones are left
         # out rather than shipping those stray marks.
-        col = layout.column(align=True)
+        # Every cell is a fixed width, so the grid is narrower than the popup
+        # it sits in. Centre it, or the whole compass hangs off the left edge
+        # with all the slack piled up on the right.
+        outer = layout.row()
+        outer.alignment = 'CENTER'
+        col = outer.column(align=True)
+
         for row_index, row_positions in enumerate(
                 (POSITION_GRID[0:3], POSITION_GRID[3:6], POSITION_GRID[6:9])):
             if row_index:
@@ -183,8 +189,12 @@ class COCOPIE_OT_show_position_menu(Operator):
                 # being moved, so the compass has its subject at its middle
                 if pos is None:
                     cell.enabled = False
-                    cell.alignment = 'CENTER'
-                    cell.label(text="", icon=safe_icon(item.icon))
+                    # Centred inside the cell rather than by setting alignment
+                    # on the cell itself, which would make it shrink to its
+                    # content and knock the column out of line
+                    inner = cell.row(align=True)
+                    inner.alignment = 'CENTER'
+                    inner.label(text="", icon=safe_icon(item.icon))
                     continue
 
                 taken = occupied.get(pos)
