@@ -24,7 +24,7 @@ from ..icons import (
 )
 from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
-from ..previews import icon_args, custom_icon_names, user_custom_icons_dir, CUSTOM_PREFIX
+from ..previews import icon_args, custom_icon_names, custom_icon_dirs, CUSTOM_PREFIX
 
 
 class COCOPIE_OT_test_pie_menu(Operator):
@@ -279,12 +279,15 @@ class COCOPIE_OT_select_icon(Operator):
             empty = layout.box().column(align=True)
             empty.scale_y = 1.3
             if self.category == 'CUSTOM' and not self.search.strip():
-                # Nothing to search through yet -- say where to put files
+                # Nothing to search through yet -- say where to put files.
+                # Both folders are listed, since which one to use depends on
+                # whether the icons should survive reinstalling the addon.
                 empty.label(text="No custom icons yet", icon='INFO')
-                empty.label(text="Drop PNG files into this folder, then reload:")
-                path = empty.row(align=True)
-                path.active = False
-                path.label(text=user_custom_icons_dir())
+                empty.label(text="Drop PNG files into either folder, then reload:")
+                for folder in custom_icon_dirs():
+                    path = empty.row(align=True)
+                    path.active = False
+                    path.label(text=folder)
             else:
                 empty.label(text=f'No icon matches "{self.search}"', icon='INFO')
                 empty.label(text="Try a shorter word, or switch to the All tab")
