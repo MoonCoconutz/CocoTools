@@ -115,19 +115,53 @@ def register_pie_menus():
 
 
 def unregister_pie_menus():
-    """Unregister all pie menus and keymaps"""
+    """Unregister all pie menus and keymaps.
+
+    Sweeps every keymap CocoPie could have touched for any wm.call_menu_pie
+    item that points at one of our menus, rather than trusting only
+    registered_keymaps. That list lives at module level, so it is empty again
+    every time this module gets freshly re-imported -- which happens on a
+    disable/enable cycle that does not reuse the cached module, and on
+    Blender's own "Reload Scripts". A fresh-but-empty list makes this function
+    believe there is nothing to remove, when a *previous* import may have left
+    real keymap items behind. keymap_items.new() always appends; it never
+    replaces an existing match, so those orphans do not go away on their own
+    -- they keep firing under whatever Trigger and modifiers they were
+    created with, stacked underneath whatever the pie is set to now. That is
+    what made changing the Trigger look like it was not doing anything: an
+    old PRESS entry from an earlier reload was still there, alongside the new
+    one, both matching the same key.
+    """
     global registered_pie_classes, registered_keymaps
-    
+
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    if kc:
+        target_names = {name for name, _space in KEYMAP_CONFIG.values()} | set(WINDOW_MODE_KEYMAPS)
+        for km in list(kc.keymaps):
+            if km.name not in target_names:
+                continue
+            stale = [kmi for kmi in km.keymap_items
+                    if kmi.idname == 'wm.call_menu_pie'
+                    and kmi.properties.name.startswith('COCOPIE_MT_')]
+            for kmi in stale:
+                try:
+                    km.keymap_items.remove(kmi)
+                except Exception:
+                    pass
+
+    # Still drained for cleanliness; the sweep above is what actually
+    # guarantees nothing real is left behind
     for km, kmi in registered_keymaps:
         try:
             km.keymap_items.remove(kmi)
-        except:
+        except Exception:
             pass
     registered_keymaps.clear()
-    
+
     for cls in registered_pie_classes:
         try:
             bpy.utils.unregister_class(cls)
-        except:
+        except Exception:
             pass
     registered_pie_classes.clear()
