@@ -130,13 +130,16 @@ def default_pie_definitions(script_paths):
                 {"label": "Stack Islands", "icon": 'DUPLICATE', "position": 1, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_simple_stack()"},
                 # Stock Blender: transform.rotate is what R 90 Enter runs in the
-                # UV editor. The value is radians pre-computed to a literal --
-                # math.radians(90) itself is a call, not a literal, so the
-                # parser that reads this command (deliberately, for safety --
-                # see _parse_bpy_ops_call in menus.py) would not accept it and
-                # this would silently fall back to the exec() path instead.
+                # UV editor -- negative because the user wants this slot to spin
+                # clockwise; positive is counter-clockwise, confirmed against
+                # real UV coordinates, not assumed from the sign alone. The
+                # value is radians pre-computed to a literal -- math.radians(90)
+                # itself is a call, not a literal, so the parser that reads this
+                # command (deliberately, for safety -- see _parse_bpy_ops_call
+                # in menus.py) would not accept it and this would silently fall
+                # back to the exec() path instead.
                 {"label": "Rotate 90", "icon": 'DRIVER_ROTATIONAL_DIFFERENCE', "position": 2, "enabled": True,
-                 "command": "bpy.ops.transform.rotate(value=1.5707963267948966)"},
+                 "command": "bpy.ops.transform.rotate(value=-1.5707963267948966)"},
                 {"label": "Flip Y", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
                  "command": "bpy.ops.transform.resize(value=(1, -1, 1), constraint_axis=(False, True, False))"},
                 {"label": "Sort", "icon": 'SORTSIZE', "position": 4, "enabled": True,
