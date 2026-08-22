@@ -160,16 +160,22 @@ class COCOPIE_PieMenuData(PropertyGroup):
     alt: BoolProperty(name="Alt", default=False, update=update_pie_menu)
     
     event_value: EnumProperty(
-        name="Click Type",
-        description="Type of key event to trigger the pie menu",
+        name="Trigger",
+        description="Which key event fires the pie -- the same set Blender's own "
+                    "keymap editor offers for a KeyMapItem",
+        # Identifiers, names and order match bpy.types.KeyMapItem.value exactly,
+        # so a shortcut set up here means what it would mean anywhere else in
+        # Blender. The previous version quietly dropped CLICK and NOTHING, and
+        # mislabelled ANY as "Key Chords" and RELEASE as "Hold" -- RELEASE fires
+        # once on key-up, it does not mean holding the key down.
         items=[
-            # MOUSE_LMB_DOUBLE isn't a real Blender icon identifier — that
-            # typo was corrupting the whole enum's icons, not just its own
-            ('PRESS',        "Press",        "Trigger on key press",           'MOUSE_LMB',      0),
-            ('RELEASE',      "Hold",         "Trigger on key release (hold)",  'TIME',           1),
-            ('DOUBLE_CLICK', "Double Click", "Trigger on double click",        'MOUSE_LMB_2X',   2),
-            ('CLICK_DRAG',   "Click Drag",   "Trigger on click and drag",      'MOUSE_LMB_DRAG', 3),
-            ('ANY',          "Key Chords",   "Trigger on any event",           'HAND',           4),
+            ('ANY',          "Any",          "Trigger on any event for this key",   'HAND',           0),
+            ('PRESS',        "Press",        "Trigger the moment the key goes down", 'MOUSE_LMB',      1),
+            ('RELEASE',      "Release",      "Trigger the moment the key goes up",   'TIME',           2),
+            ('CLICK',        "Click",        "Trigger on a press immediately followed by a release", 'MOUSE_LMB', 3),
+            ('DOUBLE_CLICK', "Double Click", "Trigger on double click",              'MOUSE_LMB_2X',   4),
+            ('CLICK_DRAG',   "Drag",         "Trigger once the key is pressed and moved", 'MOUSE_LMB_DRAG', 5),
+            ('NOTHING',      "Nothing",      "Never trigger -- keeps the shortcut defined without making it live", 'X', 6),
         ],
         default='PRESS',
         update=update_pie_menu
