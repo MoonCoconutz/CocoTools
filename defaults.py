@@ -116,7 +116,7 @@ def default_pie_definitions(script_paths):
         {
             "name": "UV Transform",
             "idname": "COCOPIE_MT_uv_transform",
-            "keymap_type": "UV_EDITOR", "key": "Q",
+            "keymap_type": "UV_EDITOR", "key": "D",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
@@ -141,20 +141,21 @@ def default_pie_definitions(script_paths):
         {
             "name": "UV Select",
             "idname": "COCOPIE_MT_uv_select",
-            "keymap_type": "UV_EDITOR", "key": "Q",
-            "ctrl": False, "shift": False, "alt": True,
+            "keymap_type": "UV_EDITOR", "key": "A",
+            "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
+            # Mostly Mio3 UV, with overlap coming from Zen UV
             "items": [
                 {"label": "Select Similar", "icon": 'SELECT_SET', "position": 0, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_select_similar()"},
+                 "command": "bpy.ops.uv.mio3_select_similar()"},
                 {"label": "Select Overlap", "icon": 'SELECT_SUBTRACT', "position": 1, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_select_uv_overlap()"},
                 {"label": "Select Zero", "icon": 'ERROR', "position": 2, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_select_zero_area_faces()"},
+                 "command": "bpy.ops.uv.mio3_select_zero()"},
                 {"label": "Select Flipped", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_select_flipped()"},
+                 "command": "bpy.ops.uv.mio3_select_flipped_faces()"},
                 {"label": "Boundary", "icon": 'MESH_GRID', "position": 7, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_select_uv_borders()"},
+                 "command": "bpy.ops.uv.mio3_select_boundary()"},
             ],
         },
         # Unlike the other two UV pies, this one drives Mio3 UV rather than
