@@ -25,7 +25,7 @@ from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
-from .previews import slot_button_args
+from .previews import slot_button_args, icon_args
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 
 
@@ -304,7 +304,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         icon_btn = body.row(align=True)
         icon_btn.ui_units_x = COL_ICON_UNITS
         op = icon_btn.operator("cocopie.select_icon", text="",
-                               icon=safe_icon(item.icon, 'BLANK1'))
+                               **icon_args(item.icon, 'BLANK1'))
         op.pie_index = self.active_pie_index
         op.item_index = index
 

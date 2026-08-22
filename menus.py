@@ -16,6 +16,7 @@ from .items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import slot_is_used
+from .previews import icon_args
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
@@ -76,7 +77,9 @@ def create_pie_menu_class(pie_data):
         for slot in slots:
             if slot:
                 try:
-                    icon = slot.icon if slot.icon and slot.icon != "NONE" else 'NONE'
+                    # Custom icons draw through icon_value, Blender's through icon, so the
+                    # whole keyword pair is built once and splatted into each call
+                    icon_kw = icon_args(slot.icon, 'NONE')
                     command = slot.command
                     
                     # Check if this is a submenu call
@@ -85,9 +88,9 @@ def create_pie_menu_class(pie_data):
                         match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
                         if match:
                             menu_name = match.group(1)
-                            pie.menu(menu_name, text=slot.label, icon=icon)
+                            pie.menu(menu_name, text=slot.label, **icon_kw)
                         else:
-                            op = pie.operator("cocopie.execute_command", text=slot.label, icon=icon)
+                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a property assignment (contains = but not ==, and not bpy.ops)
@@ -103,14 +106,14 @@ def create_pie_menu_class(pie_data):
                             try:
                                 current_val = getattr(data_obj, prop_name)
                                 if isinstance(current_val, bool):
-                                    pie.prop(data_obj, prop_name, text=slot.label, icon=icon, toggle=True)
+                                    pie.prop(data_obj, prop_name, text=slot.label, toggle=True, **icon_kw)
                                     bound = True
                             except Exception:
                                 bound = False
                         if not bound:
                             # Not a simple boolean property - fall back to
                             # running the raw command via a plain button
-                            op = pie.operator("cocopie.execute_command", text=slot.label, icon=icon)
+                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a bpy.ops operator
@@ -120,16 +123,16 @@ def create_pie_menu_class(pie_data):
                         if "." in op_path:
                             module, op_name = op_path.split(".", 1)
                             try:
-                                pie.operator(f"{module}.{op_name}", text=slot.label, icon=icon)
+                                pie.operator(f"{module}.{op_name}", text=slot.label, **icon_kw)
                             except:
-                                op = pie.operator("cocopie.execute_command", text=slot.label, icon=icon)
+                                op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                                 op.command = command
                         else:
-                            op = pie.operator("cocopie.execute_command", text=slot.label, icon=icon)
+                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                             op.command = command
                     else:
                         # Anything else - use execute_command
-                        op = pie.operator("cocopie.execute_command", text=slot.label, icon=icon)
+                        op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                         op.command = command
                 except Exception as e:
                     pie.label(text=slot.label)

@@ -24,6 +24,7 @@ from ..icons import (
 )
 from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
+from ..previews import icon_args, custom_icon_names, user_custom_icons_dir, CUSTOM_PREFIX
 
 
 class COCOPIE_OT_test_pie_menu(Operator):
@@ -215,6 +216,15 @@ class COCOPIE_OT_select_icon(Operator):
             return wm.invoke_props_dialog(self, width=880)
 
     def _filtered_icons(self):
+        # Custom icons are not in Blender's catalogue -- they are files
+        # CocoPie loaded -- so they are listed by reference, prefix and all
+        if self.category == 'CUSTOM':
+            refs = [CUSTOM_PREFIX + name for name in custom_icon_names()]
+            needle = self.search.strip().lower()
+            if needle:
+                refs = [r for r in refs if needle in r.lower()]
+            return refs
+
         icons = get_icons_by_category().get(self.category, [])
         needle = self.search.strip().upper().replace(" ", "_")
         if not needle:
@@ -235,7 +245,7 @@ class COCOPIE_OT_select_icon(Operator):
         head = layout.box().row(align=True)
         head.scale_y = 1.2
         preview = head.row(align=True)
-        preview.label(text="Current", icon=safe_icon(current, 'BLANK1'))
+        preview.label(text="Current", **icon_args(current, 'BLANK1'))
         name_row = head.row(align=True)
         name_row.alignment = 'LEFT'
         name_row.active = has_icon
@@ -268,8 +278,16 @@ class COCOPIE_OT_select_icon(Operator):
         if not icons:
             empty = layout.box().column(align=True)
             empty.scale_y = 1.3
-            empty.label(text=f'No icon matches "{self.search}"', icon='INFO')
-            empty.label(text="Try a shorter word, or switch to the All tab")
+            if self.category == 'CUSTOM' and not self.search.strip():
+                # Nothing to search through yet -- say where to put files
+                empty.label(text="No custom icons yet", icon='INFO')
+                empty.label(text="Drop PNG files into this folder, then reload:")
+                path = empty.row(align=True)
+                path.active = False
+                path.label(text=user_custom_icons_dir())
+            else:
+                empty.label(text=f'No icon matches "{self.search}"', icon='INFO')
+                empty.label(text="Try a shorter word, or switch to the All tab")
             return
 
         limit = self.GRID_COLUMNS * self.GRID_MAX_ROWS
@@ -286,8 +304,8 @@ class COCOPIE_OT_select_icon(Operator):
                 # gets a button frame
                 cell.emboss = 'NONE'
             try:
-                op = cell.operator("cocopie.set_icon_choice", text="", icon=name,
-                                   depress=is_current)
+                op = cell.operator("cocopie.set_icon_choice", text="",
+                                   depress=is_current, **icon_args(name))
                 op.pie_index = self.pie_index
                 op.item_index = self.item_index
                 op.icon_name = name

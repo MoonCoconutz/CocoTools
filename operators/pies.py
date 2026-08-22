@@ -25,7 +25,7 @@ from ..icons import (
 )
 from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
-from ..previews import slot_button_args
+from ..previews import slot_button_args, icon_args
 
 
 class COCOPIE_OT_execute_command(Operator):

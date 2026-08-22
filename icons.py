@@ -27,6 +27,8 @@ ICON_CATEGORY_ENUM = [
     ('INPUT',    "Input",     "Keyboard, mouse and event icons",        8),
     ('UI',       "UI",        "Arrows, toggles and window chrome",      9),
     ('OTHER',    "Other",     "Everything that didn't fit elsewhere",  10),
+    # Not one of Blender's own: these come from image files CocoPie loads
+    ('CUSTOM',   "Custom",    "Your own icons, loaded from image files", 11),
 ]
 
 # Evaluated in order — the first rule that matches an icon name wins.
