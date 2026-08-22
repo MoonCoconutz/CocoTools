@@ -15,6 +15,7 @@ from .items import (
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
+from .utils import slot_is_used
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
@@ -64,9 +65,11 @@ def create_pie_menu_class(pie_data):
         # Create 8 slots (positions 0-7)
         slots = [None] * 8
         
-        # Fill slots with enabled items
+        # Fill slots with enabled items. Every pie carries all eight directions
+        # now, so the empty ones have to be skipped or the pie draws blank
+        # buttons where a direction simply is not in use.
         for item in pie_data.items:
-            if item.enabled and 0 <= item.position <= 7:
+            if item.enabled and slot_is_used(item) and 0 <= item.position <= 7:
                 slots[item.position] = item
         
         # Draw items in order

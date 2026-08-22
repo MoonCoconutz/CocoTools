@@ -18,6 +18,7 @@ from ..items import (
 from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    ensure_slot_items, slot_is_used,
 )
 from ..icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -108,7 +109,11 @@ class COCOPIE_OT_add_to_pie_from_context(Operator):
                         return
                     layout.label(text="Select Pie Menu:", icon='NONE')
                     for i, pie in enumerate(prefs.pie_menus):
-                        if len(pie.items) < 8:
+                        # Offered only while it still has a direction free.
+                        # Counting items would offer none of them, since every
+                        # pie now carries all eight.
+                        free = sum(1 for it in pie.items if not slot_is_used(it))
+                        if free or not len(pie.items):
                             op = layout.operator("cocopie.add_operator_to_pie", text=pie.name, icon='MENU_PANEL')
                             op.pie_index = i
                             op.operator_string = op_str
@@ -158,8 +163,12 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
         if 0 <= self.pie_index < len(prefs.pie_menus):
             pie = prefs.pie_menus[self.pie_index]
             
-            if len(pie.items) < 8:
-                item = pie.items.add()
+            # Every pie carries all eight directions, so this claims the first
+            # unused one rather than appending a ninth item
+            ensure_slot_items(pie)
+            item = next((it for it in pie.items if not slot_is_used(it)), None)
+
+            if item is not None:
                 item.icon = "NONE"
                 item.enabled = True
                 
@@ -191,16 +200,9 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
                     item.command = f"bpy.ops.{op_name}()"
                     self.report({'INFO'}, f"Added '{op_name}' to {pie.name}")
                 
-                # Find first available position
-                used_positions = [it.position for it in pie.items[:-1]]
-                for pos in range(8):
-                    if pos not in used_positions:
-                        item.position = pos
-                        break
-                
                 register_pie_menus()
             else:
-                self.report({'WARNING'}, f"{pie.name} is full (8/8 items)")
+                self.report({'WARNING'}, f"{pie.name} has no free direction (8 of 8 used)")
         
         return {'FINISHED'}
 

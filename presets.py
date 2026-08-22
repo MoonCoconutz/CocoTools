@@ -19,6 +19,7 @@ from .items import (
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    ensure_slot_items, slot_is_used,
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
 

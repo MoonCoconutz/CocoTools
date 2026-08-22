@@ -18,6 +18,7 @@ from .items import (
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    ensure_slot_items, slot_is_used,
     addon_version_string,
 )
 from .icons import (
@@ -203,63 +204,43 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         header = box.row(align=True)
         header.label(text="Menu Items", icon='PRESET')
 
+        # One row per direction, always all eight, always in slot order. The
+        # row *is* the slot, so there is nothing to add, remove or move -- a
+        # direction is used once it has a label or a command, and free again
+        # once it is cleared.
+        ensure_slot_items(pie)
+
+        used = [it for it in pie.items if slot_is_used(it)]
+
         count = header.row(align=True)
         count.alignment = 'RIGHT'
         count.active = False
-        count.label(text=f"{len(pie.items)} / 8")
-
-        add = header.row(align=True)
-        add.alignment = 'RIGHT'
-        add.enabled = len(pie.items) < 8
-        add.operator("cocopie.add_item", text="", icon='ADD').pie_index = self.active_pie_index
+        count.label(text=f"{len(used)} / 8 used")
 
         box.separator(factor=0.5)
 
-        if len(pie.items) == 0:
-            col = box.column(align=True)
-            col.scale_y = 1.3
-            col.label(text="This pie menu is empty.", icon='INFO')
-            col.separator(factor=0.5)
-            col.operator("cocopie.add_item", text="Add First Item",
-                         icon='ADD').pie_index = self.active_pie_index
-            return
-
-        dupes = find_duplicate_positions(pie)
-
-        # Table: a dim header row, then flush item rows in an aligned column
         table = box.column(align=True)
         self.draw_item_header(table)
-        for i, item in enumerate(pie.items):
-            self.draw_single_item(table, pie, item, i, dupes)
+        for index, item in enumerate(pie.items):
+            self.draw_single_item(table, pie, item, index)
 
-        # Status line — free slots, plus anything that needs attention
+        # Status line — anything that needs attention
         box.separator(factor=0.5)
         status = box.column(align=True)
         status.scale_y = 0.9
 
-        used = {it.position for it in pie.items}
-        free = [p for p in range(8) if p not in used]
-        if free:
-            # One label per arrow: a label carries a single icon, so the free
-            # slots cannot be joined into one string the way glyphs were
-            row = status.row(align=True)
-            row.active = False
-            row.label(text="Free slots:")
-            for position in free:
-                row.label(**slot_button_args(position))
-
-        if dupes:
+        if not used:
             row = status.row()
-            row.alert = True
-            shared = ", ".join(POSITION_NAMES[p] for p in sorted(dupes))
-            row.label(text=f"Two items share: {shared} — only one will show",
-                      icon='ERROR')
+            row.active = False
+            row.label(text="Nothing in this pie yet — fill in a direction above",
+                      icon='INFO')
 
-        missing = len([it for it in pie.items if not it.command.strip()])
+        missing = [it for it in used if not it.command.strip()]
         if missing:
             row = status.row()
             row.active = False
-            row.label(text=f"{missing} item(s) have no command yet", icon='INFO')
+            row.label(text=f"{len(missing)} direction(s) named but with no command yet",
+                      icon='INFO')
 
     def draw_item_header(self, layout):
         """Dim column captions sized to match draw_single_item's columns"""
@@ -291,33 +272,33 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         cell.ui_units_x = COL_TOOLS_UNITS
         cell.label(text="")
 
-    def draw_single_item(self, layout, pie, item, index, dupes=frozenset()):
-        """Draw a single menu item row"""
+    def draw_single_item(self, layout, pie, item, index):
+        """Draw one direction's row. The row is the slot -- index is position."""
+        used = slot_is_used(item)
+
         row = layout.row(align=True)
         # Matches COL_POS_UNITS / COL_ICON_UNITS so those buttons are square
         row.scale_y = ITEM_ROW_UNITS
 
-        # Enable checkbox — stays lit even when the item is off
+        # Enable checkbox — meaningless on a direction that holds nothing
         chk_row = row.row(align=True)
         chk_row.ui_units_x = COL_CHECK_UNITS
+        chk_row.enabled = used
         chk_row.prop(item, "enabled", text="",
-                     icon='CHECKBOX_HLT' if item.enabled else 'CHECKBOX_DEHLT',
+                     icon='CHECKBOX_HLT' if item.enabled and used else 'CHECKBOX_DEHLT',
                      emboss=False)
 
         # Everything else dims with the item so disabled rows recede
         body = row.row(align=True)
-        body.active = item.enabled
+        body.active = item.enabled and used
 
-        # Position button — opens the 3x3 slot grid
-        pos_btn = body.row(align=True)
-        pos_btn.ui_units_x = COL_POS_UNITS
-        pos_btn.alert = item.position in dupes
-        op = pos_btn.operator(
-            "cocopie.show_position_menu",
-            **slot_button_args(item.position),
-        )
-        op.pie_index = self.active_pie_index
-        op.item_index = index
+        # Direction: fixed to the row, not a control. It reads as a label
+        # rather than a button because there is nothing to click -- the slot
+        # is decided by which row you are on.
+        pos_cell = body.row(align=True)
+        pos_cell.ui_units_x = COL_POS_UNITS
+        pos_cell.alignment = 'CENTER'
+        pos_cell.label(**slot_button_args(item.position))
 
         # Icon selector button
         icon_btn = body.row(align=True)
@@ -347,8 +328,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         op.pie_index = self.active_pie_index
         op.item_index = index
 
-        # Delete button
-        del_row = row.row(align=True)
-        op = del_row.operator("cocopie.remove_item", text="", icon='TRASH', emboss=False)
+        # Clear, rather than delete: the row stays either way, since the eight
+        # directions are fixed. Disabled on a row that is already empty.
+        clear = row.row(align=True)
+        clear.enabled = used
+        op = clear.operator("cocopie.remove_item", text="", icon='X', emboss=False)
         op.pie_index = self.active_pie_index
         op.item_index = index

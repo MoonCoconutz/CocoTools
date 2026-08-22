@@ -111,6 +111,63 @@ def find_shortcut_conflicts(prefs, pie, index):
     return conflicts
 
 
+def ensure_slot_items(pie):
+    """Give the pie exactly one item per slot, ordered 0..7.
+
+    A pie has eight directions and always did; the editor now shows them as
+    eight fixed rows, so the stored items are made to match one-to-one. Items
+    are only added and reordered, never dropped -- if two ever claimed the same
+    slot, the later one is moved to the first free slot rather than discarded.
+
+    Idempotent, so it is safe to call on every draw.
+    """
+    if len(pie.items) == 8 and all(item.position == i for i, item in enumerate(pie.items)):
+        return
+
+    claimed = {}
+    homeless = []
+    for item in pie.items:
+        if 0 <= item.position <= 7 and item.position not in claimed:
+            claimed[item.position] = item
+        else:
+            homeless.append(item)
+
+    for position in range(8):
+        if position not in claimed and homeless:
+            claimed[position] = homeless.pop(0)
+
+    # Snapshot, because the collection is about to be rebuilt underneath us
+    snapshot = {
+        position: {
+            "label": item.label, "command": item.command,
+            "icon": item.icon, "enabled": item.enabled,
+        }
+        for position, item in claimed.items()
+    }
+
+    pie.items.clear()
+    for position in range(8):
+        item = pie.items.add()
+        item.position = position
+        stored = snapshot.get(position)
+        if stored:
+            item.label = stored["label"]
+            item.command = stored["command"]
+            item.icon = stored["icon"]
+            item.enabled = stored["enabled"]
+        else:
+            # An unused direction: present in the table, absent from the pie
+            item.label = ""
+            item.command = ""
+            item.icon = 'NONE'
+            item.enabled = True
+
+
+def slot_is_used(item):
+    """An item fills its slot once it has something to run or something to say"""
+    return bool(item.command.strip() or item.label.strip())
+
+
 def find_duplicate_positions(pie):
     """Set of slots claimed by more than one item — the later one wins in the pie"""
     seen = set()

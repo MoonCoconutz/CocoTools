@@ -18,6 +18,7 @@ from ..items import (
 from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    ensure_slot_items, slot_is_used,
 )
 from ..icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -62,159 +63,6 @@ class COCOPIE_OT_select_pie(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Failed to select: {str(e)}")
         return {'FINISHED'}
-
-
-class COCOPIE_OT_set_item_position(Operator):
-    """Set the position of a menu item"""
-    bl_idname = "cocopie.set_item_position"
-    bl_label = "Set Position"
-    bl_options = {'REGISTER', 'INTERNAL'}
-
-    pie_index: IntProperty()
-    item_index: IntProperty()
-    position: IntProperty()
-
-    @classmethod
-    def description(cls, context, properties):
-        pie = get_pie(context, properties.pie_index)
-        if pie:
-            for i, other in enumerate(pie.items):
-                if i != properties.item_index and other.position == properties.position:
-                    return f"Swap with \"{other.label or 'Item'}\""
-        return f"Move this item to the {POSITION_NAMES.get(properties.position, 'chosen')} slot"
-
-    def execute(self, context):
-        try:
-            pie = get_pie(context, self.pie_index)
-            if not pie or not (0 <= self.item_index < len(pie.items)):
-                return {'CANCELLED'}
-
-            item = pie.items[self.item_index]
-            old_position = item.position
-
-            # If another item already sits in the target slot, swap the two.
-            # Two items sharing a slot means one silently overwrites the other
-            # when the pie is drawn, so never let a move create that.
-            for i, other in enumerate(pie.items):
-                if i != self.item_index and other.position == self.position:
-                    other.position = old_position
-                    break
-
-            item.position = self.position
-            register_pie_menus()
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to set position: {str(e)}")
-
-        return {'FINISHED'}
-
-
-class COCOPIE_OT_show_position_menu(Operator):
-    """Show position selection menu"""
-    bl_idname = "cocopie.show_position_menu"
-    bl_label = "Choose Position"
-    bl_options = {'REGISTER', 'INTERNAL'}
-
-    pie_index: IntProperty()
-    item_index: IntProperty()
-
-    @classmethod
-    def description(cls, context, properties):
-        item = get_pie_item(context, properties.pie_index, properties.item_index)
-        if item:
-            return (f"Slot: {POSITION_NAMES.get(item.position, '?')}.\n"
-                    "Click to move this item to another pie direction")
-        return "Choose which pie direction this item sits in"
-
-    def execute(self, context):
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        # wm.popup_menu() auto-sizes to content and ignores ui_units_x once
-        # the row content is mixed (icon buttons + text), which is what made
-        # this grid render lopsided. invoke_popup() takes a real pixel width
-        # and is the API Blender itself uses for fixed-size custom popups.
-        return context.window_manager.invoke_popup(self, width=GRID_POPUP_WIDTH)
-
-    def draw(self, context):
-        layout = self.layout
-
-        pie = get_pie(context, self.pie_index)
-        item = get_pie_item(context, self.pie_index, self.item_index)
-
-        if not pie or not item:
-            layout.label(text="That item no longer exists", icon='ERROR')
-            return
-
-        # Which slots are spoken for by *other* items
-        occupied = {}
-        for i, other in enumerate(pie.items):
-            if i != self.item_index:
-                occupied.setdefault(other.position, other)
-
-        # A bare compass: nine square cells, nothing between them. There is no
-        # header or caption — every cell explains itself on hover, and the
-        # arrows plus their placement carry the rest.
-        #
-        # Nothing is drawn between the rows on purpose. A separator line adds
-        # height without adding any width, which makes a square popup with
-        # square cells impossible; the grid's own regularity does the dividing
-        # instead.
-        #
-        # Plain nested rows rather than grid_flow, whose "even_columns" turned
-        # out not to be reliable inside a popup. Height comes from the row and
-        # width from each cell, using the same number so they match.
-        col = layout.column(align=True)
-
-        for row_positions in (POSITION_GRID[0:3], POSITION_GRID[3:6], POSITION_GRID[6:9]):
-            row = col.row(align=True)
-            row.scale_y = GRID_CELL_UNITS
-
-            for pos in row_positions:
-                cell = row.row(align=True)
-                # Pinned explicitly: an icon-only button collapses to its
-                # content instead of filling its share of the row, which would
-                # squash the grid leftwards.
-                cell.ui_units_x = GRID_CELL_UNITS
-
-                # Centre of the grid is inert: it shows the icon of the item
-                # being moved, so the compass has its subject at its middle.
-                # Drawn as a disabled button rather than a label so it is the
-                # same widget as the eight around it and its icon lands on the
-                # same centre -- a label insets its icon differently, which
-                # left the middle of the compass visibly off.
-                if pos is None:
-                    cell.enabled = False
-                    op = cell.operator(
-                        "cocopie.set_item_position",
-                        text="",
-                        icon=safe_icon(item.icon),
-                        emboss=False,
-                    )
-                    op.pie_index = self.pie_index
-                    op.item_index = self.item_index
-                    op.position = item.position
-                    continue
-
-                taken = occupied.get(pos)
-                is_current = pos == item.position
-
-                # Dim occupied slots, but keep them clickable — landing on
-                # one swaps the two items rather than being refused
-                cell.active = is_current or taken is None
-
-                # Arrows draw flat, with no button chrome, so the grid reads
-                # as glyphs on a ground rather than a wall of buttons. The one
-                # exception is the slot the item already sits in: it keeps its
-                # frame so "you are here" survives having no caption to say so.
-                op = cell.operator(
-                    "cocopie.set_item_position",
-                    emboss=is_current,
-                    depress=is_current,
-                    **slot_button_args(pos),
-                )
-                op.pie_index = self.pie_index
-                op.item_index = self.item_index
-                op.position = pos
 
 
 class COCOPIE_OT_add_pie_menu(Operator):
@@ -327,67 +175,33 @@ class COCOPIE_OT_duplicate_pie_menu(Operator):
         return {'FINISHED'}
 
 
-class COCOPIE_OT_add_item(Operator):
-    """Add a new item to the pie menu"""
-    bl_idname = "cocopie.add_item"
-    bl_label = "Add Item"
-    bl_options = {'REGISTER', 'INTERNAL'}
-    
-    pie_index: IntProperty()
-    
-    def execute(self, context):
-        try:
-            prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            if 0 <= self.pie_index < len(prefs.pie_menus):
-                pie = prefs.pie_menus[self.pie_index]
-                
-                item = pie.items.add()
-                item.label = f"Item {len(pie.items)}"
-
-                # Drop it into the first free slot rather than the next index,
-                # so a new item never lands on top of an existing one
-                used = {it.position for it in pie.items[:-1]}
-                for pos in range(8):
-                    if pos not in used:
-                        item.position = pos
-                        break
-
-                pie.active_item_index = len(pie.items) - 1
-                
-                # Re-register to update the menu
-                register_pie_menus()
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to add item: {str(e)}")
-        
-        return {'FINISHED'}
-
-
 class COCOPIE_OT_remove_item(Operator):
-    """Remove the item from the pie menu"""
+    """Clear this direction, leaving the slot empty"""
     bl_idname = "cocopie.remove_item"
-    bl_label = "Remove Item"
+    bl_label = "Clear Direction"
     bl_options = {'REGISTER', 'INTERNAL'}
-    
+
     pie_index: IntProperty()
     item_index: IntProperty()
-    
+
     def execute(self, context):
         try:
-            prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            if 0 <= self.pie_index < len(prefs.pie_menus):
-                pie = prefs.pie_menus[self.pie_index]
-                
-                if 0 <= self.item_index < len(pie.items):
-                    pie.items.remove(self.item_index)
-                    pie.active_item_index = max(0, pie.active_item_index - 1)
-                    
-                    # Re-register to update the menu
-                    register_pie_menus()
+            pie = get_pie(context, self.pie_index)
+            if not pie or not (0 <= self.item_index < len(pie.items)):
+                return {'CANCELLED'}
+
+            # Emptied rather than removed. The eight directions are fixed, so
+            # dropping the row would shift every direction below it up one.
+            item = pie.items[self.item_index]
+            item.label = ""
+            item.command = ""
+            item.icon = 'NONE'
+            item.enabled = True
+
+            register_pie_menus()
         except Exception as e:
-            self.report({'ERROR'}, f"Failed to remove item: {str(e)}")
-        
+            self.report({'ERROR'}, f"Failed to clear direction: {str(e)}")
+
         return {'FINISHED'}
 
 
@@ -432,32 +246,3 @@ class COCOPIE_OT_move_pie_menu(Operator):
 
         return {'FINISHED'}
 
-
-class COCOPIE_OT_move_item(Operator):
-    """Move item up or down"""
-    bl_idname = "cocopie.move_item"
-    bl_label = "Move Item"
-    bl_options = {'REGISTER', 'INTERNAL'}
-    
-    pie_index: IntProperty()
-    item_index: IntProperty()
-    direction: EnumProperty(
-        items=[('UP', 'Up', ''), ('DOWN', 'Down', '')]
-    )
-    
-    def execute(self, context):
-        try:
-            prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            if 0 <= self.pie_index < len(prefs.pie_menus):
-                pie = prefs.pie_menus[self.pie_index]
-                
-                new_index = self.item_index + (-1 if self.direction == 'UP' else 1)
-                
-                if 0 <= new_index < len(pie.items):
-                    pie.items.move(self.item_index, new_index)
-                    pie.active_item_index = new_index
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to move item: {str(e)}")
-        
-        return {'FINISHED'}
