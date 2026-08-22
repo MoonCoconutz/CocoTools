@@ -10,7 +10,7 @@ from bpy.props import (
 from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 from ..items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
+    GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, GRID_CELL_UNITS_X, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
@@ -151,21 +151,22 @@ class COCOPIE_OT_show_position_menu(Operator):
             if i != self.item_index:
                 occupied.setdefault(other.position, other)
 
-        # A bare compass: nothing but arrows, divided into cells by separator
+        # A bare compass: nothing but arrows, divided into rows by separator
         # lines. There is no header or caption — every cell explains itself on
         # hover, and the arrows plus their placement carry the rest.
         #
         # Built from plain rows rather than grid_flow, whose "even_columns"
-        # turned out not to be reliable inside a popup. Each cell is pinned to
-        # a fixed square size below instead of being left to divide the row.
+        # turned out not to be reliable inside a popup; each cell is given an
+        # explicit width below instead.
         #
         # Only the row separators are drawn. A LINE separator inside a *row*
         # does not render as a full-height column divider — Blender degrades it
         # to a short dash at the cell boundary — so the vertical ones are left
         # out rather than shipping those stray marks.
-        # Every cell is a fixed width, so the grid is narrower than the popup
-        # it sits in. Centre it, or the whole compass hangs off the left edge
-        # with all the slack piled up on the right.
+        #
+        # Centred as a belt-and-braces measure: the cells are sized to fill the
+        # popup, so there should be nothing to centre, but this keeps the grid
+        # balanced rather than left-hugging if the measured padding drifts.
         outer = layout.row()
         outer.alignment = 'CENTER'
         col = outer.column(align=True)
@@ -179,22 +180,28 @@ class COCOPIE_OT_show_position_menu(Operator):
             for pos in row_positions:
                 cell = row.row(align=True)
                 cell.scale_y = GRID_CELL_SCALE_Y
-                # Width pinned to match the height, so the cells stay square
-                # and evenly divided. Necessary now the arrows are icons: an
-                # icon-only button collapses to its content instead of filling
-                # its share of the row, which would squash the grid leftwards.
-                cell.ui_units_x = GRID_CELL_SCALE_Y
+                # Width pinned explicitly: an icon-only button collapses to its
+                # content instead of filling its share of the row, which would
+                # squash the grid leftwards.
+                cell.ui_units_x = GRID_CELL_UNITS_X
 
                 # Centre of the grid is inert: it shows the icon of the item
-                # being moved, so the compass has its subject at its middle
+                # being moved, so the compass has its subject at its middle.
+                # Drawn as a disabled button rather than a label so it is the
+                # same widget as the eight around it and its icon lands on the
+                # same centre -- a label insets its icon differently, which
+                # left the middle of the compass visibly off.
                 if pos is None:
                     cell.enabled = False
-                    # Centred inside the cell rather than by setting alignment
-                    # on the cell itself, which would make it shrink to its
-                    # content and knock the column out of line
-                    inner = cell.row(align=True)
-                    inner.alignment = 'CENTER'
-                    inner.label(text="", icon=safe_icon(item.icon))
+                    op = cell.operator(
+                        "cocopie.set_item_position",
+                        text="",
+                        icon=safe_icon(item.icon),
+                        emboss=False,
+                    )
+                    op.pie_index = self.pie_index
+                    op.item_index = self.item_index
+                    op.position = item.position
                     continue
 
                 taken = occupied.get(pos)

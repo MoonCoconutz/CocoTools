@@ -35,10 +35,28 @@ POSITION_GRID = (4, 3, 5, 0, None, 1, 6, 2, 7)
 # width that squares the popup can be derived instead of guessed: three rows
 # of GRID_CELL_SCALE_Y * UI_UNIT_Y, plus the popup's own padding and the two
 # separator lines between the rows (measured at ~24 units together).
-GRID_CELL_SCALE_Y = 2.0
 _UI_UNIT_Y = 20
-_GRID_CHROME_UNITS = 24
-GRID_POPUP_WIDTH = int(3 * GRID_CELL_SCALE_Y * _UI_UNIT_Y + _GRID_CHROME_UNITS)
+
+# Height of one cell in the picker grid.
+GRID_CELL_SCALE_Y = 2.0
+
+# What the popup adds on top of the three rows: the two separator lines between
+# them plus its own vertical padding. Measured, since Blender does not expose
+# it. This is why the popup cannot be square with square cells -- the lines add
+# height and nothing adds matching width.
+_GRID_VERTICAL_CHROME = 2.9
+
+# The popup's own horizontal padding, likewise measured.
+_GRID_HORIZONTAL_CHROME = 1.2
+
+# Sized so the popup comes out square: as wide as the three rows plus
+# everything stacked between and around them.
+GRID_POPUP_WIDTH = int((3 * GRID_CELL_SCALE_Y + _GRID_VERTICAL_CHROME) * _UI_UNIT_Y)
+
+# Cells are then stretched across that width, so the grid fills the popup
+# rather than sitting in the middle of it with slack either side. Slightly
+# wider than tall, which is the price of keeping the separator lines.
+GRID_CELL_UNITS_X = (GRID_POPUP_WIDTH / _UI_UNIT_Y - _GRID_HORIZONTAL_CHROME) / 3
 
 # Height of one item row, and the width of the two icon-only columns in it.
 #
