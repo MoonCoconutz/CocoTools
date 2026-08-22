@@ -24,7 +24,10 @@ from ..icons import (
 )
 from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
-from ..previews import icon_args, custom_icon_names, custom_icon_dirs, CUSTOM_PREFIX
+from ..previews import (
+    icon_args, custom_icon_names, custom_icon_dirs, register_previews,
+    CUSTOM_PREFIX,
+)
 
 
 class COCOPIE_OT_test_pie_menu(Operator):
@@ -175,6 +178,32 @@ class COCOPIE_OT_pick_script(Operator):
         return {'FINISHED'}
 
 
+class COCOPIE_OT_refresh_icons(Operator):
+    """Re-read the custom icons folder, picking up files added since Blender
+    started"""
+    bl_idname = "cocopie.refresh_icons"
+    bl_label = "Refresh Custom Icons"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    def execute(self, context):
+        try:
+            register_previews()
+        except Exception as e:
+            self.report({'ERROR'}, f"Could not reload icons: {e}")
+            return {'CANCELLED'}
+
+        found = len(custom_icon_names())
+        self.report({'INFO'}, f"{found} custom icon(s) loaded" if found
+                    else "No custom icons found in the folder")
+        return {'FINISHED'}
+
+
+# The picker's choice, held here rather than written straight to the item, so
+# that closing the dialog with Cancel or Esc leaves the item alone. Only
+# COCOPIE_OT_select_icon.execute() -- Done, or Return -- commits it.
+_pending_icon = {"pie": -1, "item": -1, "icon": 'NONE'}
+
+
 class COCOPIE_OT_select_icon(Operator):
     """Browse Blender's icons and pick one for this item"""
     bl_idname = "cocopie.select_icon"
@@ -207,6 +236,16 @@ class COCOPIE_OT_select_icon(Operator):
 
     def invoke(self, context, event):
         self.search = ""
+
+        # Start from whatever the item already has, so cancelling really is a
+        # no-op and confirming without touching the grid changes nothing
+        item = get_pie_item(context, self.pie_index, self.item_index)
+        _pending_icon.update({
+            "pie": self.pie_index,
+            "item": self.item_index,
+            "icon": item.icon if item else 'NONE',
+        })
+
         wm = context.window_manager
         try:
             return wm.invoke_props_dialog(self, width=880, title="Select Icon",
@@ -237,8 +276,9 @@ class COCOPIE_OT_select_icon(Operator):
 
     def draw(self, context):
         layout = self.layout
-        item = get_pie_item(context, self.pie_index, self.item_index)
-        current = item.icon if item else 'NONE'
+        # The choice being previewed, not what the item holds -- the item is
+        # only written on Done
+        current = _pending_icon["icon"]
         has_icon = bool(current and current != 'NONE')
 
         # --- current selection -------------------------------------------
@@ -271,6 +311,15 @@ class COCOPIE_OT_select_icon(Operator):
         tabs.scale_y = 1.1
         tabs.prop(self, "category", expand=True)
 
+        # Custom icons are read from disk once, so a file added while Blender
+        # is running needs a re-read to appear. Only shown where it applies.
+        if self.category == 'CUSTOM':
+            reload_row = layout.row(align=True)
+            reload_row.scale_y = 1.1
+            reload_row.operator("cocopie.refresh_icons",
+                                text="Reload icons from folder",
+                                icon='FILE_REFRESH')
+
         # --- grid --------------------------------------------------------
         layout.separator(factor=0.5)
         icons = self._filtered_icons()
@@ -281,7 +330,7 @@ class COCOPIE_OT_select_icon(Operator):
             if self.category == 'CUSTOM' and not self.search.strip():
                 # Nothing to search through yet -- say where to put files
                 empty.label(text="No custom icons yet", icon='INFO')
-                empty.label(text="Drop PNG files into this folder, then reload:")
+                empty.label(text="Drop PNG files here, then press Reload above:")
                 for folder in custom_icon_dirs():
                     path = empty.row(align=True)
                     path.active = False
@@ -323,15 +372,26 @@ class COCOPIE_OT_select_icon(Operator):
             foot.label(text=f"{len(icons)} icon{'s' if len(icons) != 1 else ''}")
 
     def execute(self, context):
-        # Picking happens in cocopie.set_icon_choice; the Done button just closes
+        # Done, or Return. This is the only place the item is written -- the
+        # grid only stages a choice, so Cancel and Esc, which never reach here,
+        # leave the item exactly as it was.
+        if (_pending_icon["pie"] != self.pie_index
+                or _pending_icon["item"] != self.item_index):
+            return {'CANCELLED'}
+
+        item = get_pie_item(context, self.pie_index, self.item_index)
+        if item:
+            item.icon = _pending_icon["icon"] or 'NONE'
+            register_pie_menus()
+
         return {'FINISHED'}
 
 
 class COCOPIE_OT_set_icon_choice(Operator):
-    """Set the icon for this item"""
+    """Choose this icon. It is applied when you press Done"""
     bl_idname = "cocopie.set_icon_choice"
-    bl_label = "Set Icon"
-    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    bl_label = "Choose Icon"
+    bl_options = {'REGISTER', 'INTERNAL'}
 
     pie_index: IntProperty()
     item_index: IntProperty()
@@ -340,13 +400,15 @@ class COCOPIE_OT_set_icon_choice(Operator):
     @classmethod
     def description(cls, context, properties):
         if properties.icon_name in ('', 'NONE'):
-            return "Remove the icon from this item"
+            return "Clear the icon. Applied when you press Done"
         return properties.icon_name
 
     def execute(self, context):
-        item = get_pie_item(context, self.pie_index, self.item_index)
-        if item:
-            item.icon = self.icon_name or 'NONE'
-            register_pie_menus()
-
+        # Staged only. Writing straight to the item here is what used to make
+        # Cancel pointless -- the change was already done by then.
+        _pending_icon.update({
+            "pie": self.pie_index,
+            "item": self.item_index,
+            "icon": self.icon_name or 'NONE',
+        })
         return {'FINISHED'}

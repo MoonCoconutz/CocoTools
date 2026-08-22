@@ -19,6 +19,7 @@ from .tools import (
     COCOPIE_OT_refresh_menus,
     COCOPIE_OT_edit_item_command,
     COCOPIE_OT_pick_script,
+    COCOPIE_OT_refresh_icons,
     COCOPIE_OT_select_icon,
     COCOPIE_OT_set_icon_choice,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "COCOPIE_OT_refresh_menus",
     "COCOPIE_OT_edit_item_command",
     "COCOPIE_OT_pick_script",
+    "COCOPIE_OT_refresh_icons",
     "COCOPIE_OT_select_icon",
     "COCOPIE_OT_set_icon_choice",
     "COCOPIE_OT_add_to_pie_from_context",
