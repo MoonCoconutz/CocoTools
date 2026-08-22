@@ -1,5 +1,6 @@
 """Builds the Blender Menu class that actually draws a pie."""
 
+import ast
 import bpy
 import os
 import json
@@ -56,13 +57,70 @@ def _resolve_bpy_data_path(path_str):
     return obj, prop_name
 
 
+def _parse_bpy_ops_call(command):
+    """Parse "bpy.ops.module.op_name(kw=val, ...)" into (idname, kwargs).
+
+    Returns None if the command is not a plain bpy.ops call with literal
+    keyword arguments: a positional argument, a **kwargs spread, or a value
+    that is not a literal (a function call, a name, an f-string) all bail
+    out to None rather than guess. ast.literal_eval only ever produces plain
+    Python values -- numbers, strings, tuples, lists, dicts, booleans, None
+    -- from the text itself; there is no path from parsing this string to
+    executing anything inside it.
+    """
+    if not command.startswith("bpy.ops."):
+        return None
+    try:
+        tree = ast.parse(command, mode='eval')
+    except SyntaxError:
+        return None
+
+    call = tree.body
+    if not isinstance(call, ast.Call) or call.args:
+        return None  # bpy.ops operators take keyword arguments only
+
+    names = []
+    node = call.func
+    while isinstance(node, ast.Attribute):
+        names.append(node.attr)
+        node = node.value
+    if not (isinstance(node, ast.Name) and node.id == "bpy"):
+        return None
+    names.reverse()
+    if len(names) != 3 or names[0] != "ops":
+        return None
+
+    kwargs = {}
+    for kw in call.keywords:
+        if kw.arg is None:
+            return None  # a **spread -- nothing literal to read
+        try:
+            kwargs[kw.arg] = ast.literal_eval(kw.value)
+        except (ValueError, SyntaxError):
+            return None
+
+    return f"{names[1]}.{names[2]}", kwargs
+
+
 def create_pie_menu_class(pie_data):
     """Dynamically create a pie menu class"""
     
     def draw(self, context):
         layout = self.layout
         pie = layout.menu_pie()
-        
+
+        # A button drawn with layout.operator() defaults to INVOKE_DEFAULT --
+        # the operator's own interactive path -- unless told otherwise. For an
+        # operator with no real modal behaviour that is harmless, but for one
+        # that does (transform.resize, translate, rotate...) it means the
+        # click starts an open-ended mouse-drag instead of applying the exact
+        # values the item was configured with. EXEC_DEFAULT is what a bare
+        # bpy.ops.foo.bar(**kwargs) call from a script already uses by
+        # default, so this makes a clicked button behave the same way a
+        # scripted call does: apply immediately, deterministically, with
+        # whatever properties were set on it below.
+        pie.operator_context = 'EXEC_DEFAULT'
+
         # Create 8 slots (positions 0-7)
         slots = [None] * 8
         
@@ -118,16 +176,33 @@ def create_pie_menu_class(pie_data):
                     
                     # Check if this is a bpy.ops operator
                     elif command and command.startswith("bpy.ops."):
-                        op_path = command.replace("bpy.ops.", "").split("(")[0]
-                        
-                        if "." in op_path:
-                            module, op_name = op_path.split(".", 1)
+                        # A native button draws the real tooltip and the real
+                        # enabled/disabled state, which is worth having -- but
+                        # only once its arguments actually reach the operator.
+                        # A previous version drew the button from the idname
+                        # alone (everything inside the parentheses discarded),
+                        # so any item configured with keyword arguments --
+                        # Flip X/Y's constrained scale, Unwrap Classic's
+                        # method, both align and axis unwraps -- silently ran
+                        # with the operator's bare defaults instead.
+                        parsed = _parse_bpy_ops_call(command)
+                        if parsed:
+                            idname, kwargs = parsed
                             try:
-                                pie.operator(f"{module}.{op_name}", text=slot.label, **icon_kw)
-                            except:
+                                op = pie.operator(idname, text=slot.label, **icon_kw)
+                                for prop_name, value in kwargs.items():
+                                    setattr(op, prop_name, value)
+                            except Exception:
+                                # A property that does not exist or will not
+                                # accept this value -- fall back rather than
+                                # leave the button half-configured
                                 op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                                 op.command = command
                         else:
+                            # Not parseable as literal keyword arguments (a
+                            # positional arg, a **spread, a non-literal value)
+                            # -- run the command as written instead of
+                            # guessing at it
                             op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
                             op.command = command
                     else:
