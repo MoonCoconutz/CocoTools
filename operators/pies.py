@@ -24,6 +24,7 @@ from ..icons import (
 )
 from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
+from ..previews import slot_button_args
 
 
 class COCOPIE_OT_execute_command(Operator):
@@ -154,15 +155,10 @@ class COCOPIE_OT_show_position_menu(Operator):
         # lines. There is no header or caption — every cell explains itself on
         # hover, and the arrows plus their placement carry the rest.
         #
-        # Built from plain rows rather than grid_flow: every cell holds a
-        # single arrow glyph and nothing else, so Blender divides the row
-        # width evenly on its own — grid_flow's "even_columns" turned out not
-        # to be reliable inside a popup once one cell held different content.
+        # Built from plain rows rather than grid_flow, whose "even_columns"
+        # turned out not to be reliable inside a popup. Each cell is pinned to
+        # a fixed square size below instead of being left to divide the row.
         #
-        # Text-only cells matter for more than tidiness: an icon-only button
-        # collapses to the icon's width instead of filling its share of the
-        # row, which is what squashed this grid into the left third of the
-        # popup back when the buttons carried icons.
         # Only the row separators are drawn. A LINE separator inside a *row*
         # does not render as a full-height column divider — Blender degrades it
         # to a short dash at the cell boundary — so the vertical ones are left
@@ -177,6 +173,11 @@ class COCOPIE_OT_show_position_menu(Operator):
             for pos in row_positions:
                 cell = row.row(align=True)
                 cell.scale_y = GRID_CELL_SCALE_Y
+                # Width pinned to match the height, so the cells stay square
+                # and evenly divided. Necessary now the arrows are icons: an
+                # icon-only button collapses to its content instead of filling
+                # its share of the row, which would squash the grid leftwards.
+                cell.ui_units_x = GRID_CELL_SCALE_Y
 
                 # Centre of the grid is inert: it shows the icon of the item
                 # being moved, so the compass has its subject at its middle
@@ -199,9 +200,9 @@ class COCOPIE_OT_show_position_menu(Operator):
                 # frame so "you are here" survives having no caption to say so.
                 op = cell.operator(
                     "cocopie.set_item_position",
-                    text=POSITION_ARROWS[pos],
                     emboss=is_current,
                     depress=is_current,
+                    **slot_button_args(pos),
                 )
                 op.pie_index = self.pie_index
                 op.item_index = self.item_index

@@ -24,6 +24,7 @@ from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
+from .previews import slot_button_args
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 
 
@@ -106,8 +107,8 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         preset_box.label(text="Presets", icon='PRESET')
         row = preset_box.row(align=True)
         row.scale_y = 1.15
-        row.operator("cocopie.save_preset", text="Save", icon='EXPORT')
-        row.operator("cocopie.load_preset", text="Load", icon='IMPORT')
+        row.operator("cocopie.save_preset", text="Export", icon='EXPORT')
+        row.operator("cocopie.load_preset", text="Import", icon='IMPORT')
 
         row = preset_box.row(align=True)
         row.scale_y = 1.15
@@ -237,11 +238,15 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         status.scale_y = 0.9
 
         used = {it.position for it in pie.items}
-        free = [POSITION_ARROWS[p] for p in range(8) if p not in used]
+        free = [p for p in range(8) if p not in used]
         if free:
-            row = status.row()
+            # One label per arrow: a label carries a single icon, so the free
+            # slots cannot be joined into one string the way glyphs were
+            row = status.row(align=True)
             row.active = False
-            row.label(text="Free slots:   " + "   ".join(free))
+            row.label(text="Free slots:")
+            for position in free:
+                row.label(**slot_button_args(position))
 
         if dupes:
             row = status.row()
@@ -309,7 +314,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         pos_btn.alert = item.position in dupes
         op = pos_btn.operator(
             "cocopie.show_position_menu",
-            text=POSITION_ARROWS.get(item.position, '?'),
+            **slot_button_args(item.position),
         )
         op.pie_index = self.active_pie_index
         op.item_index = index

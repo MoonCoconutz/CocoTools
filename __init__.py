@@ -16,6 +16,7 @@ from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .utils import get_prefs
 from .ui import COCOPIE_UL_pie_menus
+from .previews import register_previews, unregister_previews
 from .operators import (
     COCOPIE_OT_execute_command,
     COCOPIE_OT_select_pie,
@@ -83,6 +84,9 @@ CONTEXT_MENU_CLASSES = (
 
 
 def register():
+    # Before the classes, so anything drawing a slot arrow already has it
+    register_previews()
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -134,6 +138,8 @@ def unregister():
             bpy.utils.unregister_class(cls)
         except Exception as e:
             print(f"CocoPie: could not unregister {getattr(cls, '__name__', cls)}: {e}")
+
+    unregister_previews()
 
 
 if __name__ == "__main__":
