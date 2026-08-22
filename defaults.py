@@ -110,9 +110,10 @@ def default_pie_definitions(script_paths):
                  "enabled": True, "command": overlay("show_edge_sharp")},
             ],
         },
-        # The UV pies drive Zen UV. Without it installed the slots simply
-        # report that the operator is missing; install it and they start
-        # working, with no edit needed here.
+        # Mostly Zen UV; Flip X/Y are stock Blender instead (see above).
+        # Without Zen UV installed the rest of these slots simply report a
+        # missing operator; install it and they start working, with no edit
+        # needed here.
         {
             "name": "UV Transform",
             "idname": "COCOPIE_MT_uv_transform",
@@ -120,14 +121,18 @@ def default_pie_definitions(script_paths):
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
+                # Stock Blender rather than Zen UV: transform.resize with a
+                # constrained axis is exactly what S, X, -1 does in the UV
+                # editor -- reflects the selection around its own median
+                # point. Verified against real UV coordinates, not assumed.
                 {"label": "Flip X", "icon": 'MOD_MIRROR', "position": 0, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_flip(flip_direction='HORIZONTAL')"},
+                 "command": "bpy.ops.transform.resize(value=(-1, 1, 1), constraint_axis=(True, False, False))"},
                 {"label": "Stack Islands", "icon": 'DUPLICATE', "position": 1, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_simple_stack()"},
                 {"label": "Rotate 90", "icon": 'DRIVER_ROTATIONAL_DIFFERENCE', "position": 2, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_rotate(rotation_mode='ANGLE', tr_rot_inc=90)"},
                 {"label": "Flip Y", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_flip(flip_direction='VERTICAL')"},
+                 "command": "bpy.ops.transform.resize(value=(1, -1, 1), constraint_axis=(False, True, False))"},
                 {"label": "Sort", "icon": 'SORTSIZE', "position": 4, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_distribute_islands()"},
                 {"label": "Stack Similar", "icon": 'STICKY_UVS_LOC', "position": 5, "enabled": True,
