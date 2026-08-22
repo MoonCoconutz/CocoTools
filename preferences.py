@@ -12,7 +12,7 @@ from .items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
     GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
+    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
@@ -81,11 +81,24 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                 rows=max(4, min(len(self.pie_menus), 10)),
             )
 
-        # Buttons
+        # Buttons: New Pie Menu takes whatever width the reorder pair leaves,
+        # which is a fixed two icon buttons' worth
         layout.separator(factor=0.5)
         row = layout.row(align=True)
         row.scale_y = 1.4
         row.operator("cocopie.add_pie_menu", text="New Pie Menu", icon='ADD')
+
+        reorder = row.row(align=True)
+        reorder.ui_units_x = TWO_ICON_BUTTONS_UNITS
+
+        # Each arrow greys out at the end it cannot travel any further towards
+        up = reorder.row(align=True)
+        up.enabled = self.active_pie_index > 0
+        up.operator("cocopie.move_pie_menu", text="", icon='TRIA_UP').direction = 'UP'
+
+        down = reorder.row(align=True)
+        down.enabled = self.active_pie_index < len(self.pie_menus) - 1
+        down.operator("cocopie.move_pie_menu", text="", icon='TRIA_DOWN').direction = 'DOWN'
 
         # Presets
         layout.separator(factor=0.8)

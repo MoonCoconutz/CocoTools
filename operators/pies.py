@@ -382,6 +382,48 @@ class COCOPIE_OT_remove_item(Operator):
         return {'FINISHED'}
 
 
+class COCOPIE_OT_move_pie_menu(Operator):
+    """Move this pie menu up or down the list.
+
+    Ordering here is cosmetic -- it changes nothing about shortcuts or
+    registration, only the order the menus are listed in"""
+    bl_idname = "cocopie.move_pie_menu"
+    bl_label = "Move Pie Menu"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    direction: EnumProperty(
+        items=[('UP', 'Up', ''), ('DOWN', 'Down', '')]
+    )
+
+    @classmethod
+    def poll(cls, context):
+        # Greyed out at the end it cannot travel any further towards
+        prefs = get_prefs(context)
+        if not prefs or len(prefs.pie_menus) < 2:
+            return False
+        return True
+
+    def execute(self, context):
+        try:
+            prefs = get_prefs(context)
+            if not prefs:
+                return {'CANCELLED'}
+
+            index = prefs.active_pie_index
+            new_index = index + (-1 if self.direction == 'UP' else 1)
+
+            if not (0 <= index < len(prefs.pie_menus)) or not (0 <= new_index < len(prefs.pie_menus)):
+                return {'CANCELLED'}
+
+            prefs.pie_menus.move(index, new_index)
+            # Keep the selection on the menu that moved, not on the row index
+            prefs.active_pie_index = new_index
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to move pie menu: {str(e)}")
+
+        return {'FINISHED'}
+
+
 class COCOPIE_OT_move_item(Operator):
     """Move item up or down"""
     bl_idname = "cocopie.move_item"

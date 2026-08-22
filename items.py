@@ -57,11 +57,13 @@ COL_ICON_UNITS = ITEM_ROW_UNITS
 COL_LABEL_SCALE = 1.8
 COL_CMD_SCALE = 2.4
 
-# Width of the two icon-only tool buttons. An icon-only button collapses to
-# its content rather than expanding to fill its share of the row, so this has
-# to be sized to the buttons -- anything larger is dead space trailing after
-# them, not wider buttons.
-COL_TOOLS_UNITS = 2.3
+# Width of two icon-only buttons side by side. An icon-only button collapses to
+# its content rather than expanding to fill its share of the row, so a slot
+# holding two has to be sized to the buttons -- anything larger is dead space
+# trailing after them, not wider buttons.
+TWO_ICON_BUTTONS_UNITS = 2.3
+
+COL_TOOLS_UNITS = TWO_ICON_BUTTONS_UNITS
 
 
 

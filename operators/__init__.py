@@ -11,6 +11,7 @@ from .pies import (
     COCOPIE_OT_add_item,
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_item,
+    COCOPIE_OT_move_pie_menu,
 )
 from .presets import (
     COCOPIE_OT_save_preset,
@@ -42,6 +43,7 @@ __all__ = [
     "COCOPIE_OT_add_item",
     "COCOPIE_OT_remove_item",
     "COCOPIE_OT_move_item",
+    "COCOPIE_OT_move_pie_menu",
     "COCOPIE_OT_save_preset",
     "COCOPIE_OT_resolve_preset_conflict",
     "COCOPIE_OT_load_preset",
