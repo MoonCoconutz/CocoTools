@@ -36,28 +36,15 @@ def icons_dir():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons")
 
 
-def user_custom_icons_dir():
-    """Where a user's own icons live, outside the addon.
-
-    Kept out of the package on purpose: reinstalling CocoPie replaces the
-    package folder wholesale, which would take any icons stored inside it.
-    """
-    return bpy.utils.user_resource('SCRIPTS', path="cocopie_icons", create=True)
-
-
 def custom_icon_dirs():
-    """Folders scanned for custom icons, highest priority first.
+    """Folders scanned for custom icons.
 
-    The user's own folder shadows the shipped one, so a shipped icon can be
-    replaced by dropping a file of the same name into it.
+    Only one, inside the addon, so everything CocoPie owns stays within its own
+    folder rather than scattering directories through Blender's scripts
+    directory. The trade-off is that reinstalling the addon replaces the folder
+    along with the rest of the package.
     """
-    dirs = []
-    try:
-        dirs.append(user_custom_icons_dir())
-    except Exception as e:
-        print(f"CocoPie: could not reach the user icons folder: {e}")
-    dirs.append(os.path.join(icons_dir(), "custom"))
-    return dirs
+    return [os.path.join(icons_dir(), "custom")]
 
 
 def _load_slot_arrows(collection):
@@ -83,6 +70,8 @@ def _load_custom(collection):
             continue
         for filename in sorted(os.listdir(folder)):
             stem, ext = os.path.splitext(filename)
+            # seen guards against the same name in two folders, harmless while
+            # there is only one but kept so adding another cannot double-load
             if ext.lower() not in _LOADABLE or stem in seen:
                 continue
             try:

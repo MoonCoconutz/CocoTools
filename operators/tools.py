@@ -279,11 +279,9 @@ class COCOPIE_OT_select_icon(Operator):
             empty = layout.box().column(align=True)
             empty.scale_y = 1.3
             if self.category == 'CUSTOM' and not self.search.strip():
-                # Nothing to search through yet -- say where to put files.
-                # Both folders are listed, since which one to use depends on
-                # whether the icons should survive reinstalling the addon.
+                # Nothing to search through yet -- say where to put files
                 empty.label(text="No custom icons yet", icon='INFO')
-                empty.label(text="Drop PNG files into either folder, then reload:")
+                empty.label(text="Drop PNG files into this folder, then reload:")
                 for folder in custom_icon_dirs():
                     path = empty.row(align=True)
                     path.active = False
