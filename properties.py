@@ -155,9 +155,24 @@ class COCOPIE_PieMenuData(PropertyGroup):
         update=update_key_uppercase
     )
     
-    ctrl: BoolProperty(name="Ctrl", default=False, update=update_pie_menu)
+    # Blender's real KeyMapItem.ctrl/shift/alt/oskey are tri-state ints (-1
+    # "any", 0 off, 1 required) -- but its own keymap editor does not expose
+    # that tri-state either. Its source comment says why: "integers aren't
+    # practical" for a toggle button. It uses plain on/off booleans for each
+    # modifier plus one separate "Any" button that means "ignore all of them",
+    # and passes that straight to keymap_items.new(any=...). This mirrors that
+    # exactly rather than building real tri-state cycling Blender itself skips.
+    any_modifier: BoolProperty(
+        name="Any", description="Any modifier keys pressed",
+        default=False, update=update_pie_menu,
+    )
     shift: BoolProperty(name="Shift", default=False, update=update_pie_menu)
+    ctrl: BoolProperty(name="Ctrl", default=False, update=update_pie_menu)
     alt: BoolProperty(name="Alt", default=False, update=update_pie_menu)
+    oskey: BoolProperty(
+        name="OS", description="Operating system key (Cmd / Win) pressed",
+        default=False, update=update_pie_menu,
+    )
     
     event_value: EnumProperty(
         name="Trigger",

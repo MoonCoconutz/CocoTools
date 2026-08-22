@@ -16,7 +16,7 @@ from .items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
+    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut, oskey_label,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used,
     addon_version_string,
@@ -174,15 +174,21 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         col.separator(factor=0.5)
 
-        # Whole shortcut stays on one line: trigger + modifiers + key
+        # Whole shortcut stays on one line: trigger + modifiers + key.
+        # Modifier order and grouping (Any, Shift, Ctrl, Alt, OS) matches
+        # Blender's own keymap editor exactly -- see rna_keymap_ui.py's
+        # draw_kmi(), which draws kmi.any then shift_ui/ctrl_ui/alt_ui/oskey_ui
+        # in that order.
         row = col.row(align=True, heading="Shortcut")
         trigger = row.row(align=True)
         trigger.scale_x = 0.9
         trigger.prop(pie, "event_value", text="")
         row.separator(factor=0.4)
-        row.prop(pie, "ctrl", text="Ctrl", toggle=True)
+        row.prop(pie, "any_modifier", text="Any", toggle=True)
         row.prop(pie, "shift", text="Shift", toggle=True)
+        row.prop(pie, "ctrl", text="Ctrl", toggle=True)
         row.prop(pie, "alt", text="Alt", toggle=True)
+        row.prop(pie, "oskey", text=oskey_label(), toggle=True)
         row.separator(factor=0.4)
         key = row.row(align=True)
         key.scale_x = 0.6

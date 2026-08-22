@@ -153,9 +153,11 @@ class COCOPIE_OT_duplicate_pie_menu(Operator):
                 new_pie.idname = f"{source.idname}_copy"
                 new_pie.keymap_type = source.keymap_type
                 new_pie.key = source.key
-                new_pie.ctrl = source.ctrl
+                new_pie.any_modifier = source.any_modifier
                 new_pie.shift = source.shift
+                new_pie.ctrl = source.ctrl
                 new_pie.alt = source.alt
+                new_pie.oskey = source.oskey
                 new_pie.enabled = False
                 
                 # Copy items

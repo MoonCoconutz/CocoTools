@@ -80,9 +80,11 @@ def register_pie_menus():
                             'wm.call_menu_pie',
                             key,
                             pie_data.event_value,
-                            ctrl=pie_data.ctrl,
+                            any=pie_data.any_modifier,
                             shift=pie_data.shift,
-                            alt=pie_data.alt
+                            ctrl=pie_data.ctrl,
+                            alt=pie_data.alt,
+                            oskey=pie_data.oskey,
                         )
                         kmi.properties.name = pie_data.idname
                         registered_keymaps.append((km, kmi))
@@ -94,19 +96,17 @@ def register_pie_menus():
                     'wm.call_menu_pie',
                     key,
                     pie_data.event_value,
-                    ctrl=pie_data.ctrl,
+                    any=pie_data.any_modifier,
                     shift=pie_data.shift,
-                    alt=pie_data.alt
+                    ctrl=pie_data.ctrl,
+                    alt=pie_data.alt,
+                    oskey=pie_data.oskey,
                 )
                 kmi.properties.name = pie_data.idname
                 registered_keymaps.append((km, kmi))
             
-            keymap_str = ""
-            if pie_data.ctrl: keymap_str += "Ctrl+"
-            if pie_data.shift: keymap_str += "Shift+"
-            if pie_data.alt: keymap_str += "Alt+"
-            keymap_str += pie_data.key
-            _debug(f"Registered keymap: {keymap_str} in '{keymap_name}' for {pie_data.idname}")
+            _debug(f"Registered keymap: {format_shortcut(pie_data)} in "
+                  f"'{keymap_name}' for {pie_data.idname}")
         
         except Exception as e:
             print(f"CocoPie: Error registering pie menu {pie_data.idname}: {e}")

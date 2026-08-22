@@ -52,9 +52,11 @@ class COCOPIE_OT_save_preset(Operator):
                     "idname": pie.idname,
                     "keymap_type": pie.keymap_type,
                     "key": pie.key,
-                    "ctrl": pie.ctrl,
+                    "any_modifier": pie.any_modifier,
                     "shift": pie.shift,
+                    "ctrl": pie.ctrl,
                     "alt": pie.alt,
+                    "oskey": pie.oskey,
                     "enabled": pie.enabled,
                     "items": []
                 }

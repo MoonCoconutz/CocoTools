@@ -37,9 +37,13 @@ def _apply_pie_dict(pie, pie_dict):
     pie.idname = pie_dict.get("idname", "COCOPIE_MT_custom_pie")
     pie.keymap_type = pie_dict.get("keymap_type", "WINDOW")
     pie.key = pie_dict.get("key", "Q")
-    pie.ctrl = pie_dict.get("ctrl", False)
+    # any_modifier and oskey are absent from presets saved before this pair
+    # existed; .get() defaults them to False, same as a freshly created pie
+    pie.any_modifier = pie_dict.get("any_modifier", False)
     pie.shift = pie_dict.get("shift", False)
+    pie.ctrl = pie_dict.get("ctrl", False)
     pie.alt = pie_dict.get("alt", False)
+    pie.oskey = pie_dict.get("oskey", False)
     pie.enabled = pie_dict.get("enabled", True)
     pie.items.clear()
     for item_dict in pie_dict.get("items", []):

@@ -62,15 +62,33 @@ def get_pie_item(context, pie_index, item_index):
     return None
 
 
+def oskey_label():
+    """What Blender itself calls the OS-key modifier on this platform"""
+    if sys.platform == "darwin":
+        return "Cmd"
+    if sys.platform == "win32":
+        return "Win"
+    return "OS"
+
+
 def format_shortcut(pie):
     """Human-readable shortcut, e.g. 'Ctrl + Shift + Q'"""
     parts = []
-    if pie.ctrl:
-        parts.append("Ctrl")
-    if pie.shift:
-        parts.append("Shift")
-    if pie.alt:
-        parts.append("Alt")
+    if pie.any_modifier:
+        # Passing any=True makes Blender itself force shift/ctrl/alt/oskey to
+        # -1 (verified against a live KeyMapItem) -- whatever those toggles
+        # show becomes moot once Any is on, so the label should not claim they
+        # still apply
+        parts.append("Any")
+    else:
+        if pie.shift:
+            parts.append("Shift")
+        if pie.ctrl:
+            parts.append("Ctrl")
+        if pie.alt:
+            parts.append("Alt")
+        if pie.oskey:
+            parts.append(oskey_label())
     parts.append(pie.key or "?")
     return " + ".join(parts)
 
@@ -101,10 +119,22 @@ def find_shortcut_conflicts(prefs, pie, index):
     for i, other in enumerate(prefs.pie_menus):
         if i == index or not other.enabled:
             continue
+
+        # Any modifier held on either side matches every modifier state on
+        # the other, since that is what Blender itself does once any=True is
+        # passed to keymap_items.new() -- it forces shift/ctrl/alt/oskey to
+        # -1 regardless of what those toggles show, so the specific states
+        # are not meaningful to compare while either pie has Any set
+        if pie.any_modifier or other.any_modifier:
+            modifiers_match = True
+        else:
+            modifiers_match = (other.ctrl == pie.ctrl
+                               and other.shift == pie.shift
+                               and other.alt == pie.alt
+                               and other.oskey == pie.oskey)
+
         if (other.key.upper() == pie.key.upper()
-                and other.ctrl == pie.ctrl
-                and other.shift == pie.shift
-                and other.alt == pie.alt
+                and modifiers_match
                 and other.event_value == pie.event_value
                 and _keymaps_overlap(other.keymap_type, pie.keymap_type)):
             conflicts.append(other.name)
