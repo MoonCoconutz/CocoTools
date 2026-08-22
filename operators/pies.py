@@ -10,7 +10,7 @@ from bpy.props import (
 from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 from ..items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, GRID_CELL_UNITS_X, ITEM_ROW_UNITS,
+    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
@@ -151,39 +151,30 @@ class COCOPIE_OT_show_position_menu(Operator):
             if i != self.item_index:
                 occupied.setdefault(other.position, other)
 
-        # A bare compass: nothing but arrows, divided into rows by separator
-        # lines. There is no header or caption — every cell explains itself on
-        # hover, and the arrows plus their placement carry the rest.
+        # A bare compass: nine square cells, nothing between them. There is no
+        # header or caption — every cell explains itself on hover, and the
+        # arrows plus their placement carry the rest.
         #
-        # Built from plain rows rather than grid_flow, whose "even_columns"
-        # turned out not to be reliable inside a popup; each cell is given an
-        # explicit width below instead.
+        # Nothing is drawn between the rows on purpose. A separator line adds
+        # height without adding any width, which makes a square popup with
+        # square cells impossible; the grid's own regularity does the dividing
+        # instead.
         #
-        # Only the row separators are drawn. A LINE separator inside a *row*
-        # does not render as a full-height column divider — Blender degrades it
-        # to a short dash at the cell boundary — so the vertical ones are left
-        # out rather than shipping those stray marks.
-        #
-        # Centred as a belt-and-braces measure: the cells are sized to fill the
-        # popup, so there should be nothing to centre, but this keeps the grid
-        # balanced rather than left-hugging if the measured padding drifts.
-        outer = layout.row()
-        outer.alignment = 'CENTER'
-        col = outer.column(align=True)
+        # Plain nested rows rather than grid_flow, whose "even_columns" turned
+        # out not to be reliable inside a popup. Height comes from the row and
+        # width from each cell, using the same number so they match.
+        col = layout.column(align=True)
 
-        for row_index, row_positions in enumerate(
-                (POSITION_GRID[0:3], POSITION_GRID[3:6], POSITION_GRID[6:9])):
-            if row_index:
-                col.separator(type='LINE')
-
+        for row_positions in (POSITION_GRID[0:3], POSITION_GRID[3:6], POSITION_GRID[6:9]):
             row = col.row(align=True)
+            row.scale_y = GRID_CELL_UNITS
+
             for pos in row_positions:
                 cell = row.row(align=True)
-                cell.scale_y = GRID_CELL_SCALE_Y
-                # Width pinned explicitly: an icon-only button collapses to its
+                # Pinned explicitly: an icon-only button collapses to its
                 # content instead of filling its share of the row, which would
                 # squash the grid leftwards.
-                cell.ui_units_x = GRID_CELL_UNITS_X
+                cell.ui_units_x = GRID_CELL_UNITS
 
                 # Centre of the grid is inert: it shows the icon of the item
                 # being moved, so the compass has its subject at its middle.

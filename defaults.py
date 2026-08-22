@@ -10,7 +10,7 @@ from bpy.props import (
 from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 from .items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_SCALE_Y, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
+    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
@@ -157,27 +157,31 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.zenuv_select_uv_borders()"},
             ],
         },
+        # Unlike the other two UV pies, this one drives Mio3 UV rather than
+        # Zen UV, and only the classic unwrap is stock Blender.
         {
             "name": "UV Unwrap",
             "idname": "COCOPIE_MT_uv_unwrap",
-            "keymap_type": "UV_EDITOR", "key": "Q",
-            "ctrl": False, "shift": False, "alt": False,
+            "keymap_type": "UV_EDITOR", "key": "F",
+            "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
-                # Left empty on purpose: Mio3 UV does not register an unwrap
-                # operator to point at, so there is nothing to wire it to here
-                {"label": "UV Unwrap Mio", "icon": 'NONE', "position": 0,
-                 "enabled": True, "command": ""},
+                {"label": "Align UVs X", "icon": 'NONE', "position": 0, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_align(type='ALIGN_X')"},
                 {"label": "Unwrap Classic", "icon": 'MOD_UVPROJECT', "position": 1, "enabled": True,
-                 "command": "bpy.ops.uv.unwrap()"},
-                {"label": "Zen Unwrap", "icon": 'UV_DATA', "position": 2, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_unwrap()"},
-                {"label": "Relax", "icon": 'MOD_SMOOTH', "position": 3, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_relax()"},
-                {"label": "Rectify", "icon": 'MESH_PLANE', "position": 6, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_rectify()"},
-                {"label": "Gridify", "icon": 'MESH_GRID', "position": 7, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_quadrify()"},
+                 "command": "bpy.ops.uv.unwrap(method='ANGLE_BASED')"},
+                {"label": "Align UVs Y", "icon": 'UV_DATA', "position": 2, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_align(type='ALIGN_Y')"},
+                {"label": "UV Unwrap Mio", "icon": 'MOD_SMOOTH', "position": 3, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_unwrap()"},
+                {"label": "Rectify", "icon": 'NONE', "position": 4, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_rectify()"},
+                {"label": "Gridify", "icon": 'NONE', "position": 5, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_gridify()"},
+                {"label": "UV Unwrap X", "icon": 'MESH_PLANE', "position": 6, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_unwrap(axis='X')"},
+                {"label": "UV Unwrap Y", "icon": 'MESH_GRID', "position": 7, "enabled": True,
+                 "command": "bpy.ops.uv.mio3_unwrap(axis='Y')"},
             ],
         },
     ]

@@ -27,36 +27,20 @@ POSITION_NAMES = {
 # Row-major reading order of a 3x3 grid; None is the (inert) centre cell
 POSITION_GRID = (4, 3, 5, 0, None, 1, 6, 2, 7)
 
-# The slot-picker popup holds nothing but the 3x3 compass, so it is sized to
-# come out square rather than to fit any text.
-#
-# invoke_popup()'s width and a row's scale_y are both expressed in the same
-# unscaled units (Blender applies the UI scale to each afterwards), so the
-# width that squares the popup can be derived instead of guessed: three rows
-# of GRID_CELL_SCALE_Y * UI_UNIT_Y, plus the popup's own padding and the two
-# separator lines between the rows (measured at ~24 units together).
 _UI_UNIT_Y = 20
 
-# Height of one cell in the picker grid.
-GRID_CELL_SCALE_Y = 2.0
+# One cell of the picker grid, square: UI_UNIT_X and UI_UNIT_Y are both
+# widget_unit, so the same number gives a cell as wide as it is tall.
+GRID_CELL_UNITS = 2.0
 
-# What the popup adds on top of the three rows: the two separator lines between
-# them plus its own vertical padding. Measured, since Blender does not expose
-# it. This is why the popup cannot be square with square cells -- the lines add
-# height and nothing adds matching width.
-_GRID_VERTICAL_CHROME = 2.9
+# The padding Blender puts around a popup's contents. Measured, since it is not
+# exposed, and near enough the same on both axes.
+_GRID_POPUP_PADDING = 1.2
 
-# The popup's own horizontal padding, likewise measured.
-_GRID_HORIZONTAL_CHROME = 1.2
-
-# Sized so the popup comes out square: as wide as the three rows plus
-# everything stacked between and around them.
-GRID_POPUP_WIDTH = int((3 * GRID_CELL_SCALE_Y + _GRID_VERTICAL_CHROME) * _UI_UNIT_Y)
-
-# Cells are then stretched across that width, so the grid fills the popup
-# rather than sitting in the middle of it with slack either side. Slightly
-# wider than tall, which is the price of keeping the separator lines.
-GRID_CELL_UNITS_X = (GRID_POPUP_WIDTH / _UI_UNIT_Y - _GRID_HORIZONTAL_CHROME) / 3
+# Three square cells plus that padding. The grid deliberately carries nothing
+# between the rows: a separator line adds height without adding any width, and
+# that alone is what made every earlier attempt at a square popup fail.
+GRID_POPUP_WIDTH = int((3 * GRID_CELL_UNITS + _GRID_POPUP_PADDING) * _UI_UNIT_Y)
 
 # Height of one item row, and the width of the two icon-only columns in it.
 #
