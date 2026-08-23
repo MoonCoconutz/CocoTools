@@ -2,6 +2,8 @@
 
 from .pies import (
     COCOPIE_OT_execute_command,
+    COCOPIE_OT_tap_toggle_direction,
+    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_select_pie,
     COCOPIE_OT_add_pie_menu,
     COCOPIE_OT_remove_pie_menu,
@@ -32,6 +34,8 @@ from .context_menu import (
 
 __all__ = [
     "COCOPIE_OT_execute_command",
+    "COCOPIE_OT_tap_toggle_direction",
+    "COCOPIE_OT_hold_or_tap",
     "COCOPIE_OT_select_pie",
     "COCOPIE_OT_add_pie_menu",
     "COCOPIE_OT_remove_pie_menu",

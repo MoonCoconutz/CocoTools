@@ -76,6 +76,16 @@ class COCOPIE_PieMenuItem(PropertyGroup):
     )
 
 
+def _tap_toggle_direction_items(self, context):
+    """Every direction, labelled with whatever currently sits in it"""
+    options = []
+    for i in range(8):
+        item = next((it for it in self.items if it.position == i), None)
+        label = item.label if (item and item.label) else "Empty"
+        options.append((str(i), f"{POSITION_NAMES[i]}: {label}", ""))
+    return options
+
+
 def update_pie_menu(self, context):
     """Called when pie menu properties change"""
     try:
@@ -196,6 +206,38 @@ class COCOPIE_PieMenuData(PropertyGroup):
         update=update_pie_menu
     )
     
+    # Replaces the Trigger with its own hold/tap timing (see
+    # COCOPIE_OT_hold_or_tap) -- holding the key opens the pie, a quick tap
+    # jumps straight to one of two chosen directions instead. Forced to
+    # Drag whenever this turns on, since that is the only Trigger value that
+    # describes what is actually happening: the key is held down. The
+    # Settings UI greys the Trigger dropdown out while this is on rather
+    # than hiding it, so the displayed value stays honest either way.
+    def _update_tap_toggle(self, context):
+        if self.tap_toggle:
+            self.event_value = 'CLICK_DRAG'
+        update_pie_menu(self, context)
+
+    tap_toggle: BoolProperty(
+        name="Tap to Toggle",
+        description="A quick tap of the shortcut (press and release without "
+                    "moving) jumps straight to one of two chosen directions "
+                    "instead of opening the pie",
+        default=False,
+        update=_update_tap_toggle,
+    )
+    tap_toggle_a: EnumProperty(
+        name="First", description="One of the two directions a tap alternates between",
+        items=_tap_toggle_direction_items, update=update_pie_menu,
+    )
+    tap_toggle_b: EnumProperty(
+        name="Second", description="The other direction a tap alternates between",
+        items=_tap_toggle_direction_items, update=update_pie_menu,
+    )
+    # Which of the two ran last, so the next tap runs the other one. Not
+    # exposed in the UI.
+    tap_toggle_last_ran_a: BoolProperty(default=True)
+
     items: CollectionProperty(type=COCOPIE_PieMenuItem)
     active_item_index: IntProperty(default=0)
     

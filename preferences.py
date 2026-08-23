@@ -182,6 +182,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         row = col.row(align=True, heading="Shortcut")
         trigger = row.row(align=True)
         trigger.scale_x = 0.9
+        # Tap to Toggle drives its own hold/tap timing regardless of this
+        # setting, so it is greyed out rather than hidden -- the value is
+        # still there, ready to apply again the moment Tap to Toggle is off.
+        trigger.enabled = not pie.tap_toggle
         trigger.prop(pie, "event_value", text="")
         row.separator(factor=0.4)
         row.prop(pie, "any_modifier", text="Any", toggle=True)
@@ -201,6 +205,19 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                 names += f" (+{len(conflicts) - 3} more)"
             warn = box.row()
             warn.label(text=f"Same shortcut as: {names}", icon='ERROR')
+
+        # Replaces the Trigger entirely when on: holding the key opens the
+        # pie, a quick tap alternates between the two chosen directions
+        # instead. Not restricted to a particular Trigger -- it supplies its
+        # own hold/tap timing (see COCOPIE_OT_hold_or_tap), since keyboard
+        # keys have no built-in event value for that distinction.
+        col.separator(factor=0.5)
+        tt = col.row(align=True, heading="Tap to Toggle")
+        tt.prop(pie, "tap_toggle", text="")
+        pickers = tt.row(align=True)
+        pickers.enabled = pie.tap_toggle
+        pickers.prop(pie, "tap_toggle_a", text="")
+        pickers.prop(pie, "tap_toggle_b", text="")
 
     def draw_pie_items(self, layout, pie):
         """Draw the item table for the selected pie menu"""

@@ -26,6 +26,55 @@ registered_pie_classes = []
 registered_keymaps = []
 
 
+# A key like "0" is stored as-is, but Blender's key identifiers spell number
+# keys out ("ZERO".."NINE"); resolving it once here keeps register_pie_menus
+# and the tap/hold keymap item in agreement about what event.type to expect.
+_KEY_NAME_MAPPING = {
+    '0': 'ZERO', '1': 'ONE', '2': 'TWO', '3': 'THREE', '4': 'FOUR',
+    '5': 'FIVE', '6': 'SIX', '7': 'SEVEN', '8': 'EIGHT', '9': 'NINE',
+}
+
+
+def _resolve_key(key):
+    return _KEY_NAME_MAPPING.get(key, key)
+
+
+def _add_keymap_item(km, key, pie_data, pie_index):
+    """The pie's own keymap item -- unchanged behaviour when Tap to Toggle
+    is off. cocopie.hold_or_tap replaces this entirely when it is on: a
+    keyboard key has no native "held vs tapped" event value (CLICK_DRAG
+    needs the mouse to actually move, RELEASE fires the same regardless of
+    hold duration), so that distinction is timed by hand instead -- see
+    COCOPIE_OT_hold_or_tap. Bound on PRESS either way, since the modal makes
+    the pie's own Trigger setting moot once it is driving things."""
+    if pie_data.tap_toggle:
+        kmi = km.keymap_items.new(
+            'cocopie.hold_or_tap',
+            key,
+            'PRESS',
+            any=pie_data.any_modifier,
+            shift=pie_data.shift,
+            ctrl=pie_data.ctrl,
+            alt=pie_data.alt,
+            oskey=pie_data.oskey,
+        )
+        kmi.properties.pie_index = pie_index
+        kmi.properties.key = key
+    else:
+        kmi = km.keymap_items.new(
+            'wm.call_menu_pie',
+            key,
+            pie_data.event_value,
+            any=pie_data.any_modifier,
+            shift=pie_data.shift,
+            ctrl=pie_data.ctrl,
+            alt=pie_data.alt,
+            oskey=pie_data.oskey,
+        )
+        kmi.properties.name = pie_data.idname
+    return (km, kmi)
+
+
 def register_pie_menus():
     """Register all pie menus and their keymaps"""
     global registered_pie_classes, registered_keymaps
@@ -44,7 +93,7 @@ def register_pie_menus():
         print("CocoPie: No addon keyconfig found")
         return
     
-    for pie_data in prefs.pie_menus:
+    for pie_index, pie_data in enumerate(prefs.pie_menus):
         if not pie_data.enabled:
             continue
         
@@ -60,51 +109,22 @@ def register_pie_menus():
             keymap_name, space_type = KEYMAP_CONFIG.get(
                 pie_data.keymap_type, ('Window', 'EMPTY'))
             
-            # Map common key names to Blender's key identifiers
-            key = pie_data.key
-            key_mapping = {
-                '0': 'ZERO', '1': 'ONE', '2': 'TWO', '3': 'THREE', '4': 'FOUR',
-                '5': 'FIVE', '6': 'SIX', '7': 'SEVEN', '8': 'EIGHT', '9': 'NINE',
-            }
-            
-            # Convert number keys to their Blender names
-            if key in key_mapping:
-                key = key_mapping[key]
-            
+            key = _resolve_key(pie_data.key)
+
             # For Window (Global), register in all major 3D view modes
             if pie_data.keymap_type == 'WINDOW':
                 for km_name in WINDOW_MODE_KEYMAPS:
                     try:
                         km = kc.keymaps.new(name=km_name, space_type='EMPTY')
-                        kmi = km.keymap_items.new(
-                            'wm.call_menu_pie',
-                            key,
-                            pie_data.event_value,
-                            any=pie_data.any_modifier,
-                            shift=pie_data.shift,
-                            ctrl=pie_data.ctrl,
-                            alt=pie_data.alt,
-                            oskey=pie_data.oskey,
-                        )
-                        kmi.properties.name = pie_data.idname
-                        registered_keymaps.append((km, kmi))
+                        registered_keymaps.append(
+                            _add_keymap_item(km, key, pie_data, pie_index))
                     except Exception as e:
                         print(f"CocoPie: Could not register keymap for {km_name}: {e}")
             else:
                 km = kc.keymaps.new(name=keymap_name, space_type=space_type)
-                kmi = km.keymap_items.new(
-                    'wm.call_menu_pie',
-                    key,
-                    pie_data.event_value,
-                    any=pie_data.any_modifier,
-                    shift=pie_data.shift,
-                    ctrl=pie_data.ctrl,
-                    alt=pie_data.alt,
-                    oskey=pie_data.oskey,
-                )
-                kmi.properties.name = pie_data.idname
-                registered_keymaps.append((km, kmi))
-            
+                registered_keymaps.append(
+                    _add_keymap_item(km, key, pie_data, pie_index))
+
             _debug(f"Registered keymap: {format_shortcut(pie_data)} in "
                   f"'{keymap_name}' for {pie_data.idname}")
         
@@ -118,7 +138,9 @@ def unregister_pie_menus():
     """Unregister all pie menus and keymaps.
 
     Sweeps every keymap CocoPie could have touched for any wm.call_menu_pie
-    item that points at one of our menus, rather than trusting only
+    item that points at one of our menus, or any cocopie.hold_or_tap item
+    (Tap to Toggle's keymap item, which would orphan exactly the same way if
+    left out of this sweep), rather than trusting only
     registered_keymaps. That list lives at module level, so it is empty again
     every time this module gets freshly re-imported -- which happens on a
     disable/enable cycle that does not reuse the cached module, and on
@@ -142,8 +164,9 @@ def unregister_pie_menus():
             if km.name not in target_names:
                 continue
             stale = [kmi for kmi in km.keymap_items
-                    if kmi.idname == 'wm.call_menu_pie'
-                    and kmi.properties.name.startswith('COCOPIE_MT_')]
+                    if (kmi.idname == 'wm.call_menu_pie'
+                        and kmi.properties.name.startswith('COCOPIE_MT_'))
+                    or kmi.idname == 'cocopie.hold_or_tap']
             for kmi in stale:
                 try:
                     km.keymap_items.remove(kmi)

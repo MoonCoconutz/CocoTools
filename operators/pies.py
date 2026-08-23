@@ -48,6 +48,90 @@ class COCOPIE_OT_execute_command(Operator):
             return {'CANCELLED'}
 
 
+class COCOPIE_OT_tap_toggle_direction(Operator):
+    """Quick-tap alternative to a Drag pie: run one of two chosen directions
+    directly, alternating between them, without opening the pie at all"""
+    bl_idname = "cocopie.tap_toggle_direction"
+    bl_label = "Toggle Pie Direction"
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+
+    pie_index: IntProperty()
+
+    def execute(self, context):
+        pie = get_pie(context, self.pie_index)
+        if pie is None:
+            return {'CANCELLED'}
+
+        try:
+            pos_a, pos_b = int(pie.tap_toggle_a), int(pie.tap_toggle_b)
+        except (TypeError, ValueError):
+            return {'CANCELLED'}
+
+        item_a = next((it for it in pie.items if it.position == pos_a), None)
+        item_b = next((it for it in pie.items if it.position == pos_b), None)
+        if item_a is None or item_b is None:
+            return {'CANCELLED'}
+
+        target = item_b if pie.tap_toggle_last_ran_a else item_a
+        pie.tap_toggle_last_ran_a = not pie.tap_toggle_last_ran_a
+
+        if not target.command:
+            return {'CANCELLED'}
+        try:
+            exec(target.command, {"bpy": bpy, "context": context, "execute_script": execute_script})
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Command failed: {str(e)}")
+            return {'CANCELLED'}
+
+
+class COCOPIE_OT_hold_or_tap(Operator):
+    """Bound to PRESS: opens the pie on a hold, runs the tap-toggle on a quick
+    release. Keyboard keys have no native "held vs tapped" event value --
+    CLICK_DRAG needs the mouse to actually move, and RELEASE fires the same
+    way regardless of how long the key was down -- so this times it by hand."""
+    bl_idname = "cocopie.hold_or_tap"
+    bl_label = "Pie (Hold) / Toggle (Tap)"
+    bl_options = {'INTERNAL'}
+
+    pie_index: IntProperty()
+    # The already Blender-mapped key identifier (e.g. "T", or "ZERO" for the
+    # "0" key) -- matched against event.type, which uses the same names.
+    key: StringProperty()
+
+    HOLD_THRESHOLD = 0.2  # seconds
+
+    _timer = None
+
+    def modal(self, context, event):
+        if event.type == self.key and event.value == 'RELEASE':
+            self._cancel_timer(context)
+            bpy.ops.cocopie.tap_toggle_direction(pie_index=self.pie_index)
+            return {'FINISHED'}
+
+        if event.type == 'TIMER':
+            self._cancel_timer(context)
+            pie = get_pie(context, self.pie_index)
+            if pie is not None:
+                # The pie's own modal takes it from here; this operator's job
+                # -- deciding hold vs tap -- is done either way.
+                bpy.ops.wm.call_menu_pie('INVOKE_DEFAULT', name=pie.idname)
+            return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(self.HOLD_THRESHOLD, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _cancel_timer(self, context):
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+
 class COCOPIE_OT_select_pie(Operator):
     """Select a pie menu for editing"""
     bl_idname = "cocopie.select_pie"

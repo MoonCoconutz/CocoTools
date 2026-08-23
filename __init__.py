@@ -19,6 +19,8 @@ from .ui import COCOPIE_UL_pie_menus
 from .previews import register_previews, unregister_previews
 from .operators import (
     COCOPIE_OT_execute_command,
+    COCOPIE_OT_tap_toggle_direction,
+    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_select_pie,
     COCOPIE_OT_add_pie_menu,
     COCOPIE_OT_remove_pie_menu,
@@ -51,6 +53,8 @@ classes = (
     COCOPIE_OT_restore_defaults,
     COCOPIE_OT_select_pie,
     COCOPIE_OT_execute_command,
+    COCOPIE_OT_tap_toggle_direction,
+    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_add_pie_menu,
     COCOPIE_OT_remove_pie_menu,
     COCOPIE_OT_duplicate_pie_menu,
