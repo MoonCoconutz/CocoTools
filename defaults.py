@@ -40,21 +40,6 @@ WORKSPACE_TARGETS = (
 )
 
 
-def bundled_script_command(*parts):
-    """An execute_script() command for a script shipped inside the addon.
-
-    Same reasoning as bundled_script_paths(): resolved from this file's own
-    location so the path baked into a starter pie points at wherever CocoPie
-    was actually installed. Returns "" when the file is missing, which leaves
-    the slot visible but inert rather than pointing at nothing.
-    """
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", *parts)
-    if not os.path.exists(path):
-        print(f"CocoPie: bundled script missing: {path}")
-        return ""
-    return 'execute_script("%s")' % path.replace("\\", "/")
-
-
 def bundled_scripts_dir():
     """Folder the example workspace scripts ship in, inside this package"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -189,12 +174,8 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.mio3_select_zero()"},
                 {"label": "Select Flipped", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
                  "command": "bpy.ops.uv.mio3_select_flipped_faces()"},
-                # A bundled script rather than an operator: nothing in stock
-                # Blender selects island borders, and the uv.mio3_select_boundary
-                # this used to call does not exist -- Mio3 ships no such
-                # operator, so the slot silently did nothing.
                 {"label": "Boundary", "icon": 'MESH_GRID', "position": 7, "enabled": True,
-                 "command": bundled_script_command("uv", "SelectUVBoundary.py")},
+                 "command": "bpy.ops.uv.mio3_select_edge()"},
             ],
         },
         # Unlike the other two UV pies, this one drives Mio3 UV rather than
