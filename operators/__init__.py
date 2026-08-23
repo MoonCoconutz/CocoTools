@@ -24,7 +24,8 @@ from .tools import (
     COCOPIE_OT_set_icon_choice,
 )
 from .context_menu import (
-    COCOPIE_OT_add_to_pie_from_context,
+    COCOPIE_MT_add_to_cocopie,
+    DIRECTION_MENUS,
     COCOPIE_OT_add_operator_to_pie,
     menu_func_context,
 )
@@ -47,7 +48,8 @@ __all__ = [
     "COCOPIE_OT_refresh_icons",
     "COCOPIE_OT_select_icon",
     "COCOPIE_OT_set_icon_choice",
-    "COCOPIE_OT_add_to_pie_from_context",
+    "COCOPIE_MT_add_to_cocopie",
+    "DIRECTION_MENUS",
     "COCOPIE_OT_add_operator_to_pie",
     "menu_func_context",
 ]

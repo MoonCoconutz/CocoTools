@@ -35,7 +35,8 @@ from .operators import (
     COCOPIE_OT_refresh_icons,
     COCOPIE_OT_select_icon,
     COCOPIE_OT_set_icon_choice,
-    COCOPIE_OT_add_to_pie_from_context,
+    COCOPIE_MT_add_to_cocopie,
+    DIRECTION_MENUS,
     COCOPIE_OT_add_operator_to_pie,
     menu_func_context,
 )
@@ -65,16 +66,37 @@ classes = (
     COCOPIE_OT_refresh_icons,
     COCOPIE_OT_select_icon,
     COCOPIE_OT_set_icon_choice,
-    COCOPIE_OT_add_to_pie_from_context,
+    COCOPIE_MT_add_to_cocopie,
     COCOPIE_OT_add_operator_to_pie,
     COCOPIE_AddonPreferences,
-)
+) + DIRECTION_MENUS  # one direction submenu class per pie slot in the pool
 
 # Blender 5.0 renamed the button context menu; 4.x still uses the old name
 CONTEXT_MENU_CLASSES = (
     'UI_MT_button_context_menu',
     'WM_MT_button_context',
 )
+
+
+def _scrub_context_menu_entries(menu):
+    """Strip every previously-appended copy of our context-menu entry.
+
+    Matched by name and module rather than by object identity, because
+    "Reload Scripts" on a *package* addon does not necessarily reload every
+    submodule (see the project's own reload notes) -- a stale draw callback
+    left over from an earlier module instance can be a different function
+    object with the same __name__/__module__, which plain .remove(func)
+    would not find. Left unscrubbed, that stale entry keeps drawing forever,
+    which is what produced the duplicate "Add to CocoPie" rows.
+    """
+    draw_funcs = menu._dyn_ui_initialize()
+    draw_funcs[:] = [
+        fn for fn in draw_funcs
+        if not (
+            getattr(fn, '__name__', None) == 'menu_func_context'
+            and getattr(fn, '__module__', '') == menu_func_context.__module__
+        )
+    ]
 
 
 def register():
@@ -88,7 +110,9 @@ def register():
     for menu_class in CONTEXT_MENU_CLASSES:
         try:
             if hasattr(bpy.types, menu_class):
-                getattr(bpy.types, menu_class).append(menu_func_context)
+                menu = getattr(bpy.types, menu_class)
+                _scrub_context_menu_entries(menu)
+                menu.append(menu_func_context)
                 registered = True
                 break
         except Exception as e:
@@ -116,7 +140,7 @@ def unregister():
     for menu_class in CONTEXT_MENU_CLASSES:
         try:
             if hasattr(bpy.types, menu_class):
-                getattr(bpy.types, menu_class).remove(menu_func_context)
+                _scrub_context_menu_entries(getattr(bpy.types, menu_class))
         except Exception:
             pass  # Silently ignore if not registered
 
