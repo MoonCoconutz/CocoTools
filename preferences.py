@@ -19,7 +19,7 @@ from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut, oskey_label,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used,
-    addon_version_string,
+    addon_version_string, find_external_conflicts,
 )
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -205,6 +205,26 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                 names += f" (+{len(conflicts) - 3} more)"
             warn = box.row()
             warn.label(text=f"Same shortcut as: {names}", icon='ERROR')
+
+        # Shortcuts owned by Blender or another addon. Reported separately and
+        # more quietly than a CocoPie-vs-CocoPie clash: this one is usually not
+        # a mistake to fix but a fact to know about, and unlike the check above
+        # CocoPie cannot resolve it by editing its own settings.
+        external = find_external_conflicts(pie)
+        if external:
+            ext_box = box.box()
+            ext_box.scale_y = 0.8
+            header = ext_box.row()
+            header.label(
+                text=f"{format_shortcut(pie)} is also bound elsewhere:",
+                icon='INFO',
+            )
+            for other in external:
+                row = ext_box.row()
+                row.alignment = 'LEFT'
+                row.label(
+                    text=f"    {other['label']}  ({other['source']}, {other['keymap']})",
+                )
 
         # Replaces the Trigger entirely when on: holding the key opens the
         # pie, a quick tap alternates between the two chosen directions

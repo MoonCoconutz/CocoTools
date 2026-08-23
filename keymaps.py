@@ -18,6 +18,7 @@ from .items import (
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    COCOPIE_KEYMAP_IDNAMES, invalidate_external_shortcut_index,
 )
 from .menus import execute_script, create_pie_menu_class
 
@@ -78,9 +79,14 @@ def _add_keymap_item(km, key, pie_data, pie_index):
 def register_pie_menus():
     """Register all pie menus and their keymaps"""
     global registered_pie_classes, registered_keymaps
-    
+
     unregister_pie_menus()
-    
+
+    # Everyone else's shortcuts are cached for the conflict warning; a
+    # re-register is the one moment we know the keyconfig has just churned,
+    # and is also when another addon has most likely been toggled behind us.
+    invalidate_external_shortcut_index()
+
     try:
         prefs = bpy.context.preferences.addons[ADDON_ID].preferences
     except:
@@ -166,7 +172,7 @@ def unregister_pie_menus():
             stale = [kmi for kmi in km.keymap_items
                     if (kmi.idname == 'wm.call_menu_pie'
                         and kmi.properties.name.startswith('COCOPIE_MT_'))
-                    or kmi.idname == 'cocopie.hold_or_tap']
+                    or kmi.idname in COCOPIE_KEYMAP_IDNAMES]
             for kmi in stale:
                 try:
                     km.keymap_items.remove(kmi)
