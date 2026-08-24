@@ -208,6 +208,68 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.mio3_unwrap(axis='Y')"},
             ],
         },
+        # Mesh-edit-mode UV prep, in the 3D viewport rather than the UV
+        # editor -- seams, sharp and crease are usually set while looking at
+        # the mesh, not the unwrap. Bevel Weight/Crease/Sharp are toggles
+        # rather than Blender's relative transform.edge_* modal operators:
+        # those add a delta and need a mouse drag, which does not fit a pie
+        # slot. Each toggle instead reads the current value directly off the
+        # mesh (bevel weight and crease are float custom-data layers since
+        # Blender 4.0's edge-attribute rework; sharp is BMEdge.smooth) and
+        # flips the whole selection to the opposite state in one press.
+        {
+            "name": "3D UV",
+            "idname": "COCOPIE_MT_3d_uv",
+            "keymap_type": "3D_VIEW", "key": "F",
+            "ctrl": False, "shift": True, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Clear Seams", "icon": 'X', "position": 0, "enabled": True,
+                 "command": "bpy.ops.mesh.mark_seam(clear=True)"},
+                {"label": "Mark Seams", "icon": 'EDGE_SEAM', "position": 1, "enabled": True,
+                 "command": "bpy.ops.mesh.mark_seam(clear=False)"},
+                {"label": "Smart UV Project", "icon": 'MOD_UVPROJECT', "position": 2, "enabled": True,
+                 "command": "bpy.ops.uv.smart_project()"},
+                {"label": "Unwrap", "icon": 'UV', "position": 3, "enabled": True,
+                 "command": "bpy.ops.uv.unwrap()"},
+                # No stock "clear every seam" operator exists, so this
+                # selects everything first -- the one unavoidable side
+                # effect of a genuinely whole-mesh clear.
+                {"label": "Clear All Seams", "icon": 'X', "position": 4, "enabled": True,
+                 "command": "bpy.ops.mesh.select_all(action='SELECT')\n"
+                            "bpy.ops.mesh.mark_seam(clear=True)"},
+                {"label": "Edge Bevel Weight", "icon": 'EDGE_BEVEL', "position": 5, "enabled": True,
+                 "command": "import bmesh\n"
+                            "bm = bmesh.from_edit_mesh(context.object.data)\n"
+                            "bm.edges.ensure_lookup_table()\n"
+                            "layer = bm.edges.layers.float.get('bevel_weight_edge') "
+                            "or bm.edges.layers.float.new('bevel_weight_edge')\n"
+                            "sel = [e for e in bm.edges if e.select]\n"
+                            "new_val = 0.0 if sel and all(e[layer] >= 0.999 for e in sel) else 1.0\n"
+                            "for e in sel:\n"
+                            "    e[layer] = new_val\n"
+                            "bmesh.update_edit_mesh(context.object.data)"},
+                {"label": "Edge Crease", "icon": 'EDGE_CREASE', "position": 6, "enabled": True,
+                 "command": "import bmesh\n"
+                            "bm = bmesh.from_edit_mesh(context.object.data)\n"
+                            "bm.edges.ensure_lookup_table()\n"
+                            "layer = bm.edges.layers.float.get('crease_edge') "
+                            "or bm.edges.layers.float.new('crease_edge')\n"
+                            "sel = [e for e in bm.edges if e.select]\n"
+                            "new_val = 0.0 if sel and all(e[layer] >= 0.999 for e in sel) else 1.0\n"
+                            "for e in sel:\n"
+                            "    e[layer] = new_val\n"
+                            "bmesh.update_edit_mesh(context.object.data)"},
+                {"label": "Mark Sharp", "icon": 'EDGE_SHARP', "position": 7, "enabled": True,
+                 "command": "import bmesh\n"
+                            "bm = bmesh.from_edit_mesh(context.object.data)\n"
+                            "sel = [e for e in bm.edges if e.select]\n"
+                            "new_smooth = bool(sel) and all(not e.smooth for e in sel)\n"
+                            "for e in sel:\n"
+                            "    e.smooth = new_smooth\n"
+                            "bmesh.update_edit_mesh(context.object.data)"},
+            ],
+        },
     ]
 
 
