@@ -193,7 +193,17 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         scope_area = col.column(align=True)
         scope_area.use_property_split = False
-        scope_area.label(text="Editor")
+
+        # Label and Add Editor share the header line, packed left. Add Editor
+        # used to flow as a trailing grid cell, which left a stray empty cell
+        # sitting after the last editor whenever the row was not full.
+        # alignment='LEFT' is what keeps both to their content width instead of
+        # the button stretching across the rest of the line.
+        header = scope_area.row(align=True)
+        header.alignment = 'LEFT'
+        header.label(text="Editor")
+        header.operator("cocopie.add_keymap_scope", text="Add Editor",
+                        icon='ADD').pie_index = pie_index
 
         grid = scope_area.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
                                     even_columns=True, align=True)
@@ -209,10 +219,6 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                                  text="", icon='REMOVE')
             op.pie_index = pie_index
             op.scope_index = scope_index
-
-        grid.row(align=True).operator(
-            "cocopie.add_keymap_scope", text="Add Editor",
-            icon='ADD').pie_index = pie_index
 
         col.separator(factor=0.5)
 
