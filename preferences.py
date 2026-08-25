@@ -30,6 +30,29 @@ from .previews import slot_button_args, icon_args
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 
 
+
+def _equal_slots(parent, count):
+    """`count` equal-width slots across one line, filled or not.
+
+    Blender has no layout that reserves a fixed share for a cell that may not
+    exist: grid_flow sizes itself to the cells it is actually given, so a line
+    holding fewer than `count` stretches them to fill it. Nested splits do
+    reserve it -- each split's factor is applied whether or not anything is
+    drawn into that side -- so a part-filled last line keeps its cells the same
+    width as a full line's.
+
+    Each pass splits off one slot's worth of whatever is left: 1/3 of the line,
+    then 1/2 of the remaining 2/3, and the final slot takes the rest.
+    """
+    slots = []
+    node = parent
+    for i in range(count - 1):
+        node = node.split(factor=1.0 / (count - i), align=True)
+        slots.append(node.row(align=True))
+    slots.append(node.row(align=True))
+    return slots
+
+
 class COCOPIE_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
     
@@ -194,9 +217,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         scope_area = col.column(align=True)
         scope_area.use_property_split = False
 
-        # Label and Add Editor share the header line, packed left. Add Editor
-        # used to flow as a trailing grid cell, which left a stray empty cell
-        # sitting after the last editor whenever the row was not full.
+        # Label and Add Editor share the header line, packed left.
         # alignment='LEFT' is what keeps both to their content width instead of
         # the button stretching across the rest of the line.
         header = scope_area.row(align=True)
@@ -205,20 +226,35 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         header.operator("cocopie.add_keymap_scope", text="Add Editor",
                         icon='ADD').pie_index = pie_index
 
-        grid = scope_area.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
-                                    even_columns=True, align=True)
-        for scope_index, scope in enumerate(scopes):
-            cell = grid.row(align=True)
-            cell.prop(scope, "keymap_type", text="")
-            remove = cell.row(align=True)
-            # The last remaining editor is not removable: a pie scoped nowhere
-            # would be registered nowhere, with nothing in the UI to get back
-            # from. Greyed rather than hidden so the cells keep their shape.
-            remove.enabled = len(scopes) > 1
-            op = remove.operator("cocopie.remove_keymap_scope",
-                                 text="", icon='REMOVE')
-            op.pie_index = pie_index
-            op.scope_index = scope_index
+        # Fixed-width cells, SCOPE_COLUMNS to a line, wrapping onto a new line
+        # after that. Built from nested splits rather than grid_flow: grid_flow
+        # only creates as many columns as it has cells to put in them and then
+        # stretches those to fill the line, so two editors came out half the
+        # box wide each instead of holding a third. A split's factor sets the
+        # width whether or not anything is drawn into it, which is what lets a
+        # part-filled last line keep its cells the same size as a full one's.
+        scope_list = list(scopes)
+        for start in range(0, len(scope_list), SCOPE_COLUMNS):
+            chunk = scope_list[start:start + SCOPE_COLUMNS]
+            for offset, slot in enumerate(_equal_slots(scope_area.row(align=True),
+                                                       SCOPE_COLUMNS)):
+                if offset >= len(chunk):
+                    # Empty tail slot: the split already reserved its width, so
+                    # this only has to occupy it without drawing anything
+                    slot.label(text="")
+                    continue
+                scope_index = start + offset
+                slot.prop(chunk[offset], "keymap_type", text="")
+                remove = slot.row(align=True)
+                # The last remaining editor is not removable: a pie scoped
+                # nowhere would be registered nowhere, with nothing in the UI
+                # to get back from. Greyed rather than hidden so the cells keep
+                # their shape.
+                remove.enabled = len(scope_list) > 1
+                op = remove.operator("cocopie.remove_keymap_scope",
+                                     text="", icon='REMOVE')
+                op.pie_index = pie_index
+                op.scope_index = scope_index
 
         col.separator(factor=0.5)
 
