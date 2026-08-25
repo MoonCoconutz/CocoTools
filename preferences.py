@@ -13,12 +13,13 @@ from .items import (
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
+    ONE_ICON_BUTTON_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut, oskey_label,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-    ensure_slot_items, slot_is_used,
+    ensure_slot_items, slot_is_used, ensure_keymap_scopes,
     addon_version_string, find_external_conflicts,
 )
 from .icons import (
@@ -170,7 +171,30 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         col.use_property_decorate = False
 
         col.prop(pie, "name", text="Name")
-        col.prop(pie, "keymap_type", text="Editor")
+
+        # One row per editor this pie is live in. The first row carries the
+        # "Editor" heading and the + that appends another; every row after it
+        # gets a - instead. The last remaining row has no - at all, since a
+        # pie scoped nowhere would be registered nowhere with no way back.
+        scopes = ensure_keymap_scopes(pie)
+        pie_index = self.active_pie_index
+        for scope_index, scope in enumerate(scopes):
+            # heading= puts the label in the same right-aligned column
+            # use_property_split gives every other row. A blank heading on the
+            # continuation rows keeps their dropdowns aligned under the first.
+            row = col.row(align=True,
+                          heading="Editor" if scope_index == 0 else " ")
+            row.prop(scope, "keymap_type", text="")
+
+            button = row.row(align=True)
+            button.ui_units_x = ONE_ICON_BUTTON_UNITS
+            if scope_index == 0:
+                op = button.operator("cocopie.add_keymap_scope", text="", icon='ADD')
+                op.pie_index = pie_index
+            elif len(scopes) > 1:
+                op = button.operator("cocopie.remove_keymap_scope", text="", icon='REMOVE')
+                op.pie_index = pie_index
+                op.scope_index = scope_index
 
         col.separator(factor=0.5)
 

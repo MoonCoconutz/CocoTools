@@ -100,14 +100,56 @@ def keymap_names_for(keymap_type):
     return {name}
 
 
-def _keymaps_overlap(a, b):
+def ensure_keymap_scopes(pie):
+    """Guarantee pie.keymap_scopes holds at least one entry, seeding it from
+    the pre-multi-scope `keymap_type` field.
+
+    Idempotent, and called defensively before anything reads the scopes --
+    same contract as ensure_slot_items(). A pie saved by an older CocoPie (or
+    imported from an older preset, or built by defaults.py, which still
+    declares a single "keymap_type") arrives with an empty collection; this is
+    what silently migrates it, so no stored data has to be rewritten up front.
+    """
+    if len(pie.keymap_scopes) == 0:
+        scope = pie.keymap_scopes.add()
+        # Assigning an enum value Blender doesn't know raises, and a preset
+        # from a future//hand-edited version could carry one
+        try:
+            scope.keymap_type = pie.keymap_type
+        except TypeError:
+            scope.keymap_type = 'WINDOW'
+    return pie.keymap_scopes
+
+
+def pie_scope_types(pie):
+    """Every scope enum value this pie is registered into, de-duplicated and
+    in the order the user listed them"""
+    ensure_keymap_scopes(pie)
+    seen = []
+    for scope in pie.keymap_scopes:
+        if scope.keymap_type not in seen:
+            seen.append(scope.keymap_type)
+    return seen
+
+
+def keymap_names_for_pie(pie):
+    """Union of the keymap names a pie actually ends up registered in, across
+    all of its scopes"""
+    names = set()
+    for scope_type in pie_scope_types(pie):
+        names |= keymap_names_for(scope_type)
+    return names
+
+
+def _keymaps_overlap(pie_a, pie_b):
     """Two pie menus can only collide if they land in a keymap they share.
 
     Compared by the keymaps they actually register into rather than by scope
     name, so a global pie no longer reports a conflict against one scoped to an
-    editor it never reaches.
+    editor it never reaches. Now a union across each pie's scopes, so two
+    multi-scope pies collide as soon as any one of their editors overlaps.
     """
-    return bool(keymap_names_for(a) & keymap_names_for(b))
+    return bool(keymap_names_for_pie(pie_a) & keymap_names_for_pie(pie_b))
 
 
 def find_shortcut_conflicts(prefs, pie, index):
@@ -136,7 +178,7 @@ def find_shortcut_conflicts(prefs, pie, index):
         if (other.key.upper() == pie.key.upper()
                 and modifiers_match
                 and other.event_value == pie.event_value
-                and _keymaps_overlap(other.keymap_type, pie.keymap_type)):
+                and _keymaps_overlap(other, pie)):
             conflicts.append(other.name)
     return conflicts
 
@@ -312,7 +354,7 @@ def find_external_conflicts(pie, limit=6):
     if not candidates:
         return []
 
-    live_keymaps = _ancestor_keymaps(keymap_names_for(pie.keymap_type))
+    live_keymaps = _ancestor_keymaps(keymap_names_for_pie(pie))
 
     hits = []
     seen = set()

@@ -36,6 +36,18 @@ def _apply_pie_dict(pie, pie_dict):
     # A "label" key in older presets is ignored -- that field no longer exists
     pie.idname = pie_dict.get("idname", "COCOPIE_MT_custom_pie")
     pie.keymap_type = pie_dict.get("keymap_type", "WINDOW")
+    # Multi-scope pies carry the full list; a preset from before that existed
+    # has only keymap_type, and is migrated by ensure_keymap_scopes() the
+    # first time anything reads the scopes. Unknown scope values are dropped
+    # rather than raising -- a hand-edited or newer-version preset should not
+    # take the whole import down with it.
+    pie.keymap_scopes.clear()
+    for scope_type in pie_dict.get("keymap_scopes", []):
+        try:
+            pie.keymap_scopes.add().keymap_type = scope_type
+        except TypeError:
+            pie.keymap_scopes.remove(len(pie.keymap_scopes) - 1)
+            print(f"CocoPie: preset names an unknown editor {scope_type!r}, skipped")
     pie.key = pie_dict.get("key", "Q")
     # any_modifier and oskey are absent from presets saved before this pair
     # existed; .get() defaults them to False, same as a freshly created pie

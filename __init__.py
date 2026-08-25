@@ -10,7 +10,7 @@ bl_info = {
 
 import bpy
 
-from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
+from .properties import COCOPIE_KeymapScope, COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 from .preferences import COCOPIE_AddonPreferences
 from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies
 from .keymaps import register_pie_menus, unregister_pie_menus
@@ -27,6 +27,8 @@ from .operators import (
     COCOPIE_OT_duplicate_pie_menu,
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_pie_menu,
+    COCOPIE_OT_add_keymap_scope,
+    COCOPIE_OT_remove_keymap_scope,
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
     COCOPIE_OT_load_preset,
@@ -47,6 +49,7 @@ from .operators import (
 # Order matters: the property groups a later class refers to must already be
 # registered, and the preferences class refers to both of them.
 classes = (
+    COCOPIE_KeymapScope,
     COCOPIE_PieMenuItem,
     COCOPIE_PieMenuData,
     COCOPIE_UL_pie_menus,
@@ -60,6 +63,8 @@ classes = (
     COCOPIE_OT_duplicate_pie_menu,
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_pie_menu,
+    COCOPIE_OT_add_keymap_scope,
+    COCOPIE_OT_remove_keymap_scope,
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
     COCOPIE_OT_load_preset,

@@ -18,6 +18,7 @@ from ..items import (
 from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    pie_scope_types,
 )
 from ..keymaps import register_pie_menus, unregister_pie_menus
 from ..presets import (
@@ -50,7 +51,12 @@ class COCOPIE_OT_save_preset(Operator):
                 pie_dict = {
                     "name": pie.name,
                     "idname": pie.idname,
-                    "keymap_type": pie.keymap_type,
+                    # keymap_type is still written for CocoPie versions that
+                    # predate multi-scope pies: they read it and ignore
+                    # keymap_scopes, so such a preset still imports there --
+                    # scoped to the first editor rather than failing outright
+                    "keymap_type": pie_scope_types(pie)[0],
+                    "keymap_scopes": pie_scope_types(pie),
                     "key": pie.key,
                     "any_modifier": pie.any_modifier,
                     "shift": pie.shift,

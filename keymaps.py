@@ -19,6 +19,7 @@ from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     COCOPIE_KEYMAP_IDNAMES, invalidate_external_shortcut_index,
+    pie_scope_types,
 )
 from .menus import execute_script, create_pie_menu_class
 
@@ -110,29 +111,40 @@ def register_pie_menus():
             registered_pie_classes.append(menu_class)
             _debug(f"Registered menu class: {pie_data.idname}")
             
-            # Keymap registration -- KEYMAP_CONFIG is shared with the scope
-            # dropdown and the conflict check so the three cannot disagree
-            keymap_name, space_type = KEYMAP_CONFIG.get(
-                pie_data.keymap_type, ('Window', 'EMPTY'))
-            
             key = _resolve_key(pie_data.key)
 
-            # For Window (Global), register in all major 3D view modes
-            if pie_data.keymap_type == 'WINDOW':
-                for km_name in WINDOW_MODE_KEYMAPS:
-                    try:
-                        km = kc.keymaps.new(name=km_name, space_type='EMPTY')
-                        registered_keymaps.append(
-                            _add_keymap_item(km, key, pie_data, pie_index))
-                    except Exception as e:
-                        print(f"CocoPie: Could not register keymap for {km_name}: {e}")
-            else:
-                km = kc.keymaps.new(name=keymap_name, space_type=space_type)
-                registered_keymaps.append(
-                    _add_keymap_item(km, key, pie_data, pie_index))
+            # A pie can be scoped to several editors at once, so this walks
+            # every scope and collects the (keymap name, space type) pairs
+            # first. Deduplicated before anything is created: scopes overlap
+            # freely -- "Window (Global)" already covers Mesh, so picking both
+            # names the same keymap twice -- and keymap_items.new() appends
+            # rather than replacing, which would leave the pie bound twice on
+            # one key and firing twice per press.
+            targets = []
+            for scope_type in pie_scope_types(pie_data):
+                # KEYMAP_CONFIG is shared with the scope dropdown and the
+                # conflict check so the three cannot disagree
+                keymap_name, space_type = KEYMAP_CONFIG.get(
+                    scope_type, ('Window', 'EMPTY'))
+                if scope_type == 'WINDOW':
+                    # "Window (Global)" is not one keymap -- it is every 3D
+                    # viewport mode keymap
+                    for km_name in WINDOW_MODE_KEYMAPS:
+                        if (km_name, 'EMPTY') not in targets:
+                            targets.append((km_name, 'EMPTY'))
+                elif (keymap_name, space_type) not in targets:
+                    targets.append((keymap_name, space_type))
+
+            for km_name, space_type in targets:
+                try:
+                    km = kc.keymaps.new(name=km_name, space_type=space_type)
+                    registered_keymaps.append(
+                        _add_keymap_item(km, key, pie_data, pie_index))
+                except Exception as e:
+                    print(f"CocoPie: Could not register keymap for {km_name}: {e}")
 
             _debug(f"Registered keymap: {format_shortcut(pie_data)} in "
-                  f"'{keymap_name}' for {pie_data.idname}")
+                  f"{[n for n, _s in targets]} for {pie_data.idname}")
         
         except Exception as e:
             print(f"CocoPie: Error registering pie menu {pie_data.idname}: {e}")

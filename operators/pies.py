@@ -18,7 +18,7 @@ from ..items import (
 from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-    ensure_slot_items, slot_is_used,
+    ensure_slot_items, slot_is_used, ensure_keymap_scopes,
 )
 from ..icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -132,6 +132,60 @@ class COCOPIE_OT_hold_or_tap(Operator):
             self._timer = None
 
 
+class COCOPIE_OT_add_keymap_scope(Operator):
+    """Register this pie in another editor as well"""
+    bl_idname = "cocopie.add_keymap_scope"
+    bl_label = "Add Editor"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    pie_index: IntProperty()
+
+    def execute(self, context):
+        pie = get_pie(context, self.pie_index)
+        if pie is None:
+            return {'CANCELLED'}
+
+        existing = ensure_keymap_scopes(pie)
+        # Land on something the pie is not already scoped to, so the new row
+        # is useful immediately instead of duplicating the row above it
+        taken = {scope.keymap_type for scope in existing}
+        new_scope = existing.add()
+        for candidate in ('3D_VIEW', 'UV_EDITOR', 'IMAGE_EDITOR', 'NODE_EDITOR', 'WINDOW'):
+            if candidate not in taken:
+                new_scope.keymap_type = candidate
+                break
+
+        register_pie_menus()
+        return {'FINISHED'}
+
+
+class COCOPIE_OT_remove_keymap_scope(Operator):
+    """Stop registering this pie in this editor"""
+    bl_idname = "cocopie.remove_keymap_scope"
+    bl_label = "Remove Editor"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    pie_index: IntProperty()
+    scope_index: IntProperty()
+
+    def execute(self, context):
+        pie = get_pie(context, self.pie_index)
+        if pie is None:
+            return {'CANCELLED'}
+
+        # A pie with no scope at all would be registered nowhere and look
+        # broken with no way back, so the last row is never removable -- the
+        # UI hides its button too, this is the backstop
+        if len(pie.keymap_scopes) <= 1:
+            return {'CANCELLED'}
+        if not (0 <= self.scope_index < len(pie.keymap_scopes)):
+            return {'CANCELLED'}
+
+        pie.keymap_scopes.remove(self.scope_index)
+        register_pie_menus()
+        return {'FINISHED'}
+
+
 class COCOPIE_OT_select_pie(Operator):
     """Select a pie menu for editing"""
     bl_idname = "cocopie.select_pie"
@@ -236,6 +290,11 @@ class COCOPIE_OT_duplicate_pie_menu(Operator):
                 new_pie.name = f"{source.name} Copy"
                 new_pie.idname = f"{source.idname}_copy"
                 new_pie.keymap_type = source.keymap_type
+                # Every editor the source was live in, not just the legacy
+                # single one -- otherwise a duplicate of a multi-scope pie
+                # silently comes back scoped to one editor
+                for scope in ensure_keymap_scopes(source):
+                    new_pie.keymap_scopes.add().keymap_type = scope.keymap_type
                 new_pie.key = source.key
                 new_pie.any_modifier = source.any_modifier
                 new_pie.shift = source.shift
