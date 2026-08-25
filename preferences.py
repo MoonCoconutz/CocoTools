@@ -13,6 +13,7 @@ from .items import (
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
+    SCOPE_COLUMNS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
@@ -182,15 +183,22 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         scopes = ensure_keymap_scopes(pie)
         pie_index = self.active_pie_index
         scope_col = col.row(align=True, heading="Editor").column(align=True)
+        # Two per line rather than one, so a pie scoped to several editors
+        # stays a couple of lines tall instead of one line per editor. Even
+        # columns keep the two halves the same width whatever the panel is
+        # stretched to, so the dropdowns line up in a grid rather than
+        # drifting with the length of the editor name in them.
+        grid = scope_col.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
+                                   even_columns=True, align=True)
         for scope_index, scope in enumerate(scopes):
-            row = scope_col.row(align=True)
-            row.prop(scope, "keymap_type", text="")
+            cell = grid.row(align=True)
+            cell.prop(scope, "keymap_type", text="")
             if scope_index == 0:
-                row.operator("cocopie.add_keymap_scope",
-                             text="", icon='ADD').pie_index = pie_index
+                cell.operator("cocopie.add_keymap_scope",
+                              text="", icon='ADD').pie_index = pie_index
             else:
-                op = row.operator("cocopie.remove_keymap_scope",
-                                  text="", icon='REMOVE')
+                op = cell.operator("cocopie.remove_keymap_scope",
+                                   text="", icon='REMOVE')
                 op.pie_index = pie_index
                 op.scope_index = scope_index
 

@@ -67,6 +67,11 @@ TWO_ICON_BUTTONS_UNITS = 2.3
 
 COL_TOOLS_UNITS = TWO_ICON_BUTTONS_UNITS
 
+# How many editor dropdowns sit side by side on one line in Settings. Two fits
+# the longest scope name ("Movie Clip Editor") without truncating at the panel
+# widths the editor is usable at; three starts clipping them.
+SCOPE_COLUMNS = 2
+
 
 # Which Blender keymap each scope registers into: id -> (keymap name, space).
 # Mode keymaps -- "Mesh", "UV Editor", "Sculpt" and friends -- are all

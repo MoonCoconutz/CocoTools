@@ -80,6 +80,11 @@ classes = (
     COCOPIE_AddonPreferences,
 ) + DIRECTION_MENUS  # one direction submenu class per pie slot in the pool
 
+# Set by the first register() of this Blender session. See the comment in
+# register() -- this is what stops a re-enable from being read as a fresh
+# install and overwriting the user's pies with starters.
+_seeded_this_session = False
+
 # Blender 5.0 renamed the button context menu; 4.x still uses the old name
 CONTEXT_MENU_CLASSES = (
     'UI_MT_button_context_menu',
@@ -133,14 +138,38 @@ def register():
     # Fresh install: no saved configuration at all, so lay down the starter
     # pies. Deliberately only when there is nothing, so a user who deletes or
     # renames one never finds it back on the next startup.
+    #
+    # Guarded by a session flag, because "no pie menus" does not only mean
+    # "fresh install". Disabling the addon makes Blender drop its whole entry
+    # from preferences.addons, stored pie menus and all; re-enabling builds a
+    # blank one. register() then runs against an empty collection that is
+    # really a user's full configuration a moment ago, and seeding starters
+    # into it overwrites their pies with same-named starters -- which is
+    # exactly what looked for a long time like Blender corrupting data across
+    # a reload. Their real pies are still in the saved preferences on disk, so
+    # the recoverable outcome is to leave the list empty and say so, rather
+    # than to write starters over the top and let a later save make it
+    # permanent. Only the first register() of a session may ever seed.
+    global _seeded_this_session
     prefs = get_prefs()
-    if prefs is not None and len(prefs.pie_menus) == 0:
-        try:
-            added = ensure_default_pies(prefs)
-            if added:
-                print(f"CocoPie: added {added} starter pie menu(s) on first run")
-        except Exception as e:
-            print(f"CocoPie: could not create the starter pie menus: {e}")
+    if prefs is not None:
+        if len(prefs.pie_menus) == 0 and not _seeded_this_session:
+            try:
+                added = ensure_default_pies(prefs)
+                if added:
+                    print(f"CocoPie: added {added} starter pie menu(s) on first run")
+            except Exception as e:
+                print(f"CocoPie: could not create the starter pie menus: {e}")
+        elif len(prefs.pie_menus) == 0:
+            print("CocoPie: no pie menus in memory after a re-enable. Your saved "
+                  "pies are still on disk -- restart Blender to load them. "
+                  "Not recreating the starter pies, which would overwrite them.")
+        # Set even when nothing was seeded: a later re-enable in this same
+        # session must never be mistaken for a first run.
+        _seeded_this_session = True
+    # pies. Deliberately only when there is nothing, so a user who deletes or
+    # renames one never finds it back on the next startup.
+    prefs = get_prefs()
 
     register_pie_menus()
 
