@@ -88,15 +88,25 @@ def default_pie_definitions(script_paths):
         {
             "name": "Workspace Menu",
             "idname": "COCOPIE_MT_workspace",
-            "keymap_type": "WINDOW", "key": "T",
+            "keymap_type": "WINDOW", "keymap_scopes": ["WINDOW"],
+            "key": "T",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
+            # Held, this opens the pie; tapped, it alternates between Layout
+            # and UV Editing without opening anything. event_value is spelled
+            # out to match what turning Tap to Toggle on forces anyway, so the
+            # stored data is self-consistent rather than leaning on the update
+            # callback to correct it afterwards.
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_toggle_a": "1",   # Right: Layout
+            "tap_toggle_b": "2",   # Bottom: UV Editing
             "items": workspace_items,
         },
         {
             "name": "Edge Info",
             "idname": "COCOPIE_MT_edge_info",
-            "keymap_type": "WINDOW", "key": "2",
+            "keymap_type": "WINDOW", "keymap_scopes": ["WINDOW"], "key": "2",
             "ctrl": False, "shift": False, "alt": True,
             "enabled": True,
             "items": [
@@ -117,7 +127,7 @@ def default_pie_definitions(script_paths):
         {
             "name": "UV Transform",
             "idname": "COCOPIE_MT_uv_transform",
-            "keymap_type": "UV_EDITOR", "key": "D",
+            "keymap_type": "UV_EDITOR", "keymap_scopes": ["UV_EDITOR"], "key": "D",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
@@ -161,7 +171,7 @@ def default_pie_definitions(script_paths):
         {
             "name": "UV Select",
             "idname": "COCOPIE_MT_uv_select",
-            "keymap_type": "UV_EDITOR", "key": "A",
+            "keymap_type": "UV_EDITOR", "keymap_scopes": ["UV_EDITOR"], "key": "A",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             # Mostly Mio3 UV, with overlap coming from Zen UV
@@ -183,7 +193,7 @@ def default_pie_definitions(script_paths):
         {
             "name": "UV Unwrap",
             "idname": "COCOPIE_MT_uv_unwrap",
-            "keymap_type": "UV_EDITOR", "key": "F",
+            "keymap_type": "UV_EDITOR", "keymap_scopes": ["UV_EDITOR"], "key": "F",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
@@ -220,7 +230,7 @@ def default_pie_definitions(script_paths):
         {
             "name": "3D UV",
             "idname": "COCOPIE_MT_3d_uv",
-            "keymap_type": "3D_VIEW", "key": "F",
+            "keymap_type": "3D_VIEW", "keymap_scopes": ["3D_VIEW"], "key": "F",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [

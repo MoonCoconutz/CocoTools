@@ -57,6 +57,11 @@ def _apply_pie_dict(pie, pie_dict):
     pie.alt = pie_dict.get("alt", False)
     pie.oskey = pie_dict.get("oskey", False)
     pie.enabled = pie_dict.get("enabled", True)
+    # Trigger before tap_toggle, never after: turning Tap to Toggle on forces
+    # the Trigger to Drag (see _update_tap_toggle), so applying them the other
+    # way round would let an inconsistent preset leave the pie claiming a
+    # Trigger its own dispatch does not use.
+    pie.event_value = pie_dict.get("event_value", "PRESS")
     pie.items.clear()
     for item_dict in pie_dict.get("items", []):
         item = pie.items.add()
@@ -65,6 +70,13 @@ def _apply_pie_dict(pie, pie_dict):
         item.icon = item_dict.get("icon", "NONE")
         item.enabled = item_dict.get("enabled", True)
         item.position = item_dict.get("position", 0)
+
+    # After the items: the two direction pickers are dynamic enums built from
+    # whatever currently sits in each slot, so they are only meaningful once
+    # the slots are filled.
+    pie.tap_toggle = pie_dict.get("tap_toggle", False)
+    pie.tap_toggle_a = pie_dict.get("tap_toggle_a", "0")
+    pie.tap_toggle_b = pie_dict.get("tap_toggle_b", "0")
 
 
 def _merge_preset_menus(prefs, incoming, mode):

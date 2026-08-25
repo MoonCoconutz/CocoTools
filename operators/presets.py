@@ -64,6 +64,10 @@ class COCOPIE_OT_save_preset(Operator):
                     "alt": pie.alt,
                     "oskey": pie.oskey,
                     "enabled": pie.enabled,
+                    "event_value": pie.event_value,
+                    "tap_toggle": pie.tap_toggle,
+                    "tap_toggle_a": pie.tap_toggle_a,
+                    "tap_toggle_b": pie.tap_toggle_b,
                     "items": []
                 }
                 
