@@ -65,13 +65,7 @@ COL_CMD_SCALE = 2.4
 # trailing after them, not wider buttons.
 TWO_ICON_BUTTONS_UNITS = 2.3
 
-# One of that pair, for the +/- beside a single Editor row. Pinned for the same
-# reason: left unpinned the button shrinks to the glyph and the rows below stop
-# lining up with the row above them.
-ONE_ICON_BUTTON_UNITS = TWO_ICON_BUTTONS_UNITS / 2
-
 COL_TOOLS_UNITS = TWO_ICON_BUTTONS_UNITS
-
 
 
 # Which Blender keymap each scope registers into: id -> (keymap name, space).
