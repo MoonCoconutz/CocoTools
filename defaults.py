@@ -15,6 +15,7 @@ from .items import (
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
+from .icons import safe_icon
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
@@ -44,6 +45,27 @@ def bundled_scripts_dir():
     """Folder the example workspace scripts ship in, inside this package"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "scripts", "workspaces")
+
+
+def _icon(*candidates):
+    """The first of `candidates` this Blender actually has.
+
+    Blender 5.0 added the EDGE_SEAM / EDGE_CREASE / EDGE_SHARP / EDGE_BEVEL
+    icons; 4.5 ships none of them. Naming one there is not an error -- draw
+    time runs every icon through safe_icon() -- but the slot comes out with a
+    blank where its icon should be, so the starters would look half-finished
+    on the older release the addon still supports. Each slot therefore names
+    the icon it wants first and a 4.5-era stand-in after it, resolved once
+    here when the starter pies are created.
+
+    The result is baked into the stored pie, so a pie seeded on 4.5 keeps the
+    fallback if that config is later opened on 5.x. That is deliberate: by
+    then it is the user's own data, and theirs to change.
+    """
+    for name in candidates:
+        if safe_icon(name, fallback=None) is not None:
+            return name
+    return 'NONE'
 
 
 def bundled_script_paths():
@@ -110,13 +132,13 @@ def default_pie_definitions(script_paths):
             "ctrl": False, "shift": False, "alt": True,
             "enabled": True,
             "items": [
-                {"label": "Display Bevel Weight", "icon": 'COLORSET_04_VEC', "position": 0,
+                {"label": "Display Bevel Weight", "icon": _icon('EDGE_BEVEL', 'MOD_BEVEL'), "position": 0,
                  "enabled": True, "command": overlay("show_edge_bevel_weight")},
-                {"label": "Display Seams", "icon": 'COLORSET_01_VEC', "position": 1,
+                {"label": "Display Seams", "icon": _icon('EDGE_SEAM', 'COLORSET_01_VEC'), "position": 1,
                  "enabled": True, "command": overlay("show_edge_seams")},
-                {"label": "Display Crease", "icon": 'COLORSET_03_VEC', "position": 2,
+                {"label": "Display Crease", "icon": _icon('EDGE_CREASE', 'COLORSET_03_VEC'), "position": 2,
                  "enabled": True, "command": overlay("show_edge_crease")},
-                {"label": "Display Sharp", "icon": 'COLORSET_06_VEC', "position": 3,
+                {"label": "Display Sharp", "icon": _icon('EDGE_SHARP', 'MOD_EDGESPLIT'), "position": 3,
                  "enabled": True, "command": overlay("show_edge_sharp")},
             ],
         },
@@ -236,7 +258,7 @@ def default_pie_definitions(script_paths):
             "items": [
                 {"label": "Clear Seams", "icon": 'X', "position": 0, "enabled": True,
                  "command": "bpy.ops.mesh.mark_seam(clear=True)"},
-                {"label": "Mark Seams", "icon": 'EDGE_SEAM', "position": 1, "enabled": True,
+                {"label": "Mark Seams", "icon": _icon('EDGE_SEAM', 'COLORSET_01_VEC'), "position": 1, "enabled": True,
                  "command": "bpy.ops.mesh.mark_seam(clear=False)"},
                 {"label": "Smart UV Project", "icon": 'MOD_UVPROJECT', "position": 2, "enabled": True,
                  "command": "bpy.ops.uv.smart_project()"},
@@ -248,7 +270,7 @@ def default_pie_definitions(script_paths):
                 {"label": "Clear All Seams", "icon": 'X', "position": 4, "enabled": True,
                  "command": "bpy.ops.mesh.select_all(action='SELECT')\n"
                             "bpy.ops.mesh.mark_seam(clear=True)"},
-                {"label": "Edge Bevel Weight", "icon": 'EDGE_BEVEL', "position": 5, "enabled": True,
+                {"label": "Edge Bevel Weight", "icon": _icon('EDGE_BEVEL', 'MOD_BEVEL'), "position": 5, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "bm.edges.ensure_lookup_table()\n"
@@ -259,7 +281,7 @@ def default_pie_definitions(script_paths):
                             "for e in sel:\n"
                             "    e[layer] = new_val\n"
                             "bmesh.update_edit_mesh(context.object.data)"},
-                {"label": "Edge Crease", "icon": 'EDGE_CREASE', "position": 6, "enabled": True,
+                {"label": "Edge Crease", "icon": _icon('EDGE_CREASE', 'COLORSET_03_VEC'), "position": 6, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "bm.edges.ensure_lookup_table()\n"
@@ -270,7 +292,7 @@ def default_pie_definitions(script_paths):
                             "for e in sel:\n"
                             "    e[layer] = new_val\n"
                             "bmesh.update_edit_mesh(context.object.data)"},
-                {"label": "Mark Sharp", "icon": 'EDGE_SHARP', "position": 7, "enabled": True,
+                {"label": "Mark Sharp", "icon": _icon('EDGE_SHARP', 'MOD_EDGESPLIT'), "position": 7, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "sel = [e for e in bm.edges if e.select]\n"
