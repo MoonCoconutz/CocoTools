@@ -172,45 +172,47 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         col.prop(pie, "name", text="Name")
 
-        # Every editor this pie is live in, stacked in the field column under a
-        # single "Editor" label. One heading= row holds an inner column, so the
-        # label is written once and the dropdowns line up under each other --
-        # giving each row its own heading instead put the label on its own line
-        # and broke the property-split alignment the rest of the panel uses.
-        # Each row's +/- sits inline with its dropdown: left unpinned, an
-        # icon-only button collapses to its glyph, which is what keeps the
-        # dropdown wide and the button tight against it here.
+        col.separator(factor=0.5)
+
+        # Every editor this pie is live in.
+        #
+        # This block deliberately steps out of use_property_split: the label
+        # column that suits single-widget rows like Name would squeeze the grid
+        # into the right-hand ~65% and leave the dropdowns narrower than the
+        # editor names in them. "Editor" is written as a plain label on its own
+        # line instead, and the grid below spans the full width of the box.
+        #
+        # Every grid cell holds the same two widgets, dropdown then its own
+        # remove button, and Add Editor flows as the cell straight after the
+        # last one. Cell uniformity is what keeps grid_flow honest -- it lays
+        # out by cell, so an odd cell out (the + used to live in the first one)
+        # gets shuffled onto a line of its own and detaches an editor from its
+        # row.
         scopes = ensure_keymap_scopes(pie)
         pie_index = self.active_pie_index
-        scope_col = col.row(align=True, heading="Editor").column(align=True)
 
-        # Several per line, so a pie scoped to a handful of editors stays a
-        # couple of lines tall instead of one line per editor.
-        #
-        # Every cell holds exactly the same two widgets -- dropdown then its
-        # own remove button. That uniformity is the whole trick: an earlier
-        # version put the + in the first cell and a - in the rest, and
-        # grid_flow, which lays out by cell, shuffled the odd one out onto a
-        # line of its own and left the first editor visually orphaned from
-        # its own row. The + lives below the grid for that reason.
-        grid = scope_col.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
-                                   even_columns=True, align=True)
+        scope_area = col.column(align=True)
+        scope_area.use_property_split = False
+        scope_area.label(text="Editor")
+
+        grid = scope_area.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
+                                    even_columns=True, align=True)
         for scope_index, scope in enumerate(scopes):
             cell = grid.row(align=True)
             cell.prop(scope, "keymap_type", text="")
             remove = cell.row(align=True)
             # The last remaining editor is not removable: a pie scoped nowhere
             # would be registered nowhere, with nothing in the UI to get back
-            # from. Greyed rather than hidden so the cells stay the same shape.
+            # from. Greyed rather than hidden so the cells keep their shape.
             remove.enabled = len(scopes) > 1
             op = remove.operator("cocopie.remove_keymap_scope",
                                  text="", icon='REMOVE')
             op.pie_index = pie_index
             op.scope_index = scope_index
 
-        add = scope_col.row(align=True)
-        add.operator("cocopie.add_keymap_scope",
-                     text="Add Editor", icon='ADD').pie_index = pie_index
+        grid.row(align=True).operator(
+            "cocopie.add_keymap_scope", text="Add Editor",
+            icon='ADD').pie_index = pie_index
 
         col.separator(factor=0.5)
 
