@@ -13,7 +13,7 @@ from .items import (
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
+    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
 )
 from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
@@ -98,44 +98,6 @@ def update_pie_menu(self, context):
         print(f"CocoPie: failed to rebuild pie menus: {e}")
 
 
-# Shared by the pie's legacy `keymap_type` and by every row in its
-# `keymap_scopes`, so the two can never drift apart. The bare ("", "Modes", "")
-# entries are Blender's own way of writing a heading inside an enum dropdown.
-KEYMAP_TYPE_ITEMS = [
-    ('WINDOW', "Window (Global)",
-     "Every 3D viewport mode - object, edit, sculpt and the paint modes"),
-
-    ("", "Modes", ""),
-    ('OBJECT_MODE', "Object Mode", "3D viewport, object mode only"),
-    ('MESH', "Mesh (Edit Mode)", "3D viewport, mesh edit mode only"),
-    ('CURVE', "Curve (Edit Mode)", "3D viewport, curve edit mode only"),
-    ('ARMATURE', "Armature (Edit Mode)", "3D viewport, armature edit mode only"),
-    ('POSE', "Pose Mode", "3D viewport, pose mode only"),
-    ('SCULPT', "Sculpt Mode", "3D viewport, sculpt mode only"),
-    ('VERTEX_PAINT', "Vertex Paint", "3D viewport, vertex paint mode only"),
-    ('WEIGHT_PAINT', "Weight Paint", "3D viewport, weight paint mode only"),
-    ('IMAGE_PAINT', "Texture Paint", "3D viewport, texture paint mode only"),
-    ('UV_EDITOR', "UV Editor", "UV editing only, not the Image editor at large"),
-
-    ("", "Editors", ""),
-    ('3D_VIEW', "3D View", "3D Viewport, every mode"),
-    ('IMAGE_EDITOR', "Image Editor", "Image Editor, including UV editing"),
-    ('NODE_EDITOR', "Node Editor", "Node Editor/Shader Editor/Geometry Nodes"),
-    ('SEQUENCE_EDITOR', "Sequencer", "Video Sequencer"),
-    ('CLIP_EDITOR', "Movie Clip Editor", "Movie Clip Editor"),
-    ('DOPESHEET_EDITOR', "Dope Sheet", "Dope Sheet"),
-    ('GRAPH_EDITOR', "Graph Editor", "Graph Editor"),
-    ('NLA_EDITOR', "NLA Editor", "NLA Editor"),
-    ('TEXT_EDITOR', "Text Editor", "Text Editor"),
-    ('CONSOLE', "Python Console", "Python Console"),
-    ('INFO', "Info", "Info"),
-    ('OUTLINER', "Outliner", "Outliner"),
-    ('PROPERTIES', "Properties", "Properties"),
-    ('FILE_BROWSER', "File Browser", "File Browser"),
-    ('PREFERENCES', "Preferences", "Preferences"),
-]
-
-
 class COCOPIE_KeymapScope(PropertyGroup):
     """One editor/mode a pie is registered into. A pie holds a collection of
     these, so the same shortcut can be live in several editors at once."""
@@ -184,7 +146,6 @@ class COCOPIE_PieMenuData(PropertyGroup):
     # keymap_names_for_pie(), never keymap_type directly.
     keymap_scopes: CollectionProperty(type=COCOPIE_KeymapScope)
 
-    
     key: StringProperty(
         name="Key",
         description="Keyboard key (case-insensitive: 'q' becomes 'Q')",

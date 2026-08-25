@@ -67,10 +67,10 @@ TWO_ICON_BUTTONS_UNITS = 2.3
 
 COL_TOOLS_UNITS = TWO_ICON_BUTTONS_UNITS
 
-# How many editor dropdowns sit side by side on one line in Settings. Two fits
-# the longest scope name ("Movie Clip Editor") without truncating at the panel
-# widths the editor is usable at; three starts clipping them.
-SCOPE_COLUMNS = 2
+# How many editor dropdowns sit side by side on one line in Settings. Each cell
+# is a dropdown plus its remove button, so this is also how many of those pairs
+# have to fit across the Settings box.
+SCOPE_COLUMNS = 3
 
 
 # Which Blender keymap each scope registers into: id -> (keymap name, space).
@@ -117,3 +117,43 @@ WINDOW_MODE_KEYMAPS = (
     'Object Mode', 'Mesh', 'Curve', 'Armature', 'Pose',
     'Sculpt', 'Vertex Paint', 'Weight Paint', 'Image Paint',
 )
+
+
+# The Editor dropdown's contents, shared by a pie's legacy `keymap_type` and by
+# every row in its `keymap_scopes` so the two can never drift apart. The bare
+# ("", "Modes", "") entries are Blender's own way of writing a heading inside
+# an enum dropdown -- they carry no identifier, so anything walking this list
+# for real scopes has to skip the falsy ones.
+KEYMAP_TYPE_ITEMS = [
+    ('WINDOW', "Window (Global)",
+     "Every 3D viewport mode - object, edit, sculpt and the paint modes"),
+
+    ("", "Modes", ""),
+    ('OBJECT_MODE', "Object Mode", "3D viewport, object mode only"),
+    ('MESH', "Mesh (Edit Mode)", "3D viewport, mesh edit mode only"),
+    ('CURVE', "Curve (Edit Mode)", "3D viewport, curve edit mode only"),
+    ('ARMATURE', "Armature (Edit Mode)", "3D viewport, armature edit mode only"),
+    ('POSE', "Pose Mode", "3D viewport, pose mode only"),
+    ('SCULPT', "Sculpt Mode", "3D viewport, sculpt mode only"),
+    ('VERTEX_PAINT', "Vertex Paint", "3D viewport, vertex paint mode only"),
+    ('WEIGHT_PAINT', "Weight Paint", "3D viewport, weight paint mode only"),
+    ('IMAGE_PAINT', "Texture Paint", "3D viewport, texture paint mode only"),
+    ('UV_EDITOR', "UV Editor", "UV editing only, not the Image editor at large"),
+
+    ("", "Editors", ""),
+    ('3D_VIEW', "3D View", "3D Viewport, every mode"),
+    ('IMAGE_EDITOR', "Image Editor", "Image Editor, including UV editing"),
+    ('NODE_EDITOR', "Node Editor", "Node Editor/Shader Editor/Geometry Nodes"),
+    ('SEQUENCE_EDITOR', "Sequencer", "Video Sequencer"),
+    ('CLIP_EDITOR', "Movie Clip Editor", "Movie Clip Editor"),
+    ('DOPESHEET_EDITOR', "Dope Sheet", "Dope Sheet"),
+    ('GRAPH_EDITOR', "Graph Editor", "Graph Editor"),
+    ('NLA_EDITOR', "NLA Editor", "NLA Editor"),
+    ('TEXT_EDITOR', "Text Editor", "Text Editor"),
+    ('CONSOLE', "Python Console", "Python Console"),
+    ('INFO', "Info", "Info"),
+    ('OUTLINER', "Outliner", "Outliner"),
+    ('PROPERTIES', "Properties", "Properties"),
+    ('FILE_BROWSER', "File Browser", "File Browser"),
+    ('PREFERENCES', "Preferences", "Preferences"),
+]

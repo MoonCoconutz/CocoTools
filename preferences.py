@@ -183,24 +183,34 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         scopes = ensure_keymap_scopes(pie)
         pie_index = self.active_pie_index
         scope_col = col.row(align=True, heading="Editor").column(align=True)
-        # Two per line rather than one, so a pie scoped to several editors
-        # stays a couple of lines tall instead of one line per editor. Even
-        # columns keep the two halves the same width whatever the panel is
-        # stretched to, so the dropdowns line up in a grid rather than
-        # drifting with the length of the editor name in them.
+
+        # Several per line, so a pie scoped to a handful of editors stays a
+        # couple of lines tall instead of one line per editor.
+        #
+        # Every cell holds exactly the same two widgets -- dropdown then its
+        # own remove button. That uniformity is the whole trick: an earlier
+        # version put the + in the first cell and a - in the rest, and
+        # grid_flow, which lays out by cell, shuffled the odd one out onto a
+        # line of its own and left the first editor visually orphaned from
+        # its own row. The + lives below the grid for that reason.
         grid = scope_col.grid_flow(row_major=True, columns=SCOPE_COLUMNS,
                                    even_columns=True, align=True)
         for scope_index, scope in enumerate(scopes):
             cell = grid.row(align=True)
             cell.prop(scope, "keymap_type", text="")
-            if scope_index == 0:
-                cell.operator("cocopie.add_keymap_scope",
-                              text="", icon='ADD').pie_index = pie_index
-            else:
-                op = cell.operator("cocopie.remove_keymap_scope",
-                                   text="", icon='REMOVE')
-                op.pie_index = pie_index
-                op.scope_index = scope_index
+            remove = cell.row(align=True)
+            # The last remaining editor is not removable: a pie scoped nowhere
+            # would be registered nowhere, with nothing in the UI to get back
+            # from. Greyed rather than hidden so the cells stay the same shape.
+            remove.enabled = len(scopes) > 1
+            op = remove.operator("cocopie.remove_keymap_scope",
+                                 text="", icon='REMOVE')
+            op.pie_index = pie_index
+            op.scope_index = scope_index
+
+        add = scope_col.row(align=True)
+        add.operator("cocopie.add_keymap_scope",
+                     text="Add Editor", icon='ADD').pie_index = pie_index
 
         col.separator(factor=0.5)
 

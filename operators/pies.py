@@ -13,7 +13,7 @@ from ..items import (
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
+    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
 )
 from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
@@ -146,14 +146,26 @@ class COCOPIE_OT_add_keymap_scope(Operator):
             return {'CANCELLED'}
 
         existing = ensure_keymap_scopes(pie)
-        # Land on something the pie is not already scoped to, so the new row
-        # is useful immediately instead of duplicating the row above it
+        # Land on something the pie is not already scoped to, so the new row is
+        # useful immediately instead of duplicating the row above it. The short
+        # list is only a preference for the editors most pies want; it falls
+        # through to every remaining scope rather than stopping there, because
+        # stopping there is what produced runs of identical "Window (Global)"
+        # rows once those few were all taken.
         taken = {scope.keymap_type for scope in existing}
+        preferred = ('3D_VIEW', 'UV_EDITOR', 'IMAGE_EDITOR', 'NODE_EDITOR', 'WINDOW')
+        rest = tuple(ident for ident, _label, _desc in KEYMAP_TYPE_ITEMS if ident)
         new_scope = existing.add()
-        for candidate in ('3D_VIEW', 'UV_EDITOR', 'IMAGE_EDITOR', 'NODE_EDITOR', 'WINDOW'):
+        for candidate in preferred + rest:
             if candidate not in taken:
                 new_scope.keymap_type = candidate
                 break
+        else:
+            # Every scope CocoPie knows is already on this pie; nothing left to
+            # add, so do not leave a duplicate row behind
+            existing.remove(len(existing) - 1)
+            self.report({'INFO'}, "This pie is already registered in every editor")
+            return {'CANCELLED'}
 
         register_pie_menus()
         return {'FINISHED'}
