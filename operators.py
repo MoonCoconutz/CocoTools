@@ -1,12 +1,20 @@
-"""Operators driving the selection set list."""
+"""Operators driving the selection set list.
+
+There is exactly one selection: the `use` flag on each row. `coco_selections_index`
+is only the focus (the row a click last landed on) and `coco_selections_anchor` is
+only where a Shift range starts from. Every row command reads the selection, so
+the list can never show one thing and act on another.
+"""
+
+import time
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, IntProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 from bpy.types import Operator
 
 
 def _resolve(context, index):
-    """Return the set at `index`, or the highlighted one when index < 0."""
+    """Return the set at `index`, or the focused one when index < 0."""
     sets = context.scene.coco_selections
     if index < 0:
         index = context.scene.coco_selections_index
@@ -16,8 +24,29 @@ def _resolve(context, index):
 
 
 def _selected_rows(context):
-    """Rows in the current multi-row selection, in list order."""
+    """Rows in the current selection, in list order."""
     return [s for s in context.scene.coco_selections if s.use]
+
+
+def _selected_indices(scene):
+    """Indices of the rows in the current selection, ascending."""
+    return [i for i, sel_set in enumerate(scene.coco_selections) if sel_set.use]
+
+
+def _acting_indices(scene):
+    """What a row command acts on.
+
+    Explorer applies Delete to everything selected, so the selection wins. The
+    focused row is a fallback for when nothing is selected at all.
+    """
+    indices = _selected_indices(scene)
+    if indices:
+        return indices
+
+    index = scene.coco_selections_index
+    if 0 <= index < len(scene.coco_selections):
+        return [index]
+    return []
 
 
 def _unique_name(sets, base="Selection"):
@@ -90,12 +119,120 @@ def apply_object_selection(context, targets, extend=False):
     return found, unreachable
 
 
-def _clamp_anchor(scene):
+def _clamp_focus(scene):
     count = len(scene.coco_selections)
-    if count:
-        scene.coco_selections_anchor = max(0, min(scene.coco_selections_anchor, count - 1))
+    high = count - 1 if count else 0
+    scene.coco_selections_index = max(0, min(scene.coco_selections_index, high))
+    scene.coco_selections_anchor = max(0, min(scene.coco_selections_anchor, high))
+
+
+def _focus_only(scene, index):
+    """Collapse the selection onto one row, with focus and anchor on it."""
+    for sel_set in scene.coco_selections:
+        sel_set.use = False
+    if 0 <= index < len(scene.coco_selections):
+        scene.coco_selections[index].use = True
+        scene.coco_selections_index = index
+        scene.coco_selections_anchor = index
+
+
+def set_row_selection(scene, index, toggle=False, extend_range=False):
+    """Explorer row rules, in one place.
+
+    Plain       - the clicked row becomes the whole selection.
+    Ctrl        - the clicked row flips, everything else stays put.
+    Shift       - anchor..clicked replaces the selection.
+    Ctrl+Shift  - anchor..clicked is added to the selection.
+
+    Focus always lands on the clicked row. The anchor only moves on a plain or
+    Ctrl click, so a second Shift-click resizes the range instead of starting a
+    new one - the detail that makes Explorer ranges feel right. A Shift-click
+    with the anchor out of range degrades to a plain click.
+    """
+    sets = scene.coco_selections
+    if not (0 <= index < len(sets)):
+        return False
+
+    anchor = scene.coco_selections_anchor
+
+    if extend_range and 0 <= anchor < len(sets):
+        low, high = (anchor, index) if anchor <= index else (index, anchor)
+        if not toggle:
+            # Plain Shift replaces the selection, Ctrl+Shift adds to it.
+            for sel_set in sets:
+                sel_set.use = False
+        for i in range(low, high + 1):
+            sets[i].use = True
+        # The anchor deliberately stays put.
+    elif toggle:
+        sets[index].use = not sets[index].use
+        scene.coco_selections_anchor = index
     else:
-        scene.coco_selections_anchor = 0
+        for sel_set in sets:
+            sel_set.use = False
+        sets[index].use = True
+        scene.coco_selections_anchor = index
+
+    scene.coco_selections_index = index
+    return True
+
+
+# Last row click, for double-click detection. A UI button fires on mouse
+# RELEASE, and both clicks of a double-click arrive as identical RELEASE events,
+# so `event.value` is never 'DOUBLE_CLICK' here - the gap has to be timed.
+_last_click = {"index": -1, "time": 0.0}
+
+
+def double_click_check(index, now, threshold, state=None):
+    """True when this click closes a double-click on the same row.
+
+    Pure so it can be tested without a window: `now` and `threshold` are passed
+    in, and `state` defaults to the module-level record.
+
+    Recording the click always happens, and a hit clears the record so a third
+    rapid click starts over instead of renaming again.
+    """
+    if state is None:
+        state = _last_click
+
+    hit = index == state["index"] and 0.0 <= (now - state["time"]) <= threshold
+
+    if hit:
+        state["index"] = -1
+        state["time"] = 0.0
+    else:
+        state["index"] = index
+        state["time"] = now
+
+    return hit
+
+
+def _reorder_map(count, indices, direction):
+    """Where every row lands after moving `indices` one slot.
+
+    Mirrors the collection.move() calls exactly, so focus and anchor can be
+    carried across the move by identity rather than by guesswork.
+
+    Returns (moves, new_position_of_old_index), or (None, None) when the move is
+    blocked by the top or the bottom of the list.
+    """
+    if not indices:
+        return None, None
+
+    if direction == 'UP':
+        if indices[0] == 0:
+            return None, None
+        moves = [(i, i - 1) for i in indices]
+    else:
+        if indices[-1] == count - 1:
+            return None, None
+        moves = [(i, i + 1) for i in reversed(indices)]
+
+    order = list(range(count))
+    for src, dst in moves:
+        order.insert(dst, order.pop(src))
+
+    return moves, {old: new for new, old in enumerate(order)}
 
 
 class COCOSEL_OT_add(Operator):
@@ -113,25 +250,19 @@ class COCOSEL_OT_add(Operator):
         item.name = name
         item.store(context.selected_objects)
 
-        index = len(scene.coco_selections) - 1
-        scene.coco_selections_index = index
-
         # The new row becomes the selection, the way a new folder does in a file
         # browser - and it honestly reflects what is selected right now.
-        for sel_set in scene.coco_selections:
-            sel_set.use = False
-        item.use = True
-        scene.coco_selections_anchor = index
+        _focus_only(scene, len(scene.coco_selections) - 1)
 
         self.report({'INFO'}, "'%s' stores %d object(s)" % (name, len(item.objects)))
         return {'FINISHED'}
 
 
 class COCOSEL_OT_remove(Operator):
-    """Remove the highlighted selection set"""
+    """Remove every selected set"""
 
     bl_idname = "cocosel.remove"
-    bl_label = "Remove Selection Set"
+    bl_label = "Remove Selection Sets"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -140,28 +271,40 @@ class COCOSEL_OT_remove(Operator):
 
     def execute(self, context):
         scene = context.scene
-        index = scene.coco_selections_index
-        if not (0 <= index < len(scene.coco_selections)):
+        indices = _acting_indices(scene)
+        if not indices:
             return {'CANCELLED'}
 
-        scene.coco_selections.remove(index)
-        scene.coco_selections_index = max(0, min(index, len(scene.coco_selections) - 1))
-        _clamp_anchor(scene)
+        for i in reversed(indices):
+            scene.coco_selections.remove(i)
+
+        count = len(scene.coco_selections)
+        if count:
+            # Explorer lands on whatever slid into the gap.
+            _focus_only(scene, min(indices[0], count - 1))
+        else:
+            scene.coco_selections_index = 0
+            scene.coco_selections_anchor = 0
+
+        if context.mode == 'OBJECT':
+            apply_object_selection(context, _selected_rows(context))
+
+        self.report({'INFO'}, "Removed %d set(s)" % len(indices))
         return {'FINISHED'}
 
 
 class COCOSEL_OT_move(Operator):
-    """Move the highlighted selection set up or down in the list"""
+    """Move every selected set up or down in the list"""
 
     bl_idname = "cocosel.move"
-    bl_label = "Move Selection Set"
+    bl_label = "Move Selection Sets"
     bl_options = {'REGISTER', 'UNDO'}
 
     direction: EnumProperty(
         name="Direction",
         items=(
-            ('UP', "Up", "Move the set one slot up"),
-            ('DOWN', "Down", "Move the set one slot down"),
+            ('UP', "Up", "Move the sets one slot up"),
+            ('DOWN', "Down", "Move the sets one slot down"),
         ),
         default='UP',
         options={'SKIP_SAVE'},
@@ -174,26 +317,29 @@ class COCOSEL_OT_move(Operator):
     def execute(self, context):
         scene = context.scene
         sets = scene.coco_selections
-        index = scene.coco_selections_index
-        new_index = index - 1 if self.direction == 'UP' else index + 1
+        indices = _acting_indices(scene)
 
-        if not (0 <= index < len(sets)) or not (0 <= new_index < len(sets)):
+        moves, new_pos = _reorder_map(len(sets), indices, self.direction)
+        if moves is None:
+            # Already against the top or the bottom.
             return {'CANCELLED'}
 
-        sets.move(index, new_index)
-        scene.coco_selections_index = new_index
+        for src, dst in moves:
+            sets.move(src, dst)
 
-        # Keep the range anchor pinned to the row it was pointing at.
-        anchor = scene.coco_selections_anchor
-        if anchor == index:
-            scene.coco_selections_anchor = new_index
-        elif anchor == new_index:
-            scene.coco_selections_anchor = index
+        # Carry focus and anchor with the rows they were pointing at.
+        scene.coco_selections_index = new_pos.get(
+            scene.coco_selections_index, scene.coco_selections_index
+        )
+        scene.coco_selections_anchor = new_pos.get(
+            scene.coco_selections_anchor, scene.coco_selections_anchor
+        )
+        _clamp_focus(scene)
         return {'FINISHED'}
 
 
 class COCOSEL_OT_row_click(Operator):
-    """Select this set. Shift-click for a range, Ctrl-click to add or remove"""
+    """Select this set. Ctrl-click to add or remove, Shift-click for a range"""
 
     bl_idname = "cocosel.row_click"
     bl_label = "Select Set"
@@ -211,39 +357,23 @@ class COCOSEL_OT_row_click(Operator):
         return True
 
     def invoke(self, context, event):
+        # The first click of a double-click has already selected the row, so the
+        # second one renames instead of re-selecting - the file browser habit.
+        # Modified clicks are excluded: Ctrl-clicking a row twice to add then
+        # remove it is a normal thing to do, and must not open a rename.
+        if not event.ctrl and not event.shift:
+            threshold = context.preferences.inputs.mouse_double_click_time / 1000.0
+            if double_click_check(self.index, time.monotonic(), threshold):
+                return bpy.ops.cocosel.rename('INVOKE_DEFAULT', index=self.index)
+
         self.use_toggle = event.ctrl
         self.use_range = event.shift
         return self.execute(context)
 
     def execute(self, context):
         scene = context.scene
-        sets = scene.coco_selections
-        index = self.index
-        if not (0 <= index < len(sets)):
+        if not set_row_selection(scene, self.index, self.use_toggle, self.use_range):
             return {'CANCELLED'}
-
-        anchor = scene.coco_selections_anchor
-
-        if self.use_range and 0 <= anchor < len(sets):
-            low, high = (anchor, index) if anchor <= index else (index, anchor)
-            if not self.use_toggle:
-                # Plain Shift replaces the selection, Ctrl+Shift adds to it.
-                for sel_set in sets:
-                    sel_set.use = False
-            for i in range(low, high + 1):
-                sets[i].use = True
-            # The anchor deliberately stays put, so the range can be resized by
-            # shift-clicking somewhere else - exactly like a file browser.
-        elif self.use_toggle:
-            sets[index].use = not sets[index].use
-            scene.coco_selections_anchor = index
-        else:
-            for sel_set in sets:
-                sel_set.use = False
-            sets[index].use = True
-            scene.coco_selections_anchor = index
-
-        scene.coco_selections_index = index
 
         rows = _selected_rows(context)
         found, unreachable = apply_object_selection(context, rows)
@@ -257,6 +387,47 @@ class COCOSEL_OT_row_click(Operator):
                 "Selected %d object(s), %d not reachable in this view layer"
                 % (found, unreachable),
             )
+        return {'FINISHED'}
+
+
+class COCOSEL_OT_rename(Operator):
+    """Rename this set"""
+
+    bl_idname = "cocosel.rename"
+    bl_label = "Rename Selection Set"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: IntProperty(default=-1, options={'SKIP_SAVE'})
+    # Used by the scripted path only; the popup types into the scene's
+    # coco_rename_buffer, which applies the name itself.
+    new_name: StringProperty(name="Name", default="", options={'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.coco_selections) > 0
+
+    def invoke(self, context, event):
+        scene = context.scene
+        if 0 <= self.index < len(scene.coco_selections):
+            # The popup renames whatever row has focus, so point focus at the
+            # row that was actually clicked.
+            scene.coco_selections_index = self.index
+        elif not (0 <= scene.coco_selections_index < len(scene.coco_selections)):
+            return {'CANCELLED'}
+
+        scene.coco_rename_buffer = ""
+        return bpy.ops.wm.call_panel(name="COCOSEL_PT_rename", keep_open=False)
+
+    def execute(self, context):
+        sel_set = _resolve(context, self.index)
+        if sel_set is None:
+            return {'CANCELLED'}
+
+        name = self.new_name.strip()
+        if not name:
+            return {'CANCELLED'}
+
+        sel_set.name = name
         return {'FINISHED'}
 
 
@@ -303,7 +474,7 @@ class COCOSEL_OT_select(Operator):
 
     def targets(self, context):
         """An explicit index acts on that row alone, otherwise every selected
-        row, falling back to the highlighted one when nothing is selected."""
+        row, falling back to the focused one when nothing is selected."""
         if self.index >= 0:
             sets = context.scene.coco_selections
             return [sets[self.index]] if 0 <= self.index < len(sets) else []
@@ -317,7 +488,7 @@ class COCOSEL_OT_select(Operator):
 
 
 class COCOSEL_OT_update(Operator):
-    """Replace the contents of the highlighted set with the current selection"""
+    """Replace the contents of the selected set with the current selection"""
 
     bl_idname = "cocosel.update"
     bl_label = "Update From Selection"
@@ -327,10 +498,21 @@ class COCOSEL_OT_update(Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.coco_selections) > 0
+        if len(context.scene.coco_selections) == 0:
+            return False
+        if len(_acting_indices(context.scene)) > 1:
+            cls.poll_message_set("Select a single set to update")
+            return False
+        return True
 
     def execute(self, context):
-        sel_set = _resolve(context, self.index)
+        scene = context.scene
+        if self.index >= 0:
+            sel_set = _resolve(context, self.index)
+        else:
+            indices = _acting_indices(scene)
+            sel_set = scene.coco_selections[indices[0]] if len(indices) == 1 else None
+
         if sel_set is None:
             return {'CANCELLED'}
 
@@ -365,13 +547,16 @@ class COCOSEL_OT_check_all(Operator):
         return len(context.scene.coco_selections) > 0
 
     def execute(self, context):
-        for sel_set in context.scene.coco_selections:
+        scene = context.scene
+        for sel_set in scene.coco_selections:
             if self.action == 'ALL':
                 sel_set.use = True
             elif self.action == 'NONE':
                 sel_set.use = False
             else:
                 sel_set.use = not sel_set.use
+
+        _clamp_focus(scene)
 
         # Keep the viewport in step with the rows, the way a row click does.
         if context.mode == 'OBJECT':
@@ -384,6 +569,7 @@ classes = (
     COCOSEL_OT_remove,
     COCOSEL_OT_move,
     COCOSEL_OT_row_click,
+    COCOSEL_OT_rename,
     COCOSEL_OT_select,
     COCOSEL_OT_update,
     COCOSEL_OT_check_all,

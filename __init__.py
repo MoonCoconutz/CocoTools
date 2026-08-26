@@ -1,7 +1,7 @@
 bl_info = {
-    "name": "Coco Selections",
+    "name": "CocoSelections",
     "author": "Coco",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (3, 0, 0),
     "location": "3D Viewport > Sidebar (N) > Coco > Selections",
     "description": "Store named object selections and restore them with one click.",
@@ -13,15 +13,14 @@ if "bpy" in locals():
     import importlib
 
     importlib.reload(properties)
-    importlib.reload(icons)
     importlib.reload(operators)
     importlib.reload(ui)
 else:
-    from . import properties, icons, operators, ui
+    from . import properties, operators, ui
 
 import bpy  # noqa: E402
 
-_modules = (properties, icons, operators, ui)
+_modules = (properties, operators, ui)
 
 
 def register():

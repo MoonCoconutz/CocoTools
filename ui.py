@@ -5,53 +5,73 @@ the operators."""
 import bpy
 from bpy.types import Panel, UIList
 
-from . import icons
-
 
 class COCOSEL_UL_selections(UIList):
     """One row per stored selection set.
 
-    The state dot on the left is the click surface. A UIList row click cannot
-    report modifier keys to Python, but an operator button can, so the dot is
-    what carries the click / Shift-click / Ctrl-click behaviour.
+    The whole row is one click target, so clicking anywhere on it selects the
+    set the way clicking a file selects it in Explorer. A UIList row click
+    cannot report modifier keys to Python, but an operator button can, which is
+    what makes Ctrl and Shift work at all.
+
+    Selected rows paint themselves with `depress`, which picks up the theme's
+    selection colour across the full width. A UIList cannot paint a row
+    background and only ever highlights the one active row, so this is the only
+    way to show several selected rows at once - and it keeps the selection cue
+    to a single thing rather than a highlight plus an icon.
     """
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            scene = context.scene
             row = layout.row(align=True)
 
-            if item.use:
-                state = "active" if index == scene.coco_selections_anchor else "selected"
-            else:
-                state = "empty"
+            selected = item.use
 
-            icon_value = icons.icon_id(state)
-            if icon_value:
-                click = row.operator(
-                    "cocosel.row_click", text="", emboss=False, icon_value=icon_value
-                )
-            else:
-                # Theme icons unavailable - fall back to built-ins.
-                click = row.operator(
-                    "cocosel.row_click",
-                    text="",
-                    emboss=False,
-                    icon='LAYER_ACTIVE' if item.use else 'LAYER_USED',
-                )
-            click.index = index
-
-            # Double-click to rename in place.
-            row.prop(item, "name", text="", emboss=False)
-
-            count = row.row(align=True)
-            count.alignment = 'RIGHT'
-            count.active = False
-            count.label(text=str(len(item.valid_objects())))
+            # One button for the whole row, so a selected row is a single
+            # unbroken bar. Blender centres text in a wide button and offers no
+            # left-align for one, so the count rides in the label rather than
+            # sitting in a second button - which is what used to seam the bar.
+            row.operator(
+                "cocosel.row_click",
+                text="%s   %d" % (item.name, len(item.valid_objects())),
+                emboss=selected,
+                depress=selected,
+            ).index = index
 
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="", icon='RESTRICT_SELECT_OFF')
+
+
+class COCOSEL_PT_rename(Panel):
+    """Popup shown by a double-click or the pencil.
+
+    Opened with `wm.call_panel(keep_open=False)` - the same mechanism as
+    Blender's own F2 rename - so confirming the field applies the name and
+    closes the popup in one Enter. An operator popup needs two: one to confirm
+    the field, one to dismiss the popup.
+    """
+
+    bl_idname = "COCOSEL_PT_rename"
+    bl_space_type = 'TOPBAR'
+    bl_region_type = 'HEADER'
+    bl_label = "Rename Selection Set"
+
+    def draw(self, context):
+        scene = context.scene
+        layout = self.layout
+
+        index = scene.coco_selections_index
+        if 0 <= index < len(scene.coco_selections):
+            current = layout.row()
+            current.active = False
+            current.label(text=scene.coco_selections[index].name, icon='GREASEPENCIL')
+
+        # Focused, and empty: typing replaces the name outright. Blender can
+        # focus a popup field but never select its contents, so starting empty
+        # is the only way to get select-all behaviour.
+        layout.activate_init = True
+        layout.prop(scene, "coco_rename_buffer", text="")
 
 
 class COCOSEL_PT_selections(Panel):
@@ -74,7 +94,7 @@ class COCOSEL_PT_selections(Panel):
             scene,
             "coco_selections",
             scene,
-            "coco_selections_index",
+            "coco_selections_ui_index",
             rows=4,
         )
 
@@ -84,6 +104,8 @@ class COCOSEL_PT_selections(Panel):
         side.separator()
         side.operator("cocosel.move", text="", icon='TRIA_UP').direction = 'UP'
         side.operator("cocosel.move", text="", icon='TRIA_DOWN').direction = 'DOWN'
+        side.separator()
+        side.operator("cocosel.rename", text="", icon='GREASEPENCIL').index = -1
 
         if not scene.coco_selections:
             layout.label(text="Select objects, then press +", icon='INFO')
@@ -95,21 +117,14 @@ class COCOSEL_PT_selections(Panel):
             bulk.operator("cocosel.check_all", text="None").action = 'NONE'
             bulk.operator("cocosel.check_all", text="Invert").action = 'INVERT'
 
-        selected = sum(1 for s in scene.coco_selections if s.use)
-
-        actions = layout.row(align=True)
-        actions.operator(
-            "cocosel.select",
-            text="Select (%d)" % selected if selected else "Select",
-            icon='RESTRICT_SELECT_OFF',
-        ).index = -1
-        actions.operator(
+        layout.operator(
             "cocosel.update", text="Update", icon='FILE_REFRESH'
         ).index = -1
 
 
 classes = (
     COCOSEL_UL_selections,
+    COCOSEL_PT_rename,
     COCOSEL_PT_selections,
 )
 
