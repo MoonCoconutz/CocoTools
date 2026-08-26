@@ -1,9 +1,9 @@
 bl_info = {
-    "name": "CocoPie",
+    "name": "CocoPies",
     "author": "Custom",
     "version": (1, 8, 0),
     "blender": (4, 5, 0),
-    "location": "Preferences > Add-ons > CocoPie",
+    "location": "Preferences > Add-ons > CocoPies",
     "description": "Create and manage custom pie menus from addon preferences",
     "category": "Interface",
 }
@@ -101,7 +101,7 @@ def _scrub_context_menu_entries(menu):
     left over from an earlier module instance can be a different function
     object with the same __name__/__module__, which plain .remove(func)
     would not find. Left unscrubbed, that stale entry keeps drawing forever,
-    which is what produced the duplicate "Add to CocoPie" rows.
+    which is what produced the duplicate "Add to CocoPies" rows.
     """
     draw_funcs = menu._dyn_ui_initialize()
     draw_funcs[:] = [
@@ -130,10 +130,10 @@ def register():
                 registered = True
                 break
         except Exception as e:
-            print(f"CocoPie: Could not register to {menu_class}: {e}")
+            print(f"CocoPies: Could not register to {menu_class}: {e}")
 
     if not registered:
-        print("CocoPie: Context menu not available - use manual Add Item button")
+        print("CocoPies: Context menu not available - use manual Add Item button")
 
     # Fresh install: no saved configuration at all, so lay down the starter
     # pies. Deliberately only when there is nothing, so a user who deletes or
@@ -157,11 +157,11 @@ def register():
             try:
                 added = ensure_default_pies(prefs)
                 if added:
-                    print(f"CocoPie: added {added} starter pie menu(s) on first run")
+                    print(f"CocoPies: added {added} starter pie menu(s) on first run")
             except Exception as e:
-                print(f"CocoPie: could not create the starter pie menus: {e}")
+                print(f"CocoPies: could not create the starter pie menus: {e}")
         elif len(prefs.pie_menus) == 0:
-            print("CocoPie: no pie menus in memory after a re-enable. Your saved "
+            print("CocoPies: no pie menus in memory after a re-enable. Your saved "
                   "pies are still on disk -- restart Blender to load them. "
                   "Not recreating the starter pies, which would overwrite them.")
         # Set even when nothing was seeded: a later re-enable in this same
@@ -193,7 +193,7 @@ def unregister():
         try:
             bpy.utils.unregister_class(cls)
         except Exception as e:
-            print(f"CocoPie: could not unregister {getattr(cls, '__name__', cls)}: {e}")
+            print(f"CocoPies: could not unregister {getattr(cls, '__name__', cls)}: {e}")
 
     unregister_previews()
 

@@ -72,7 +72,7 @@ def bundled_script_paths():
     """{filename: absolute path} for the example scripts that are present.
 
     Resolved from this file's own location, so the paths baked into the starter
-    pie point at wherever CocoPie was installed -- an absolute path saved on one
+    pie point at wherever CocoPies was installed -- an absolute path saved on one
     machine, or under one Blender version, does not survive being carried to
     another. A missing file is left out rather than pointed at.
     """
@@ -83,7 +83,7 @@ def bundled_script_paths():
         if os.path.exists(path):
             paths[filename] = path
         else:
-            print(f"CocoPie: bundled script missing: {path}")
+            print(f"CocoPies: bundled script missing: {path}")
     return paths
 
 

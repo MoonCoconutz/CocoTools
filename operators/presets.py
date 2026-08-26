@@ -51,7 +51,7 @@ class COCOPIE_OT_save_preset(Operator):
                 pie_dict = {
                     "name": pie.name,
                     "idname": pie.idname,
-                    # keymap_type is still written for CocoPie versions that
+                    # keymap_type is still written for CocoPies versions that
                     # predate multi-scope pies: they read it and ignore
                     # keymap_scopes, so such a preset still imports there --
                     # scoped to the first editor rather than failing outright

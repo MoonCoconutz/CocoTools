@@ -95,7 +95,7 @@ def update_pie_menu(self, context):
         # letting it raise would break editing the field. But a failed rebuild
         # leaves the menus half-torn-down with nothing in the UI to show it,
         # so it has to at least say so rather than vanishing entirely.
-        print(f"CocoPie: failed to rebuild pie menus: {e}")
+        print(f"CocoPies: failed to rebuild pie menus: {e}")
 
 
 class COCOPIE_KeymapScope(PropertyGroup):

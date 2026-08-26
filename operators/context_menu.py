@@ -1,4 +1,4 @@
-"""The right-click "Add to CocoPie" entry.
+"""The right-click "Add to CocoPies" entry.
 
 Built out of real nested Menus rather than chained popups. Clicking an entry
 in a popup tears that popup down, and a second popup opened during the same
@@ -118,7 +118,7 @@ def _items_by_position(pie):
 class COCOPIE_MT_add_to_cocopie(Menu):
     """The pie list: one submenu per configured pie menu"""
     bl_idname = "COCOPIE_MT_add_to_cocopie"
-    bl_label = "Add to CocoPie"
+    bl_label = "Add to CocoPies"
 
     def draw(self, context):
         layout = self.layout
@@ -260,7 +260,7 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
 
 
 def menu_func_context(self, context):
-    """Add the 'Add to CocoPie' submenu to the button right-click menu"""
+    """Add the 'Add to CocoPies' submenu to the button right-click menu"""
     captured = _capture_button(context)
     if not captured:
         return
@@ -272,4 +272,4 @@ def menu_func_context(self, context):
 
     layout = self.layout
     layout.separator()
-    layout.menu("COCOPIE_MT_add_to_cocopie", text="Add to CocoPie", icon='MENU_PANEL')
+    layout.menu("COCOPIE_MT_add_to_cocopie", text="Add to CocoPies", icon='MENU_PANEL')

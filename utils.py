@@ -21,7 +21,7 @@ from .items import (
 
 # The key this addon is registered under, and the key its preferences are
 # stored against. Taken from the package rather than __name__, which inside a
-# submodule would be "CocoPie.utils" and match no registered addon.
+# submodule would be "CocoPies.utils" and match no registered addon.
 ADDON_ID = __package__
 
 
@@ -105,7 +105,7 @@ def ensure_keymap_scopes(pie):
     the pre-multi-scope `keymap_type` field.
 
     Idempotent, and called defensively before anything reads the scopes --
-    same contract as ensure_slot_items(). A pie saved by an older CocoPie (or
+    same contract as ensure_slot_items(). A pie saved by an older CocoPies (or
     imported from an older preset, or built by defaults.py, which still
     declares a single "keymap_type") arrives with an empty collection; this is
     what silently migrates it, so no stored data has to be rewritten up front.
@@ -183,14 +183,14 @@ def find_shortcut_conflicts(prefs, pie, index):
     return conflicts
 
 
-# Every CocoPie-owned operator that has ever been bound to a keymap item,
+# Every CocoPies-owned operator that has ever been bound to a keymap item,
 # including ones no longer bound by the current code. Items created by an
 # older version outlive it -- they sit in the saved keyconfig and keep firing
 # -- so a retired idname has to stay in this set, not be dropped from it.
 # `cocopie.tap_toggle_direction` is exactly that case: it used to be bound to
 # CLICK directly, and those leftovers fired the toggle on a plain tap no
 # matter what Tap to Toggle was set to. Used both to sweep stale items on
-# unregister and to keep CocoPie out of its own conflict scan.
+# unregister and to keep CocoPies out of its own conflict scan.
 COCOPIE_KEYMAP_IDNAMES = {
     'cocopie.hold_or_tap',
     'cocopie.tap_toggle_direction',
@@ -211,7 +211,7 @@ _KEYMAP_EXTRA_ANCESTORS = {
 # contend for it. Blender resolves PRESS first, so a PRESS binding elsewhere
 # swallows the key before a CLICK/CLICK_DRAG pie is ever considered -- they
 # genuinely conflict even though the values differ, which is why this is a
-# family rather than the exact-equality test used between two CocoPie pies.
+# family rather than the exact-equality test used between two CocoPies pies.
 _PRESS_FAMILY = frozenset({'PRESS', 'CLICK', 'DOUBLE_CLICK', 'CLICK_DRAG', 'ANY'})
 _RELEASE_FAMILY = frozenset({'RELEASE', 'ANY'})
 
@@ -223,7 +223,7 @@ _external_index = None
 def invalidate_external_shortcut_index():
     """Drop the cached scan of everyone else's shortcuts.
 
-    Called whenever CocoPie re-registers, which is also when another addon is
+    Called whenever CocoPies re-registers, which is also when another addon is
     most likely to have been enabled or disabled behind us.
     """
     global _external_index
@@ -256,11 +256,11 @@ def _keymap_item_label(kmi):
 
 
 def _build_external_index():
-    """Index every non-CocoPie shortcut in the user keyconfig, keyed by key type.
+    """Index every non-CocoPies shortcut in the user keyconfig, keyed by key type.
 
     The user keyconfig is the one Blender actually dispatches from -- it merges
     Blender's defaults, every addon's items and the user's own edits, and its
-    `active` flags are the ones that count. CocoPie's own items are mirrored
+    `active` flags are the ones that count. CocoPies's own items are mirrored
     into it too, so they are filtered out here or every pie would report a
     conflict with itself.
     """
@@ -331,11 +331,11 @@ def _values_contend(pie_value, other_value):
 
 
 def find_external_conflicts(pie, limit=6):
-    """Shortcuts outside CocoPie -- Blender's own or another addon's -- that
+    """Shortcuts outside CocoPies -- Blender's own or another addon's -- that
     would fight this pie for its key.
 
     This is the blind spot the pie-vs-pie check leaves: it only ever compared
-    CocoPie menus against each other, so a third-party binding on the same key
+    CocoPies menus against each other, so a third-party binding on the same key
     was invisible in the editor no matter how completely it shadowed the pie.
     """
     global _external_index
@@ -465,4 +465,4 @@ DEBUG = False
 def _debug(message):
     """Print registration tracing, but only when DEBUG is on"""
     if DEBUG:
-        print(f"CocoPie: {message}")
+        print(f"CocoPies: {message}")

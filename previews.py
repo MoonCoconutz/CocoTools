@@ -1,4 +1,4 @@
-"""Icons CocoPie loads itself, rather than taking from Blender.
+"""Icons CocoPies loads itself, rather than taking from Blender.
 
 Two kinds live here:
 
@@ -39,7 +39,7 @@ def icons_dir():
 def custom_icon_dirs():
     """Folders scanned for custom icons.
 
-    Only one, inside the addon, so everything CocoPie owns stays within its own
+    Only one, inside the addon, so everything CocoPies owns stays within its own
     folder rather than scattering directories through Blender's scripts
     directory. The trade-off is that reinstalling the addon replaces the folder
     along with the rest of the package.
@@ -53,13 +53,13 @@ def _load_slot_arrows(collection):
     for position in range(8):
         path = os.path.join(folder, f"slot_{position}.png")
         if not os.path.exists(path):
-            print(f"CocoPie: slot icon missing: {path}")
+            print(f"CocoPies: slot icon missing: {path}")
             continue
         try:
             collection.load(f"slot_{position}", path, 'IMAGE')
             loaded += 1
         except Exception as e:
-            print(f"CocoPie: could not load slot icon {position}: {e}")
+            print(f"CocoPies: could not load slot icon {position}: {e}")
     return loaded
 
 
@@ -105,7 +105,7 @@ def _load_custom(collection):
 
             actual = _real_format(os.path.join(folder, filename))
             if actual not in ("PNG", "JPEG"):
-                print(f"CocoPie: {filename} is named like an image but is "
+                print(f"CocoPies: {filename} is named like an image but is "
                       f"{actual or 'an unrecognised format'} inside, so it "
                       f"would load blank -- convert it to a real PNG")
                 continue
@@ -115,7 +115,7 @@ def _load_custom(collection):
                 seen.add(stem)
                 names.append(stem)
             except Exception as e:
-                print(f"CocoPie: could not load custom icon {filename}: {e}")
+                print(f"CocoPies: could not load custom icon {filename}: {e}")
     return names
 
 
@@ -128,7 +128,7 @@ def register_previews():
     try:
         collection = bpy.utils.previews.new()
     except Exception as e:
-        print(f"CocoPie: could not create the icon preview collection: {e}")
+        print(f"CocoPies: could not create the icon preview collection: {e}")
         return
 
     arrows = _load_slot_arrows(collection)

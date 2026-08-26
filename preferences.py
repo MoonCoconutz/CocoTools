@@ -291,9 +291,9 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             warn.label(text=f"Same shortcut as: {names}", icon='ERROR')
 
         # Shortcuts owned by Blender or another addon. Reported separately and
-        # more quietly than a CocoPie-vs-CocoPie clash: this one is usually not
+        # more quietly than a CocoPies-vs-CocoPies clash: this one is usually not
         # a mistake to fix but a fact to know about, and unlike the check above
-        # CocoPie cannot resolve it by editing its own settings.
+        # CocoPies cannot resolve it by editing its own settings.
         external = find_external_conflicts(pie)
         if external:
             ext_box = box.box()

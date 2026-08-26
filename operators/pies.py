@@ -161,7 +161,7 @@ class COCOPIE_OT_add_keymap_scope(Operator):
                 new_scope.keymap_type = candidate
                 break
         else:
-            # Every scope CocoPie knows is already on this pie; nothing left to
+            # Every scope CocoPies knows is already on this pie; nothing left to
             # add, so do not leave a duplicate row behind
             existing.remove(len(existing) - 1)
             self.report({'INFO'}, "This pie is already registered in every editor")

@@ -256,7 +256,7 @@ class COCOPIE_OT_select_icon(Operator):
 
     def _filtered_icons(self):
         # Custom icons are not in Blender's catalogue -- they are files
-        # CocoPie loaded -- so they are listed by reference, prefix and all
+        # CocoPies loaded -- so they are listed by reference, prefix and all
         if self.category == 'CUSTOM':
             refs = [CUSTOM_PREFIX + name for name in custom_icon_names()]
             needle = self.search.strip().lower()

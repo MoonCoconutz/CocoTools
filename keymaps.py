@@ -97,7 +97,7 @@ def register_pie_menus():
     kc = wm.keyconfigs.addon
     
     if not kc:
-        print("CocoPie: No addon keyconfig found")
+        print("CocoPies: No addon keyconfig found")
         return
     
     for pie_index, pie_data in enumerate(prefs.pie_menus):
@@ -141,13 +141,13 @@ def register_pie_menus():
                     registered_keymaps.append(
                         _add_keymap_item(km, key, pie_data, pie_index))
                 except Exception as e:
-                    print(f"CocoPie: Could not register keymap for {km_name}: {e}")
+                    print(f"CocoPies: Could not register keymap for {km_name}: {e}")
 
             _debug(f"Registered keymap: {format_shortcut(pie_data)} in "
                   f"{[n for n, _s in targets]} for {pie_data.idname}")
         
         except Exception as e:
-            print(f"CocoPie: Error registering pie menu {pie_data.idname}: {e}")
+            print(f"CocoPies: Error registering pie menu {pie_data.idname}: {e}")
             import traceback
             traceback.print_exc()
 
@@ -155,7 +155,7 @@ def register_pie_menus():
 def unregister_pie_menus():
     """Unregister all pie menus and keymaps.
 
-    Sweeps every keymap CocoPie could have touched for any wm.call_menu_pie
+    Sweeps every keymap CocoPies could have touched for any wm.call_menu_pie
     item that points at one of our menus, or any cocopie.hold_or_tap item
     (Tap to Toggle's keymap item, which would orphan exactly the same way if
     left out of this sweep), rather than trusting only

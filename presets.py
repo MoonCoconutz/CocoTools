@@ -47,7 +47,7 @@ def _apply_pie_dict(pie, pie_dict):
             pie.keymap_scopes.add().keymap_type = scope_type
         except TypeError:
             pie.keymap_scopes.remove(len(pie.keymap_scopes) - 1)
-            print(f"CocoPie: preset names an unknown editor {scope_type!r}, skipped")
+            print(f"CocoPies: preset names an unknown editor {scope_type!r}, skipped")
     pie.key = pie_dict.get("key", "Q")
     # any_modifier and oskey are absent from presets saved before this pair
     # existed; .get() defaults them to False, same as a freshly created pie
@@ -163,5 +163,5 @@ def _deferred_show_preset_conflict_popup():
                 icon='QUESTION',
             )
     except Exception as e:
-        print(f"CocoPie: failed to show conflict popup: {e}")
+        print(f"CocoPies: failed to show conflict popup: {e}")
     return None  # don't repeat the timer

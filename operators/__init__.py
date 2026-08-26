@@ -1,4 +1,4 @@
-"""Every operator CocoPie registers, grouped by what it acts on."""
+"""Every operator CocoPies registers, grouped by what it acts on."""
 
 from .pies import (
     COCOPIE_OT_execute_command,
