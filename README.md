@@ -46,7 +46,8 @@ There is no Select button: selecting a row already selects its objects, so it
 had nothing left to do. The `cocosel.select` operator is still registered and
 can be bound to a key if you want the shift-to-extend behaviour.
 
-The number after each name is how many objects the set still holds.
+The number in the left-hand column of each row is how many objects the set
+still holds.
 
 ### Row selection behaves like a file browser
 
@@ -133,11 +134,18 @@ in the theme's selection colour across the full width - so any number of rows
 can read as selected at once. Unselected rows are drawn with `emboss=False` so
 they stay flat text.
 
-The row has to be **one** button, not a name button plus a count button:
-Blender draws a hairline between adjacent buttons, which split the selection bar
-in half. One button means one label, and Blender centres the text of a wide
-button with no way to left-align it, which is why the name is centred and the
-object count rides in the same label.
+A row is three buttons: the object count in a fixed-width column, the name
+hugging the left of what remains, and an empty filler taking the slack so the
+whole row stays one click target and the bar runs full width.
+
+The count leads because Blender draws a divider between aligned buttons and
+offers no way to suppress it. A single button has no divider but centres its
+text, and there is no left-align for the text of a wide button; `NONE_OR_STATUS`
+emboss looks like the answer and is not, since `depress` does not count as a
+"colouring status" and it paints no fill at all. So rather than let the divider
+fall somewhere arbitrary in the middle of the bar, the layout puts a column
+where a divider is wanted anyway. The fixed width keeps that divider in the same
+place on every row whatever the count, and fits four digits.
 
 The list is handed `coco_selections_ui_index`, a property that is permanently
 `-1`. `template_list` paints its active row in the theme's selection colour -

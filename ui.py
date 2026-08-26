@@ -26,17 +26,29 @@ class COCOSEL_UL_selections(UIList):
             row = layout.row(align=True)
 
             selected = item.use
+            style = {"emboss": selected, "depress": selected}
 
-            # One button for the whole row, so a selected row is a single
-            # unbroken bar. Blender centres text in a wide button and offers no
-            # left-align for one, so the count rides in the label rather than
-            # sitting in a second button - which is what used to seam the bar.
-            row.operator(
+            # Count first in a fixed-width column, then the name. Blender draws
+            # a divider between aligned buttons and there is no way to suppress
+            # it, so the layout puts one where a divider is wanted anyway - a
+            # count column - instead of leaving it to fall in the middle of the
+            # bar. Fixed width keeps it in the same place whatever the count.
+            count = row.row(align=True)
+            count.ui_units_x = 1.8
+            count.operator(
                 "cocosel.row_click",
-                text="%s   %d" % (item.name, len(item.valid_objects())),
-                emboss=selected,
-                depress=selected,
+                text=str(len(item.valid_objects())),
+                **style
             ).index = index
+
+            name = row.row(align=True)
+            name.alignment = 'LEFT'
+            name.operator(
+                "cocosel.row_click", text=item.name, **style
+            ).index = index
+
+            # Keeps the rest of the row clickable and the bar full width.
+            row.operator("cocosel.row_click", text="", **style).index = index
 
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
