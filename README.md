@@ -33,130 +33,87 @@ Then enable **Object: CocoSelections** in the add-ons list.
 | `+` | Store the current selection as a new set (the new row becomes the selection) |
 | `-` | Delete every selected set |
 | `▲` / `▼` | Reorder every selected set |
-| **Click a row** | Select that set alone — replaces the selection |
-| **Ctrl-click a row** | Add or remove that single row |
-| **Shift-click a row** | Select the whole range from the anchor to that row |
-| **Ctrl+Shift-click a row** | Add a whole range without clearing |
-| Double-click a row | Rename that set (type straight away, Enter applies) |
-| Pencil beside the list | Rename the focused set |
-| **All** / **None** / **Invert** | Bulk row selection |
-| **Update** | Overwrite the selected set with the current selection |
+| **Click a checkbox** | Toggle that set in or out of the selection |
+| **Drag down the checkboxes** | Toggle every row the mouse passes over |
+| **Click a name** | Select that set alone — replaces the selection |
+| **Double-click a name** | Rename it in place |
+| **All** / **Invert** | Bulk row selection |
+| Click empty space in the viewport | Deselect everything, rows included |
+| **Change** | Replace the selected set with the current object selection |
+| **Add** | Add the selected objects to the set |
+| **Remove** | Remove the selected objects from the set |
 
-There is no Select button: selecting a row already selects its objects, so it
-had nothing left to do. The `cocosel.select` operator is still registered and
-can be bound to a key if you want the shift-to-extend behaviour.
+There are no modifier keys to learn. Clicking a checkbox toggles one row,
+dragging across them toggles a run, and clicking a name selects that row alone -
+which is everything Ctrl-click, Shift-range and a plain click used to do.
 
-The number in the left-hand column of each row is how many objects the set
-still holds.
+There is no Select button either: selecting a row already selects its objects.
+The `cocosel.select` operator is still registered and can be bound to a key if
+you want its shift-to-extend behaviour.
 
-### Row selection behaves like a file browser
+The number on the right of each row is how many objects the set still holds.
 
-Selecting rows immediately selects their objects in the viewport, and multiple
+### Row selection drives the viewport, and follows it back
+
+Selecting rows immediately selects their objects in the viewport, and several
 selected rows give the **union** of their objects with overlaps counted once.
-Ctrl-clicking away the last selected row clears the viewport selection.
+Unticking the last row clears the viewport selection.
 
-The **anchor** is the row a plain or Ctrl click last landed on. Shift-click
-deliberately leaves the anchor where it is, so you can shift-click again
-somewhere else to resize the range rather than starting over — same as
-Explorer. If the anchor is out of range, a shift-click degrades to a plain
-click.
+It also works the other way: clicking empty space in the viewport deselects the
+objects, and a `depsgraph_update_post` handler unticks the rows to match, so the
+panel never claims a set is active after its objects have been clicked away.
+There is no **None** button because that handler replaced it.
 
-### Renaming
+The equivalent click *inside the list* is not available - `template_list` draws
+the padding below its rows in C and exposes no click event to Python at all.
 
-Double-clicking a row opens a small popup at the cursor: the current name greyed
-out above, an empty field below with the cursor already in it. Type and press
-Enter once - the name applies and the popup closes. The pencil beside the list
-does the same for the focused row.
+The handler has to avoid undoing the add-on's own work, and cannot do it with an
+"in progress" flag: depsgraph handlers run after the operator has finished, so
+any such flag would already be reset. Instead it leans on a fact - a set holding
+objects can only end up with an empty viewport because something else cleared
+it. When the selected rows hold nothing at all, the empty viewport is this
+add-on's own doing, and the rows are left alone.
 
-It is a **panel** opened with `wm.call_panel(keep_open=False)`, the same
-mechanism as Blender's own F2 rename, not an operator popup. That is what makes
-one Enter enough: an operator popup needs two, one to confirm the field and one
-to dismiss the popup.
+### A row is a checkbox, a name field, and a count
 
-The field writes to `Scene.coco_rename_buffer`, whose update callback renames
-the focused set and then clears itself. The buffer lives on the Scene for two
-reasons that each broke an earlier attempt:
+Each cell is a different kind of widget, because each one is the only thing
+Blender will do that particular job with.
 
-- `invoke_popup` never calls `execute()`, so the operator had nothing to apply
-  the name from.
-- A property update callback on an *operator* cannot see attributes set in its
-  `invoke()` - Blender does not carry the Python instance across - so a guard
-  stored there is always missing, and the rename silently did nothing.
+**The checkbox is a real `BoolProperty`.** That is what makes dragging down the
+column toggle a run of rows: Blender toggles boolean checkboxes as the mouse
+drags across them, and gives operator buttons no such behaviour. No operator
+runs during a drag at all, so the viewport is kept in step by the property's own
+`update` callback. Operators that set many flags at once switch that callback
+off first (`suspend_use_sync`) and sync once at the end, so a bulk change is not
+quadratic and never fires mid-way through an unfinished selection.
 
-A scene property has neither problem, and a test can drive it directly, which is
-how the interactive path is covered rather than assumed.
+**The name is a real text field** - `layout.prop(item, "name", text="",
+emboss=False)`, the idiom every native Blender list uses. It is the only widget
+Blender will start editing on a double-click, and it opens focused with the text
+selected. There is no operator to trigger that by hand (`ui.view_item_rename`
+serves the newer grid/tree views, not `UIList`). A click on a text field inside a
+`UIList` is routed to the list rather than to an operator, arriving in the setter
+of `coco_selections_ui_index` - which treats it as a plain click and selects that
+row alone.
 
-Two more Blender limits shaped this:
+**The count is an operator button drawn flat**, so it looks like a label but is
+the row's one modifier-aware click surface. Neither a checkbox nor a text field
+reports Ctrl or Shift state to Python, so range selection lives here.
 
-- **A UI button fires on mouse release**, and both clicks of a double-click
-  arrive as identical `RELEASE` events, so `event.value` is never
-  `'DOUBLE_CLICK'` for a button. The gap between clicks is timed instead,
-  against the user's own `mouse_double_click_time`. Ctrl- and Shift-clicks are
-  excluded, since clicking a row twice with Ctrl to add then remove it is
-  normal and must not open a rename.
-- **`activate_init` only works inside a popup**, and only ever parks the cursor
-  at the end of the field - there is no way to select its contents, and no way
-  to focus a field drawn in place on a row. Opening the field *empty* gets the
-  same result as a select-all: typing replaces the name outright, and leaving it
-  empty keeps the old one.
+Nothing paints a row background: a `UIList` cannot, and it highlights only its
+one active row. The list is handed `coco_selections_ui_index`, whose getter is
+always `-1`, so Blender never highlights anything and the checkboxes are the
+only thing that marks a row.
 
 ### One selection, not two
 
-Earlier versions had two competing notions of "selected": the `use` dots and
+Earlier versions had two competing notions of "selected": the `use` flags and
 Blender's own active-row highlight. They could disagree, and they drove
-different buttons — `-` and the arrows acted on the highlight while **Select**
-acted on the dots. Now the `use` flags are the only selection. The list index is
-demoted to **focus** (the row a click last landed on) and every row command —
-delete, reorder, update — reads the selection, falling back to the focused row
-only when nothing at all is selected.
-
-### Why the whole row is a button
-
-Blender's `UIList` gives Python no way to see modifier keys on a row click:
-there is no click callback, and the active-index update fires without an event.
-Modifier state only reaches an operator's `invoke`. So each row is drawn as a
-single operator button spanning its full width — that is what makes clicking
-anywhere on the row work, and Ctrl and Shift readable at all.
-
-That costs two things. The name can no longer be an editable field, so renaming
-moved to the pencil button beside the list, which acts on the focused row. And
-because Blender centres the text in a wide button and offers no left-align for
-one, the name is centred and the object count rides in the same label - the
-count used to be a second button, but two buttons draw a hairline between them
-and broke the selection bar in half.
-
-### How a selected row looks
-
-A `UIList` cannot paint its own row background and highlights only the one
-active row, so multi-row selection has to be drawn by the row itself. Each row
-is a single operator button given `depress=True` when selected, which paints it
-in the theme's selection colour across the full width - so any number of rows
-can read as selected at once. Unselected rows are drawn with `emboss=False` so
-they stay flat text.
-
-A row is three buttons: the object count in a fixed-width column, the name
-hugging the left of what remains, and an empty filler taking the slack so the
-whole row stays one click target and the bar runs full width.
-
-The count leads because Blender draws a divider between aligned buttons and
-offers no way to suppress it. A single button has no divider but centres its
-text, and there is no left-align for the text of a wide button; `NONE_OR_STATUS`
-emboss looks like the answer and is not, since `depress` does not count as a
-"colouring status" and it paints no fill at all. So rather than let the divider
-fall somewhere arbitrary in the middle of the bar, the layout puts a column
-where a divider is wanted anyway. The fixed width keeps that divider in the same
-place on every row whatever the count, and fits four digits.
-
-The list is handed `coco_selections_ui_index`, a property that is permanently
-`-1`. `template_list` paints its active row in the theme's selection colour -
-the very colour a selected row paints itself with - so a focused-but-unselected
-row used to look selected, and inverting the selection appeared to do nothing.
-With nothing ever active, the `use` flags are the only thing that colours a row.
-Focus still exists in `coco_selections_index`; it is simply not drawn.
-
-Earlier versions drew a theme-coloured dot per row from a generated preview
-(`icons.py`). That module is gone - the row highlight replaced it. It is still
-in git history at commit `60014e7` if it is ever wanted back.
+different buttons - `-` and the arrows acted on the highlight while Select acted
+on the flags. Now the `use` flags are the only selection. The list index is
+demoted to **focus** (the row a click last landed on) and every row command -
+delete, reorder, edit - reads the selection, falling back to the focused row
+only when nothing is selected.
 
 ## Notes
 
@@ -172,8 +129,8 @@ in git history at commit `60014e7` if it is ever wanted back.
 
 - `properties.py` — data model (`COCOSEL_Selection`, `COCOSEL_ObjectRef`) + scene
   props, including the always-`-1` index the list is drawn with
-- `operators.py` — add / remove / move / row_click / rename / select / update /
-  check_all, plus `set_row_selection()` holding the Explorer rules in one place,
+- `operators.py` — add / remove / move / select / update / check_all, plus
+  `select_only()`,
   plus `apply_object_selection()` shared by everything that touches the viewport
 - `ui.py` — the N-panel and the list rows; **replace this file alone** when the
   UI moves off the sidebar

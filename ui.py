@@ -7,83 +7,51 @@ from bpy.types import Panel, UIList
 
 
 class COCOSEL_UL_selections(UIList):
-    """One row per stored selection set.
+    """One row per stored selection set: checkbox, name, count.
 
-    The whole row is one click target, so clicking anywhere on it selects the
-    set the way clicking a file selects it in Explorer. A UIList row click
-    cannot report modifier keys to Python, but an operator button can, which is
-    what makes Ctrl and Shift work at all.
+    Each cell is a different widget because each one is the only thing Blender
+    will do that job with:
 
-    Selected rows paint themselves with `depress`, which picks up the theme's
-    selection colour across the full width. A UIList cannot paint a row
-    background and only ever highlights the one active row, so this is the only
-    way to show several selected rows at once - and it keeps the selection cue
-    to a single thing rather than a highlight plus an icon.
+    - the **checkbox** is a real BoolProperty, which is what makes dragging down
+      the column toggle a run of rows - native behaviour that operator buttons
+      do not get;
+    - the **name** is a real text field, the only widget Blender starts editing
+      on a double-click, so renaming happens in place;
+    - the **count** is just a label.
+
+    Nothing in the row reads modifier keys, because nothing needs to: clicking a
+    checkbox toggles one row, dragging across them toggles a run, and clicking a
+    name selects that row alone. Those cover what Ctrl-click, Shift-range and a
+    plain click used to do, with no modifiers to remember.
     """
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             row = layout.row(align=True)
 
-            selected = item.use
-            style = {"emboss": selected, "depress": selected}
+            # Left: a real BoolProperty checkbox, not an operator button. That
+            # is what makes click-and-drag down the column work - Blender
+            # toggles boolean checkboxes as the mouse drags across them, and
+            # gives operator buttons no such behaviour. The viewport is kept in
+            # step by the property's update callback.
+            toggle = row.row(align=True)
+            toggle.ui_units_x = 1.3
+            toggle.prop(item, "use", text="")
 
-            # Count first in a fixed-width column, then the name. Blender draws
-            # a divider between aligned buttons and there is no way to suppress
-            # it, so the layout puts one where a divider is wanted anyway - a
-            # count column - instead of leaving it to fall in the middle of the
-            # bar. Fixed width keeps it in the same place whatever the count.
+            # Middle: a real text field, the only widget Blender will start
+            # editing on a double-click.
+            row.prop(item, "name", text="", emboss=False)
+
+            # Right: how many objects the set still holds. A plain label - it
+            # is not a click target, so dimming it cannot break anything.
             count = row.row(align=True)
-            count.ui_units_x = 1.8
-            count.operator(
-                "cocosel.row_click",
-                text=str(len(item.valid_objects())),
-                **style
-            ).index = index
-
-            name = row.row(align=True)
-            name.alignment = 'LEFT'
-            name.operator(
-                "cocosel.row_click", text=item.name, **style
-            ).index = index
-
-            # Keeps the rest of the row clickable and the bar full width.
-            row.operator("cocosel.row_click", text="", **style).index = index
+            count.alignment = 'RIGHT'
+            count.active = False
+            count.label(text=str(len(item.valid_objects())))
 
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="", icon='RESTRICT_SELECT_OFF')
-
-
-class COCOSEL_PT_rename(Panel):
-    """Popup shown by a double-click or the pencil.
-
-    Opened with `wm.call_panel(keep_open=False)` - the same mechanism as
-    Blender's own F2 rename - so confirming the field applies the name and
-    closes the popup in one Enter. An operator popup needs two: one to confirm
-    the field, one to dismiss the popup.
-    """
-
-    bl_idname = "COCOSEL_PT_rename"
-    bl_space_type = 'TOPBAR'
-    bl_region_type = 'HEADER'
-    bl_label = "Rename Selection Set"
-
-    def draw(self, context):
-        scene = context.scene
-        layout = self.layout
-
-        index = scene.coco_selections_index
-        if 0 <= index < len(scene.coco_selections):
-            current = layout.row()
-            current.active = False
-            current.label(text=scene.coco_selections[index].name, icon='GREASEPENCIL')
-
-        # Focused, and empty: typing replaces the name outright. Blender can
-        # focus a popup field but never select its contents, so starting empty
-        # is the only way to get select-all behaviour.
-        layout.activate_init = True
-        layout.prop(scene, "coco_rename_buffer", text="")
 
 
 class COCOSEL_PT_selections(Panel):
@@ -98,6 +66,23 @@ class COCOSEL_PT_selections(Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+
+        if scene.coco_selections:
+            if len(scene.coco_selections) > 1:
+                bulk = layout.row(align=True)
+                bulk.operator("cocosel.check_all", text="All").action = 'ALL'
+                bulk.operator("cocosel.check_all", text="Invert").action = 'INVERT'
+
+            edit = layout.row(align=True)
+            change = edit.operator("cocosel.update", text="Change")
+            change.index = -1
+            change.mode = 'REPLACE'
+            add = edit.operator("cocosel.update", text="Add")
+            add.index = -1
+            add.mode = 'ADD'
+            remove = edit.operator("cocosel.update", text="Remove")
+            remove.index = -1
+            remove.mode = 'REMOVE'
 
         row = layout.row()
         row.template_list(
@@ -116,27 +101,13 @@ class COCOSEL_PT_selections(Panel):
         side.separator()
         side.operator("cocosel.move", text="", icon='TRIA_UP').direction = 'UP'
         side.operator("cocosel.move", text="", icon='TRIA_DOWN').direction = 'DOWN'
-        side.separator()
-        side.operator("cocosel.rename", text="", icon='GREASEPENCIL').index = -1
 
         if not scene.coco_selections:
             layout.label(text="Select objects, then press +", icon='INFO')
-            return
-
-        if len(scene.coco_selections) > 1:
-            bulk = layout.row(align=True)
-            bulk.operator("cocosel.check_all", text="All").action = 'ALL'
-            bulk.operator("cocosel.check_all", text="None").action = 'NONE'
-            bulk.operator("cocosel.check_all", text="Invert").action = 'INVERT'
-
-        layout.operator(
-            "cocosel.update", text="Update", icon='FILE_REFRESH'
-        ).index = -1
 
 
 classes = (
     COCOSEL_UL_selections,
-    COCOSEL_PT_rename,
     COCOSEL_PT_selections,
 )
 

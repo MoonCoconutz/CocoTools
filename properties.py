@@ -10,36 +10,58 @@ from bpy.props import (
 )
 from bpy.types import PropertyGroup
 
-# Guards the buffer's update callback against re-entering when it clears itself.
-_applying_rename = False
+# Bulk operators set many `use` flags in a row; syncing the viewport on every
+# one of them would be quadratic and would fight the operator's own final sync.
+_suspend_use_sync = False
 
 
-def _apply_rename(self, context):
-    """Rename the focused set to whatever was typed, then clear the buffer.
+def suspend_use_sync(state):
+    """Turn the per-checkbox viewport sync off while an operator does the work."""
+    global _suspend_use_sync
+    _suspend_use_sync = state
 
-    The buffer lives on the Scene rather than on the rename operator because a
-    property update callback on an operator cannot see attributes set in its
-    invoke() - Blender does not carry the Python instance across - and an
-    operator popup never calls execute(). A scene property has neither problem,
-    and can be driven directly from a test.
+
+def _use_updated(self, context):
+    """Keep the viewport in step when a checkbox is clicked or dragged over.
+
+    Blender toggles boolean checkboxes as the mouse drags across them, which is
+    where the drag-to-select behaviour comes from - it is native, and only works
+    because this is a real BoolProperty rather than an operator button.
     """
-    global _applying_rename
-    if _applying_rename:
+    if _suspend_use_sync:
         return
 
-    name = self.coco_rename_buffer.strip()
-    if not name:
+    scene = getattr(context, "scene", None)
+    if scene is None or getattr(context, "mode", None) != 'OBJECT':
         return
 
-    index = self.coco_selections_index
-    if 0 <= index < len(self.coco_selections):
-        self.coco_selections[index].name = name
+    from . import operators
 
-    _applying_rename = True
-    try:
-        self.coco_rename_buffer = ""
-    finally:
-        _applying_rename = False
+    operators.apply_object_selection(
+        context, [s for s in scene.coco_selections if s.use]
+    )
+
+
+def _ui_index_set(self, value):
+    """Turn a click on a row's name field into a selection.
+
+    The name has to be a real text field for Blender's native double-click
+    rename to work, and a click on a text field inside a UIList is routed to the
+    list rather than to our row operator - so it arrives here instead. No
+    modifier state reaches a property setter, so this is always a plain click;
+    Ctrl and Shift only work on the count cell, which is a real button.
+    """
+    from . import operators
+
+    if not (0 <= value < len(self.coco_selections)):
+        return
+
+    operators.select_only(self, value)
+
+    context = bpy.context
+    if getattr(context, "mode", None) == 'OBJECT':
+        rows = [s for s in self.coco_selections if s.use]
+        operators.apply_object_selection(context, rows)
 
 
 class COCOSEL_ObjectRef(PropertyGroup):
@@ -61,6 +83,7 @@ class COCOSEL_Selection(PropertyGroup):
         name="Selected",
         description="This row is part of the current multi-row selection",
         default=False,
+        update=_use_updated,
     )
 
     def valid_objects(self):
@@ -79,6 +102,30 @@ class COCOSEL_Selection(PropertyGroup):
         for obj in objects:
             self.objects.add().obj = obj
 
+    def add_objects(self, objects):
+        """Add objects the set does not already hold. Returns how many landed."""
+        held = {ref.obj.as_pointer() for ref in self.objects if ref.obj is not None}
+        added = 0
+        for obj in objects:
+            key = obj.as_pointer()
+            if key in held:
+                continue
+            self.objects.add().obj = obj
+            held.add(key)
+            added += 1
+        return added
+
+    def remove_objects(self, objects):
+        """Drop the given objects from the set. Returns how many went."""
+        drop = {obj.as_pointer() for obj in objects}
+        removed = 0
+        for i in range(len(self.objects) - 1, -1, -1):
+            ref = self.objects[i]
+            if ref.obj is not None and ref.obj.as_pointer() in drop:
+                self.objects.remove(i)
+                removed += 1
+        return removed
+
 
 classes = (
     COCOSEL_ObjectRef,
@@ -96,35 +143,20 @@ def register():
         default=0,
         min=0,
     )
-    # Explorer-style range anchor: the row a plain or Ctrl click last landed on.
-    bpy.types.Scene.coco_selections_anchor = IntProperty(
-        name="Range Anchor",
-        default=0,
-        min=0,
-    )
     # template_list always paints its active row in the theme's selection
     # colour - the same colour a selected row paints itself with. That made a
     # focused-but-unselected row look selected, so the list is handed an index
     # that is permanently -1 (nothing active) and the `use` flags are left as
     # the only thing that colours a row.
-    # What the rename popup types into. Empty between renames.
-    bpy.types.Scene.coco_rename_buffer = StringProperty(
-        name="Name",
-        default="",
-        options={'SKIP_SAVE'},
-        update=_apply_rename,
-    )
     bpy.types.Scene.coco_selections_ui_index = IntProperty(
-        name="Unused List Index",
+        name="Clicked List Row",
         get=lambda self: -1,
-        set=lambda self, value: None,
+        set=_ui_index_set,
     )
 
 
 def unregister():
     del bpy.types.Scene.coco_selections_ui_index
-    del bpy.types.Scene.coco_rename_buffer
-    del bpy.types.Scene.coco_selections_anchor
     del bpy.types.Scene.coco_selections_index
     del bpy.types.Scene.coco_selections
 
