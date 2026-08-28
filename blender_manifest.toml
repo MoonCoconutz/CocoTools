@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "CocoPies"
 name = "CocoPies"
 version = "1.9.0"
-tagline = "Create and manage custom pie menus from Blender's own Preferences panel"
+tagline = "Build custom pie menus from Blender's own Preferences panel"
 maintainer = "MoonCoconutz"
 type = "add-on"
 website = "https://github.com/MoonCoconutz/CocoPies"
@@ -18,7 +18,7 @@ copyright = [
 ]
 
 [permissions]
-files = "Read/write pie-menu preset JSON files, run user-configured Python scripts, and load custom icon images from disk"
+files = "Read/write preset JSON, run configured scripts, load icons"
 
 [build]
 paths_exclude_pattern = [
