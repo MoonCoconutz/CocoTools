@@ -6,6 +6,7 @@ one repository.
 | Extension | What it does |
 | --- | --- |
 | [CocoPies](CocoPies/README.md) | Build custom pie menus entirely from the addon's own Preferences panel — no code required. |
+| [CocoSelections](CocoSelections/README.md) | Store named object selections and restore them later, from the 3D viewport sidebar. |
 
 ## Install
 
