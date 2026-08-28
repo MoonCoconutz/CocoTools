@@ -16,6 +16,7 @@ specific development notes live in that extension's own `CLAUDE.md`
 | --- | --- |
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
+| `CocoDelete/` | `X` deletes without the confirmation menu in mesh/curve edit mode. See `CocoDelete/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
 them. "Development" means editing the Python under an extension's folder,
@@ -73,6 +74,21 @@ by Blender's real `addon_enable` machinery, not by calling `register()`
 directly. For anything that needs real `AddonPreferences` data, either drive
 it through a scratch `PointerProperty` on `bpy.types.Scene`, or verify live
 against the actually-installed copy instead.
+
+**`--factory-startup` does not fully disable an already-installed Extension**
+the way it disables a legacy `scripts/addons` entry. If the extension under
+test is *also* genuinely installed on this machine (check
+`bpy.context.preferences.addons` without `--factory-startup` first), loading a
+second copy via the unique-module-name pattern above can silently fail: the
+real install claims the `bl_idname` at Blender's own startup before the
+script's `register()` runs, `bpy.utils.register_class()` then raises no
+exception but the class never reaches `bpy.types`, and
+`bpy.ops.<category>.<name>.poll()` raises `AttributeError: ... could not be
+found`. This is not a bug in the extension - confirmed on `CocoDelete`, whose
+real install worked correctly. For an extension already installed here, verify
+against that real install instead: drop `--factory-startup` and check
+`bpy.context.preferences.addons`, `<operator>.poll()`, and `<operator>()`
+directly rather than loading a synthetic copy.
 
 `Operator.__subclasses__()` under `--background` under-reports registered
 operators; treat an empty result as inconclusive, not proof of absence.
