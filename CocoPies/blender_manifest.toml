@@ -2,11 +2,11 @@ schema_version = "1.0.0"
 
 id = "CocoPies"
 name = "CocoPies"
-version = "1.9.0"
+version = "1.9.1"
 tagline = "Build custom pie menus from Blender's own Preferences panel"
 maintainer = "MoonCoconutz"
 type = "add-on"
-website = "https://github.com/MoonCoconutz/CocoPies"
+website = "https://github.com/MoonCoconutz/CocoTools"
 
 blender_version_min = "4.5.0"
 

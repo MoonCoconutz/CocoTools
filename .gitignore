@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# User-added custom icons aren't part of the addon's own content.
+CocoPies/icons/custom/*
+!CocoPies/icons/custom/README.md
