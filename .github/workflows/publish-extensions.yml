@@ -1,0 +1,89 @@
+name: Publish extensions
+
+# Builds every Blender extension in this repo (any top-level folder with a
+# blender_manifest.toml) and publishes them all as one static Blender
+# extensions repository (a shared index.json + one zip per extension) on
+# GitHub Pages. Blender's remote-repository system just needs static file
+# hosting -- see `blender --command extension server-generate --help`.
+#
+# Triggered by pushing a tag named "<extension-folder>-v<version>" (e.g.
+# `CocoPies-v1.9.1`) that matches the `version` field in that extension's
+# blender_manifest.toml. Every extension folder is rebuilt on every release,
+# not just the one that changed, so the published index always reflects the
+# current committed state of everything. Can also be run by hand from the
+# Actions tab (workflow_dispatch) to rebuild/redeploy without a new tag.
+on:
+  push:
+    tags:
+      - "*-v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  BLENDER_VERSION: "4.5.7"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches its extension's manifest version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          EXT_DIR="${TAG%-v*}"
+          TAG_VERSION="${TAG##*-v}"
+          if [ ! -f "$EXT_DIR/blender_manifest.toml" ]; then
+            echo "::error::Tag $TAG implies extension folder '$EXT_DIR', but $EXT_DIR/blender_manifest.toml doesn't exist"
+            exit 1
+          fi
+          MANIFEST_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('$EXT_DIR/blender_manifest.toml','rb'))['version'])")
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG does not match $EXT_DIR/blender_manifest.toml version $MANIFEST_VERSION"
+            exit 1
+          fi
+
+      - name: Download portable Blender
+        run: |
+          curl -L -o blender.tar.xz \
+            "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          BLENDER_DIR=$(tar -tf blender.tar.xz | head -1 | cut -d/ -f1)
+          tar -xf blender.tar.xz
+          echo "$PWD/$BLENDER_DIR" >> "$GITHUB_PATH"
+
+      - name: Build every extension and the repository index
+        run: |
+          mkdir -p dist
+          for manifest in */blender_manifest.toml; do
+            ext_dir="${manifest%/blender_manifest.toml}"
+            echo "::group::Building $ext_dir"
+            blender --command extension build --source-dir "$ext_dir" --output-dir dist
+            echo "::endgroup::"
+          done
+          blender --command extension server-generate --repo-dir dist --html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
