@@ -7,22 +7,26 @@ Tested on Blender **4.5 LTS** and **5.2 LTS**.
 
 ## Install
 
-Blender needs the add-on as a folder inside its `addons` directory, or as a zip.
+CocoSelections is a Blender **Extension**, published from the
+[CocoTools](https://github.com/MoonCoconutz/CocoTools) repository.
 
-**Option A — junction / symlink (best for development, changes are live):**
+`Edit > Preferences > Get Extensions > repositories ▾ > + > Add Remote
+Repository`, URL:
 
 ```
-mklink /J "%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons\CocoSelections" "%USERPROFILE%\Documents\Claude\CocoSelections"
+https://mooncoconutz.github.io/CocoTools/index.json
 ```
 
-`mklink /J` makes a directory junction and does **not** require admin rights.
-Adjust `5.2` to your Blender version.
+The URL **must** end in `index.json`. A bare directory URL fails with
+`invalid manifest (Expecting value: line 1 column 1 (char 0))`, because GitHub
+Pages serves `index.html` there and Blender does not append `index.json` itself.
 
-**Option B — zip:** zip this folder so the archive contains a single
-`CocoSelections/` folder with `__init__.py` inside, then
-`Edit > Preferences > Add-ons > Install...` and pick the zip.
+Then find **CocoSelections** in Get Extensions and install it.
 
-Then enable **Object: CocoSelections** in the add-ons list.
+It is no longer a legacy add-on: there is no `bl_info`, and dropping the folder
+into `scripts/addons` will not work. If an older copy is still installed that
+way - including as a `mklink /J` junction - remove it, or two copies will fight
+over the same module name.
 
 ## Use
 

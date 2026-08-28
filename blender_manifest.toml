@@ -1,0 +1,25 @@
+schema_version = "1.0.0"
+
+id = "CocoSelections"
+name = "CocoSelections"
+version = "1.2.0"
+tagline = "Store named object selections and restore them later"
+maintainer = "MoonCoconutz"
+type = "add-on"
+website = "https://github.com/MoonCoconutz/CocoTools"
+
+blender_version_min = "4.5.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+copyright = [
+  "2026 MoonCoconutz",
+]
+
+[build]
+paths_exclude_pattern = [
+  "/.git/",
+  "__pycache__/",
+  ".*",
+]

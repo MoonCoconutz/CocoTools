@@ -1,13 +1,3 @@
-bl_info = {
-    "name": "CocoSelections",
-    "author": "Coco",
-    "version": (1, 2, 0),
-    "blender": (3, 0, 0),
-    "location": "3D Viewport > Sidebar (N) > Coco > Selections",
-    "description": "Store named object selections and restore them with one click.",
-    "category": "Object",
-}
-
 # Support Blender's "Reload Scripts" (F3 > Reload Scripts) during development.
 if "bpy" in locals():
     import importlib
