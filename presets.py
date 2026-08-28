@@ -4,6 +4,7 @@ collisions when a preset overlaps what is already configured."""
 import bpy
 import os
 import json
+import re
 from bpy.props import (
     StringProperty, IntProperty, BoolProperty, EnumProperty,
     CollectionProperty, PointerProperty, FloatProperty,
@@ -29,6 +30,38 @@ from .keymaps import register_pie_menus, unregister_pie_menus
 # place, because rebinding the name elsewhere would leave this module -- which
 # is what draws the popup -- still looking at the old dict.
 _pending_preset_data = {"pie_menus": [], "conflicts": [], "window": None}
+
+_EXECUTE_SCRIPT_RE = re.compile(r'^execute_script\((["\'])(.*)\1\)$')
+
+
+def _repoint_missing_bundled_script(command):
+    """If `command` is execute_script("<path>") and that path no longer
+    exists, but a bundled script with the same filename exists at the addon's
+    current install location, repoint it there.
+
+    Without this, a preset saved before a reinstall that moved the addon's
+    folder (e.g. legacy add-on -> extension, or just a new machine) would
+    load starter-pie commands still pointing at the old location -- the
+    slot would look configured but silently fail. Only touches commands
+    whose path is actually missing, and only when a same-named bundled
+    script is found, so a command that already resolves fine, or one
+    pointing at a user's own script elsewhere, is never rewritten.
+    """
+    match = _EXECUTE_SCRIPT_RE.match(command.strip())
+    if not match:
+        return command
+    old_path = match.group(2)
+    if os.path.exists(old_path):
+        return command
+    # Deferred import: defaults.py imports from this module at load time, so
+    # importing it back at module level here would be circular.
+    from .defaults import bundled_scripts_dir
+    candidate = os.path.join(bundled_scripts_dir(), os.path.basename(old_path))
+    if not os.path.exists(candidate):
+        return command
+    fixed = candidate.replace("\\", "/")
+    print(f"CocoPies: repointed missing bundled script {old_path!r} -> {fixed!r}")
+    return 'execute_script("%s")' % fixed
 
 
 def _apply_pie_dict(pie, pie_dict):
@@ -66,7 +99,7 @@ def _apply_pie_dict(pie, pie_dict):
     for item_dict in pie_dict.get("items", []):
         item = pie.items.add()
         item.label = item_dict.get("label", "Item")
-        item.command = item_dict.get("command", "")
+        item.command = _repoint_missing_bundled_script(item_dict.get("command", ""))
         item.icon = item_dict.get("icon", "NONE")
         item.enabled = item_dict.get("enabled", True)
         item.position = item_dict.get("position", 0)

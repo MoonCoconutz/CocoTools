@@ -1,6 +1,7 @@
 """Small shared helpers: locating the preferences, describing shortcuts,
 and working out which pies would collide."""
 
+import addon_utils
 import bpy
 import sys
 import os
@@ -26,14 +27,16 @@ ADDON_ID = __package__
 
 
 def addon_version_string():
-    """The addon's version as "v1.8.0", read from bl_info when it is needed.
-
-    bl_info lives in the package __init__, which imports this module -- so it
-    cannot be imported from here. Looking it up at call time sidesteps that:
-    by the time anything draws, the package is fully loaded.
+    """The addon's version as "v1.9.0", read at call time so both a legacy
+    bl_info dict and an extension's blender_manifest.toml resolve the same
+    way -- addon_utils.module_bl_info() synthesizes a bl_info-shaped dict
+    from the manifest for an extension module, and just returns the real
+    thing for a legacy one. Looked up lazily (not imported at module scope)
+    because the package __init__ imports this module, so it isn't fully
+    loaded yet at import time.
     """
     module = sys.modules.get(ADDON_ID)
-    info = getattr(module, "bl_info", None) if module else None
+    info = addon_utils.module_bl_info(module) if module else None
     version = info.get("version") if info else None
     return "v" + ".".join(str(v) for v in version) if version else ""
 

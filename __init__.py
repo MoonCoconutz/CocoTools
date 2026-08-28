@@ -1,13 +1,3 @@
-bl_info = {
-    "name": "CocoPies",
-    "author": "Custom",
-    "version": (1, 8, 0),
-    "blender": (4, 5, 0),
-    "location": "Preferences > Add-ons > CocoPies",
-    "description": "Create and manage custom pie menus from addon preferences",
-    "category": "Interface",
-}
-
 import bpy
 
 from .properties import COCOPIE_KeymapScope, COCOPIE_PieMenuItem, COCOPIE_PieMenuData
