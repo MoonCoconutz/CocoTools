@@ -67,22 +67,24 @@ class COCOSEL_PT_selections(Panel):
         layout = self.layout
         scene = context.scene
 
-        if scene.coco_selections:
-            if len(scene.coco_selections) > 1:
-                bulk = layout.row(align=True)
-                bulk.operator("cocosel.check_all", text="All").action = 'ALL'
-                bulk.operator("cocosel.check_all", text="Invert").action = 'INVERT'
+        # Always drawn, not just when there is something to act on: poll()
+        # already greys each button out correctly (check_all needs at least one
+        # set, update needs exactly one selected), so hiding the row on top of
+        # that only made the panel jump around as rows were added and selected.
+        bulk = layout.row(align=True)
+        bulk.operator("cocosel.check_all", text="All").action = 'ALL'
+        bulk.operator("cocosel.check_all", text="Invert").action = 'INVERT'
 
-            edit = layout.row(align=True)
-            change = edit.operator("cocosel.update", text="Change")
-            change.index = -1
-            change.mode = 'REPLACE'
-            add = edit.operator("cocosel.update", text="Add")
-            add.index = -1
-            add.mode = 'ADD'
-            remove = edit.operator("cocosel.update", text="Remove")
-            remove.index = -1
-            remove.mode = 'REMOVE'
+        edit = layout.row(align=True)
+        change = edit.operator("cocosel.update", text="Change")
+        change.index = -1
+        change.mode = 'REPLACE'
+        add = edit.operator("cocosel.update", text="Add")
+        add.index = -1
+        add.mode = 'ADD'
+        remove = edit.operator("cocosel.update", text="Remove")
+        remove.index = -1
+        remove.mode = 'REMOVE'
 
         row = layout.row()
         row.template_list(

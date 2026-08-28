@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoSelections"
 name = "CocoSelections"
-version = "1.2.0"
+version = "1.2.1"
 tagline = "Store named object selections and restore them later"
 maintainer = "MoonCoconutz"
 type = "add-on"
