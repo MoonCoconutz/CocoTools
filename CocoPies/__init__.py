@@ -5,13 +5,14 @@ from .preferences import COCOPIE_AddonPreferences
 from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies, sync_starter_pies
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .utils import get_prefs
-from .ui import COCOPIE_UL_pie_menus, GROUP_UILISTS
+from .ui import draw_pie_row
 from .previews import register_previews, unregister_previews
 from .operators import (
     COCOPIE_OT_execute_command,
     COCOPIE_OT_tap_toggle_direction,
     COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_select_pie,
+    COCOPIE_OT_toggle_group,
     COCOPIE_OT_add_pie_menu,
     COCOPIE_OT_remove_pie_menu,
     COCOPIE_OT_duplicate_pie_menu,
@@ -42,9 +43,9 @@ classes = (
     COCOPIE_KeymapScope,
     COCOPIE_PieMenuItem,
     COCOPIE_PieMenuData,
-    COCOPIE_UL_pie_menus,
     COCOPIE_OT_restore_defaults,
     COCOPIE_OT_select_pie,
+    COCOPIE_OT_toggle_group,
     COCOPIE_OT_execute_command,
     COCOPIE_OT_tap_toggle_direction,
     COCOPIE_OT_hold_or_tap,
@@ -68,8 +69,7 @@ classes = (
     COCOPIE_MT_add_to_cocopie,
     COCOPIE_OT_add_operator_to_pie,
     COCOPIE_AddonPreferences,
-) + DIRECTION_MENUS \
-  + tuple(GROUP_UILISTS.values())  # one list class per Pie Menus section
+) + DIRECTION_MENUS
 
 # Set by the first register() of this Blender session. See the comment in
 # register() -- this is what stops a re-enable from being read as a fresh

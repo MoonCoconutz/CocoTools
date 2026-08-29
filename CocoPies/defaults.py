@@ -283,7 +283,9 @@ def default_pie_definitions(script_paths):
         {
             "name": "3D UV",
             "idname": "COCOPIE_MT_3d_uv",
-            "keymap_type": "3D_VIEW", "keymap_scopes": ["3D_VIEW"], "key": "F",
+            # 3D View Generic, not 3D View: that keymap is consulted first, so
+            # Shift+F wins over anything else bound to it in the viewport
+            "keymap_type": "3D_VIEW_GENERIC", "keymap_scopes": ["3D_VIEW_GENERIC"], "key": "F",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
@@ -548,7 +550,9 @@ def default_pie_definitions(script_paths):
         {
             "name": "Animation",
             "idname": "COCOPIE_MT_animation",
-            "keymap_type": "OBJECT_NONMODAL", "keymap_scopes": ["OBJECT_NONMODAL"],
+            # Window (Global) rather than Object Non-modal: playback is worth
+            # having in every 3D viewport mode, not just object mode
+            "keymap_type": "WINDOW", "keymap_scopes": ["WINDOW"],
             "key": "SPACE",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,

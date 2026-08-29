@@ -21,6 +21,7 @@ from .utils import (
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
     addon_version_string, find_external_conflicts, pie_menu_groups,
+    collapsed_group_keys,
 )
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -28,7 +29,7 @@ from .icons import (
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .previews import slot_button_args, icon_args, is_custom_icon, is_brush_icon
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
-from .ui import COCOPIE_UL_pie_menus, GROUP_UILISTS
+from .ui import draw_pie_row
 
 
 def icon_column_units(pie):
@@ -80,6 +81,15 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     # instead of coming back at every startup. Restore Starter Pies is the
     # deliberate way to get a deleted one back. See sync_starter_pies().
     seeded_starters: StringProperty(default="", options={'HIDDEN'})
+
+    # Section keys the user has collapsed in the Pie Menus list, as a JSON
+    # list. Stored rather than kept in memory so the panel opens the way it
+    # was left. Held as text for the same reason seeded_starters is: the set
+    # of sections is data (KEYMAP_TYPE_ITEMS), and a BoolProperty per section
+    # would have to be regenerated -- and migrated -- every time a scope is
+    # added. Absent from the list means expanded, so a new section shows up
+    # open rather than silently hidden.
+    collapsed_groups: StringProperty(default="", options={'HIDDEN'})
     
     def draw(self, context):
         layout = self.layout
@@ -115,40 +125,44 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         layout.separator(factor=0.5)
 
-        # List - native UIList gives a clear highlighted row for the active item
         if len(self.pie_menus) == 0:
             col = layout.box().column(align=True)
             col.scale_y = 1.4
             col.label(text="No pie menus yet", icon='INFO')
             col.label(text="Create one with the button below.")
         else:
-            # One section per editor: a heading, then a list holding only that
-            # editor's pies. The heading is a plain label *between* the lists,
-            # deliberately not drawn inside a row -- a heading drawn inside
-            # draw_item becomes part of the first pie's row, taking that row's
-            # click and its selection highlight with it.
+            # One section per editor: a collapsible heading, then that
+            # editor's pies as plain rows. Deliberately not a template_list
+            # per section -- that widget always draws inside a box, and six
+            # stacked boxes read as six panels rather than one list.
+            collapsed = collapsed_group_keys(self)
             groups = pie_menu_groups(self.pie_menus)
             for position, (key, label, indices) in enumerate(groups):
                 if position > 0:
                     layout.separator(factor=0.35)
 
-                heading = layout.row(align=True)
-                heading.active = False
-                heading.label(text=label.upper())
+                is_open = key not in collapsed
 
-                # Sized to its own contents: every pie in the section is
-                # visible at once, so no section scrolls on its own until it
-                # gets long enough to be worth it.
-                # .get rather than [key]: a pie carrying a scope this Blender
-                # does not know has no list class of its own, and showing it
-                # in an unfiltered list beats raising out of draw()
-                list_cls = GROUP_UILISTS.get(key, COCOPIE_UL_pie_menus)
-                layout.template_list(
-                    list_cls.bl_idname, f"cocopie_group_{key}",
-                    self, "pie_menus",
-                    self, "active_pie_index",
-                    rows=min(len(indices), 10),
-                )
+                # The whole heading is the toggle. Unembossed so it still
+                # reads as a heading rather than a button, with the triangle
+                # showing which way it goes -- the same idiom Blender uses for
+                # its own panel headers.
+                heading = layout.row(align=True)
+                heading.alignment = 'LEFT'
+                op = heading.operator(
+                    "cocopie.toggle_group",
+                    text=f"{label.upper()}  ({len(indices)})",
+                    icon='TRIA_DOWN' if is_open else 'TRIA_RIGHT',
+                    emboss=False)
+                op.group_key = key
+
+                if not is_open:
+                    continue
+
+                rows = layout.column(align=True)
+                for index in indices:
+                    draw_pie_row(rows, self, self.pie_menus[index], index,
+                                 index == self.active_pie_index)
 
         # Buttons: New Pie Menu takes whatever width the reorder pair leaves,
         # which is a fixed two icon buttons' worth

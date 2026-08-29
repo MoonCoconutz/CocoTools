@@ -19,6 +19,7 @@ from ..utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
+    collapsed_group_keys, set_group_collapsed,
 )
 from ..icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
@@ -195,6 +196,23 @@ class COCOPIE_OT_remove_keymap_scope(Operator):
 
         pie.keymap_scopes.remove(self.scope_index)
         register_pie_menus()
+        return {'FINISHED'}
+
+
+class COCOPIE_OT_toggle_group(Operator):
+    """Show or hide the pie menus in this editor's section"""
+    bl_idname = "cocopie.toggle_group"
+    bl_label = "Toggle Section"
+    bl_options = {'INTERNAL'}
+
+    group_key: StringProperty()
+
+    def execute(self, context):
+        prefs = get_prefs()
+        if prefs is None:
+            return {'CANCELLED'}
+        collapsed = self.group_key in collapsed_group_keys(prefs)
+        set_group_collapsed(prefs, self.group_key, not collapsed)
         return {'FINISHED'}
 
 

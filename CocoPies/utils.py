@@ -168,14 +168,15 @@ def keymap_names_for_pie(pie):
     return names
 
 
-# The Pie Menus list is drawn as one section per editor: a plain label, then
-# a template_list showing only that editor's pies (see draw_left_column and
-# COCOPIE_UL_pie_menus). Grouping is display-only and read-only -- nothing
-# here ever reorders prefs.pie_menus. Two earlier attempts at this feature
-# are worth not repeating: physically re-sorting the collection with .move()
-# corrupted pies' stored data, and drawing the section header inside
-# draw_item made the header part of the first pie's row, so it swallowed
-# that row's click and its selection highlight.
+# The Pie Menus list is drawn as one section per editor: a collapsible heading,
+# then that editor's pies as plain rows (see draw_left_column and
+# draw_pie_row). Grouping is display-only and read-only -- nothing here ever
+# reorders prefs.pie_menus. Three earlier attempts at this feature are worth
+# not repeating: physically re-sorting the collection with .move() corrupted
+# pies' stored data; drawing the section header inside a UIList's draw_item
+# made the header part of the first pie's row, so it swallowed that row's
+# click and its selection highlight; and one template_list per section drew a
+# box around each, which read as stacked panels rather than one list.
 
 # Section order: the Editor dropdown's own order (Window, then Modes, then
 # Editors), skipping its bare ("", "Modes", "") heading rows since those
@@ -188,9 +189,7 @@ MULTI_GROUP_KEY = 'MULTI'
 MULTI_GROUP_LABEL = "Multiple Editors"
 
 # Every section that can ever exist, in display order. Fixed and known up
-# front, which is what lets one UIList subclass be registered per group
-# (see ui/lists.py) instead of one shared class having to work out at draw
-# time which section it is being asked to draw.
+# front, which is what lets a collapsed section be remembered by key.
 GROUP_KEYS = [MULTI_GROUP_KEY] + _GROUP_SCOPE_ORDER
 
 
@@ -235,6 +234,32 @@ def pie_menu_groups(pie_menus):
             groups.append((key, group_key_label(key), by_key[key]))
 
     return groups
+
+
+def collapsed_group_keys(prefs):
+    """Section keys the user has collapsed, as a set.
+
+    Unreadable or missing state means "nothing collapsed" rather than an
+    error: a section that fails to open is a section the user cannot reach.
+    """
+    raw = getattr(prefs, "collapsed_groups", "") or ""
+    if not raw:
+        return set()
+    try:
+        keys = json.loads(raw)
+    except ValueError:
+        return set()
+    return set(keys) if isinstance(keys, list) else set()
+
+
+def set_group_collapsed(prefs, key, collapsed):
+    """Collapse or expand one section, keeping the stored list sorted"""
+    keys = collapsed_group_keys(prefs)
+    if collapsed:
+        keys.add(key)
+    else:
+        keys.discard(key)
+    prefs.collapsed_groups = json.dumps(sorted(keys))
 
 
 def _keymaps_overlap(pie_a, pie_b):
