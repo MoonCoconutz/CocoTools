@@ -102,6 +102,25 @@ def _parse_bpy_ops_call(command):
     return f"{names[1]}.{names[2]}", kwargs
 
 
+# Spaces put in front of a label drawn beside an icon_value icon.
+#
+# A button drawn with icon= reserves a gap between the icon and its text; one
+# drawn with icon_value= does not, so a custom or brush icon ends up touching
+# the first letter. There is no layout setting for that gap -- the 3D Viewport
+# Pie Menus addon has the same problem and solves it the same way, by baking
+# spaces into the label text. Doing it here instead of in the stored label
+# keeps the padding out of the user's data, so it never shows up in the
+# Preferences list, in an exported preset, or in a label they are editing.
+_ICON_VALUE_LABEL_PAD = "  "
+
+
+def _label_for(label, icon_kw):
+    """A slot's label as drawn, padded when it sits beside an icon_value icon"""
+    if label and "icon_value" in icon_kw and icon_kw["icon_value"]:
+        return _ICON_VALUE_LABEL_PAD + label
+    return label
+
+
 def create_pie_menu_class(pie_data):
     """Dynamically create a pie menu class"""
     
@@ -138,17 +157,44 @@ def create_pie_menu_class(pie_data):
                     # Custom icons draw through icon_value, Blender's through icon, so the
                     # whole keyword pair is built once and splatted into each call
                     icon_kw = icon_args(slot.icon, 'NONE')
+                    label = _label_for(slot.label, icon_kw)
                     command = slot.command
                     
+                    # A pie opening another pie. Checked before the plain
+                    # submenu case below, because "wm.call_menu_pie" contains
+                    # "wm.call_menu" and would otherwise be drawn with
+                    # pie.menu() -- which renders a flat dropdown list, not a
+                    # pie. Drawn as a real wm.call_menu_pie button so the
+                    # second pie opens where the mouse is, the way Blender's
+                    # own chained pies do.
+                    if command and "wm.call_menu_pie" in command and "name=" in command:
+                        import re
+                        match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
+                        if match:
+                            # INVOKE_DEFAULT just for this button: the pie
+                            # sets EXEC_DEFAULT for everything (so configured
+                            # operator arguments actually apply), but
+                            # wm.call_menu_pie has to be *invoked* to know
+                            # where the mouse is. Executed instead, the second
+                            # pie has no anchor to open around.
+                            previous_context = pie.operator_context
+                            pie.operator_context = 'INVOKE_DEFAULT'
+                            op = pie.operator("wm.call_menu_pie", text=label, **icon_kw)
+                            op.name = match.group(1)
+                            pie.operator_context = previous_context
+                        else:
+                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op.command = command
+
                     # Check if this is a submenu call
-                    if command and "wm.call_menu" in command and "name=" in command:
+                    elif command and "wm.call_menu" in command and "name=" in command:
                         import re
                         match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
                         if match:
                             menu_name = match.group(1)
-                            pie.menu(menu_name, text=slot.label, **icon_kw)
+                            pie.menu(menu_name, text=label, **icon_kw)
                         else:
-                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
+                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a property assignment (contains = but not ==, and not bpy.ops)
@@ -164,14 +210,14 @@ def create_pie_menu_class(pie_data):
                             try:
                                 current_val = getattr(data_obj, prop_name)
                                 if isinstance(current_val, bool):
-                                    pie.prop(data_obj, prop_name, text=slot.label, toggle=True, **icon_kw)
+                                    pie.prop(data_obj, prop_name, text=label, toggle=True, **icon_kw)
                                     bound = True
                             except Exception:
                                 bound = False
                         if not bound:
                             # Not a simple boolean property - fall back to
                             # running the raw command via a plain button
-                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
+                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a bpy.ops operator
@@ -189,28 +235,28 @@ def create_pie_menu_class(pie_data):
                         if parsed:
                             idname, kwargs = parsed
                             try:
-                                op = pie.operator(idname, text=slot.label, **icon_kw)
+                                op = pie.operator(idname, text=label, **icon_kw)
                                 for prop_name, value in kwargs.items():
                                     setattr(op, prop_name, value)
                             except Exception:
                                 # A property that does not exist or will not
                                 # accept this value -- fall back rather than
                                 # leave the button half-configured
-                                op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
+                                op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                                 op.command = command
                         else:
                             # Not parseable as literal keyword arguments (a
                             # positional arg, a **spread, a non-literal value)
                             # -- run the command as written instead of
                             # guessing at it
-                            op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
+                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     else:
                         # Anything else - use execute_command
-                        op = pie.operator("cocopie.execute_command", text=slot.label, **icon_kw)
+                        op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                         op.command = command
                 except Exception as e:
-                    pie.label(text=slot.label)
+                    pie.label(text=label)
             else:
                 pie.separator()
     

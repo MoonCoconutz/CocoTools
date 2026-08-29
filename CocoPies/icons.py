@@ -29,6 +29,9 @@ ICON_CATEGORY_ENUM = [
     ('OTHER',    "Other",     "Everything that didn't fit elsewhere",  10),
     # Not one of Blender's own: these come from image files CocoPies loads
     ('CUSTOM',   "Custom",    "Your own icons, loaded from image files", 11),
+    # Blender's pre-4.3 sculpt brush icons, shipped with CocoPies because
+    # Blender itself no longer exposes them by name
+    ('BRUSH',    "Brush",     "Sculpt brush icons",                     12),
 ]
 
 # Evaluated in order — the first rule that matches an icon name wins.

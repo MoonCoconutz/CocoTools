@@ -2,10 +2,10 @@ import bpy
 
 from .properties import COCOPIE_KeymapScope, COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 from .preferences import COCOPIE_AddonPreferences
-from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies
+from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies, sync_starter_pies
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .utils import get_prefs
-from .ui import COCOPIE_UL_pie_menus
+from .ui import COCOPIE_UL_pie_menus, GROUP_UILISTS
 from .previews import register_previews, unregister_previews
 from .operators import (
     COCOPIE_OT_execute_command,
@@ -68,7 +68,8 @@ classes = (
     COCOPIE_MT_add_to_cocopie,
     COCOPIE_OT_add_operator_to_pie,
     COCOPIE_AddonPreferences,
-) + DIRECTION_MENUS  # one direction submenu class per pie slot in the pool
+) + DIRECTION_MENUS \
+  + tuple(GROUP_UILISTS.values())  # one list class per Pie Menus section
 
 # Set by the first register() of this Blender session. See the comment in
 # register() -- this is what stops a re-enable from being read as a fresh
@@ -125,29 +126,31 @@ def register():
     if not registered:
         print("CocoPies: Context menu not available - use manual Add Item button")
 
-    # Fresh install: no saved configuration at all, so lay down the starter
-    # pies. Deliberately only when there is nothing, so a user who deletes or
-    # renames one never finds it back on the next startup.
+    # Lay down any starter pie this configuration has never been given -- all
+    # of them on a fresh install, and just the new ones after an update that
+    # ships more (sync_starter_pies keeps the record of which have been given,
+    # so a starter deleted on purpose stays deleted).
     #
     # Guarded by a session flag, because "no pie menus" does not only mean
     # "fresh install". Disabling the addon makes Blender drop its whole entry
     # from preferences.addons, stored pie menus and all; re-enabling builds a
-    # blank one. register() then runs against an empty collection that is
-    # really a user's full configuration a moment ago, and seeding starters
-    # into it overwrites their pies with same-named starters -- which is
-    # exactly what looked for a long time like Blender corrupting data across
-    # a reload. Their real pies are still in the saved preferences on disk, so
-    # the recoverable outcome is to leave the list empty and say so, rather
-    # than to write starters over the top and let a later save make it
-    # permanent. Only the first register() of a session may ever seed.
+    # blank one -- with an empty seeded record too, so it looks exactly like a
+    # first run. register() would then seed starters into what is really a
+    # user's full configuration from a moment ago, overwriting their pies with
+    # same-named starters -- which is exactly what looked for a long time like
+    # Blender corrupting data across a reload. Their real pies are still in the
+    # saved preferences on disk, so the recoverable outcome is to leave the
+    # list empty and say so, rather than to write starters over the top and let
+    # a later save make it permanent. Only the first register() of a session
+    # may ever seed.
     global _seeded_this_session
     prefs = get_prefs()
     if prefs is not None:
-        if len(prefs.pie_menus) == 0 and not _seeded_this_session:
+        if not _seeded_this_session:
             try:
-                added = ensure_default_pies(prefs)
+                added = sync_starter_pies(prefs)
                 if added:
-                    print(f"CocoPies: added {added} starter pie menu(s) on first run")
+                    print(f"CocoPies: added {added} starter pie menu(s)")
             except Exception as e:
                 print(f"CocoPies: could not create the starter pie menus: {e}")
         elif len(prefs.pie_menus) == 0:
@@ -157,9 +160,6 @@ def register():
         # Set even when nothing was seeded: a later re-enable in this same
         # session must never be mistaken for a first run.
         _seeded_this_session = True
-    # pies. Deliberately only when there is nothing, so a user who deletes or
-    # renames one never finds it back on the next startup.
-    prefs = get_prefs()
 
     register_pie_menus()
 

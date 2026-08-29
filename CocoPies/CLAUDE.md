@@ -22,6 +22,64 @@ manifest now; `utils.py`'s `addon_version_string()` reads it lazily via
 parses the manifest when the loaded module's name starts with `bl_ext.` —
 see the root `CLAUDE.md`'s headless-verification note).
 
+## Target versions
+
+**Must work on both Blender 4.5 and 5.2** (LTS releases the user actually
+runs — installed under `C:\Program Files\Blender Foundation\`). An API that
+exists on one and not the other is a real bug, not an edge case. Confirm any
+non-trivial `bpy` API actually exists on both before relying on it — read
+`bpy.types.X.bl_rna.functions[...]` / check via a headless run rather than
+trusting memory of the API.
+
+## Verifying a change
+
+There's no Python on `PATH`; use Blender's own interpreter, headless:
+
+```bash
+"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <script>
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --python <script>
+```
+
+Run against **both** versions before considering a change verified. Expect
+noisy, unrelated `SystemError: GPU functions...` tracebacks from other addons
+in the user's stack (they run headless-unfriendly code at import) — grep for
+your own marker output rather than treating any traceback as failure.
+
+Load the addon package under a **unique module name** in the verification
+script, not `import CocoPies` — that resolves to the already-installed copy
+and double-registers every class, which surfaces as a misleading
+`ValueError: already registered as a subclass`:
+
+```python
+import sys, importlib
+for name in list(sys.modules):
+    if name == "CocoPies" or name.startswith("CocoPies."):
+        del sys.modules[name]
+spec = importlib.util.spec_from_file_location(
+    "CocoPies_verify", r"<repo>\CocoPies\__init__.py",
+    submodule_search_locations=[r"<repo>\CocoPies"])
+mod = importlib.util.module_from_spec(spec)
+sys.modules["CocoPies_verify"] = mod
+spec.loader.exec_module(mod)
+mod.register()
+# ... assertions ...
+mod.unregister()
+```
+
+`context.preferences.addons["CocoPies_verify"]` will **not** exist under this
+loading method — `context.preferences.addons[name]` is only populated by
+Blender's real `addon_enable` machinery, not by calling `register()`
+directly. For anything that needs real `AddonPreferences` data (keymap
+registration counts, a pie's stored items), either drive it through a
+scratch `PointerProperty` on `bpy.types.Scene`, or verify live against the
+actually-installed copy instead (see below).
+
+`Operator.__subclasses__()` under `--background` under-reports registered
+operators; treat an empty result as inconclusive, not proof of absence.
+Preview icons (`bpy.utils.previews`) need a GPU, so `icon_id` is `0` headless
+— that's a false negative, not a real bug; check those in a live session.
+
+
 ## This extension's git history predates this monorepo
 
 CocoPies used to be its own repository (`MoonCoconutz/CocoPies`, now
@@ -110,6 +168,29 @@ this, it silently becomes `'PROPERTIES'` instead and costs the user their
 viewport. A UI change needs the user's own eyes; ask for a screenshot rather
 than trying to force a capture.
 
+**Starter seeding is by record, not by absence** (`defaults.py`). Startup
+calls `sync_starter_pies()`, which adds only starters whose name is not in
+`prefs.seeded_starters` (a JSON list of every starter this config has ever
+been given), then records them. That is what makes a starter added in a new
+version appear on its own, while a starter the user deleted on purpose stays
+deleted instead of returning at every startup. `ensure_default_pies()` is the
+*deliberate* restore behind the Restore Starter Pies button — it adds anything
+missing regardless of the record. Do not "simplify" startup back to
+`ensure_default_pies()`: that resurrects deleted starters forever.
+
+Snapshotting `prefs.pie_menus` to JSON around a reload is still worth doing as
+a check, but it should now come back with zero differences. If it ever differs
+again, something new is wrong — diagnose it rather than reaching for the
+rebuild and moving on.
+
+The Preferences window, when open as a **second** OS window, cannot be
+screenshotted (the screenshot tool only reaches window 0) and popups are
+transient — never switch a `VIEW_3D` area to `'PREFERENCES'` to work around
+this, it silently becomes `'PROPERTIES'` instead and costs the user their
+viewport. A UI change needs the user's own eyes; ask for a screenshot rather
+than trying to force a capture.
+
+
 ## Architecture
 
 **The data model.** A pie menu (`COCOPIE_PieMenuData`) always has exactly
@@ -127,6 +208,22 @@ removes item rows, only fills or clears them.
 rebuilds every pie's `Menu` class and keymap items from scratch. This is
 simple but means `unregister_pie_menus()` must be genuinely thorough —
 see the next point.
+
+**The Pie Menus list is grouped into sections by editor, display-only.**
+`pie_menu_groups()` (`utils.py`) buckets pies by scope — one section per
+editor, plus a "Multiple Editors" section for any pie with more than one
+scope — and `draw_left_column()` (`preferences.py`) draws each section as a
+heading label followed by its *own* `template_list`. Each section's list is a
+generated `UIList` subclass (`GROUP_UILISTS` in `ui/lists.py`, one per key in
+`utils.GROUP_KEYS`) whose `filter_items` shows only that section's pies and
+never permutes order. Two things here are non-negotiable, both learned by
+breaking them: the stored collection is **never** reordered to match the
+display (doing it with `.move()` corrupted stored pies), and a section
+heading is **never** drawn inside `draw_item` (it becomes part of the first
+pie's row, stealing that row's click and selection highlight). Storage order
+and display order are independent by design, which is also why the ▲/▼
+reorder buttons can look off near a section boundary.
+
 
 **Keymap items must be swept by content, not trusted from a Python list.**
 `registered_keymaps` (module-level in `keymaps.py`) only reflects items
@@ -162,6 +259,55 @@ repo, changes it exactly the same way a folder rename used to. Any code
 that needs the addon's own identity must derive it from `__package__`,
 never `__name__` (which is the *submodule's* dotted path, e.g.
 `CocoPies.utils`, and matches nothing).
+
+**`KEYMAP_TYPE_ITEMS` numbers are frozen on-disk data** (`items.py`). Blender
+saves an `EnumProperty` as its *integer* value, not the identifier string, so
+those numbers are the stored format of every scope the user has ever set.
+Without explicit numbers Blender assigns them by position — and the
+`("", "Modes", "")` headings each consume one — so **inserting an item in the
+middle renumbers everything after it and repoints stored pies at the wrong
+editor**. Adding `OBJECT_NONMODAL` mid-list did exactly that: `3D_VIEW` moved
+13 → 14, a stored pie holding 13 landed on the "Editors" heading, resolved to
+`""`, registered no keymap, and vanished from the Pie Menus list entirely.
+Every item now carries an explicit number. A new scope takes the next unused
+number (see the "Next free number" comment at the end of the list) and may go
+anywhere in the list for display; never renumber an existing one, and never
+reuse a retired one. The same applies to any other user-facing enum whose
+value gets stored — a pie's `event_value`, an item's icon choice.
+
+`normalized_scope()` (`utils.py`) is the seatbelt for when it goes wrong
+anyway: any scope that is not a `KEYMAP_CONFIG` key — `""` from an orphaned
+integer, or a value from a newer version — resolves to `'WINDOW'`, and
+`pie_scope_types()` never returns empty. It is applied in that one place so
+the section list, the keymap registration and the conflict check cannot
+disagree. There is deliberately no section for "no editor": a pie whose group
+key matched no section was drawn by no section at all, which made it invisible
+in Preferences and so impossible to repair.
+
+
+**Entry points worth not re-grepping for.** `menus.py`:
+`create_pie_menu_class(pie_data)` (note: *create_*, not build_),
+`execute_script()`, `_parse_bpy_ops_call()`. `keymaps.py`:
+`register_pie_menus()` / `unregister_pie_menus()`. `defaults.py`:
+`default_pie_definitions(script_paths)`, `bundled_script_paths()`,
+`sync_starter_pies()`, `ensure_default_pies()`. `presets.py`:
+`_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer
+used by starters, presets and imports alike. `utils.py`: `get_prefs()`,
+`pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`,
+`ensure_slot_items()`, `slot_is_used()`. `ui/lists.py`:
+`COCOPIE_UL_pie_menus`, `GROUP_UILISTS`.
+
+**Headless stand-in for `AddonPreferences`.** Anything taking `prefs` only
+touches `pie_menus`, `active_pie_index` and `seeded_starters`, so a scratch
+`bpy.types.Scene` carrying those three properties under those exact names can
+be passed straight into `sync_starter_pies()`, `pie_menu_groups()`,
+`filter_items()` and friends — no `addon_enable` needed. Combined with the
+unique-module-name loader above, that covers most verification without a live
+session. A `UIList` method can be called as
+`SomeUIList.filter_items(fake_self, context, data, "pie_menus")` where
+`fake_self` is a `types.SimpleNamespace` carrying `bitflag_filter_item` and
+whatever class attributes the method reads.
+
 
 **Commands are `exec()`'d Python**, not a restricted DSL
 (`operators/context_menu.py`, `operators/pies.py`). A pie item is exactly as
@@ -211,3 +357,13 @@ arguments — to read.
 - `UIList`/`template_list` has no drag/drop/reorder hook from Python at all
   — `sort_reverse`/`sort_lock` only affect display order, not the underlying
   collection.
+- A `UIList` **cannot carry section headings inside itself**. Drawing one in
+  `draw_item` makes it part of that item's row (it takes the row's click, and
+  the selection highlight lands on the heading instead of the name).
+  Stashing state on `self` in `filter_items` for `draw_item` to read back
+  does not work either — Blender does not guarantee the same Python instance
+  serves both calls in one redraw, so the stash comes back empty. Use one
+  `template_list` per section with headings as plain labels between them.
+- `UIList.list_id` exists on 4.5 and 5.2, but what it holds at filter time
+  can't be confirmed headlessly — prefer a registered subclass per list over
+  branching on it.

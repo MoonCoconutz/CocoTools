@@ -24,11 +24,20 @@ from .icons import safe_icon
 # from one of Blender's own identifiers
 CUSTOM_PREFIX = "custom:"
 
+# Sculpt brush icons, which are a third kind again. They are triangle geometry
+# rather than images, and load through bpy.app.icons instead of the preview
+# collection -- so they need no GPU and, unlike a preview, still resolve under
+# --background. Blender dropped these icons from its built-in set when brushes
+# became assets in 4.3; the built-in set now has three brush icons in total,
+# which is not enough to tell thirty-odd sculpt brushes apart.
+BRUSH_PREFIX = "brush:"
+
 _LOADABLE = (".png", ".jpg", ".jpeg")
 
 # Filled on register; None while the addon is not registered
 _previews = None
 _custom_names = []
+_brush_icons = {}
 
 
 def icons_dir():
@@ -45,6 +54,46 @@ def custom_icon_dirs():
     along with the rest of the package.
     """
     return [os.path.join(icons_dir(), "custom")]
+
+
+def brush_icons_dir():
+    """Folder the sculpt brush icon geometry ships in"""
+    return os.path.join(icons_dir(), "brushes")
+
+
+def _load_brush_icons():
+    """Load icons/brushes/*.dat, keyed by the last dot-separated name part.
+
+    brush.sculpt.draw_sharp.dat becomes "draw_sharp", matching how Blender's
+    own icon files are named, so a slot refers to it as brush:draw_sharp.
+    """
+    loaded = {}
+    folder = brush_icons_dir()
+    if not os.path.isdir(folder):
+        return loaded
+    for filename in sorted(os.listdir(folder)):
+        stem, ext = os.path.splitext(filename)
+        if ext.lower() != ".dat":
+            continue
+        try:
+            icon_id = bpy.app.icons.new_triangles_from_file(
+                os.path.join(folder, filename))
+        except Exception as e:
+            print(f"CocoPies: could not load brush icon {filename}: {e}")
+            continue
+        if icon_id:
+            loaded[stem.split(".")[-1]] = icon_id
+    return loaded
+
+
+def _release_brush_icons():
+    global _brush_icons
+    for icon_id in _brush_icons.values():
+        try:
+            bpy.app.icons.release(icon_id)
+        except Exception:
+            pass
+    _brush_icons = {}
 
 
 def _load_slot_arrows(collection):
@@ -120,10 +169,17 @@ def _load_custom(collection):
 
 
 def register_previews():
-    """Load the slot arrows and any custom icons. Safe when files are missing."""
-    global _previews, _custom_names
+    """Load the slot arrows, custom icons and brush icons.
+
+    Safe when any of the files are missing -- each kind degrades on its own.
+    """
+    global _previews, _custom_names, _brush_icons
 
     unregister_previews()
+
+    # Independent of the preview collection: these come from bpy.app.icons, so
+    # they survive a collection that fails to create at all.
+    _brush_icons = _load_brush_icons()
 
     try:
         collection = bpy.utils.previews.new()
@@ -145,6 +201,7 @@ def register_previews():
 
 def unregister_previews():
     global _previews, _custom_names
+    _release_brush_icons()
     if _previews is not None:
         try:
             bpy.utils.previews.remove(_previews)
@@ -175,6 +232,20 @@ def is_custom_icon(icon_ref):
     return bool(icon_ref) and icon_ref.startswith(CUSTOM_PREFIX)
 
 
+def brush_icon_names():
+    """Names of the sculpt brush icons currently loaded, without the prefix"""
+    return sorted(_brush_icons)
+
+
+def is_brush_icon(icon_ref):
+    return bool(icon_ref) and icon_ref.startswith(BRUSH_PREFIX)
+
+
+def brush_icon_id(name):
+    """icon_value for a brush icon by bare name, or 0 if it is not loaded"""
+    return _brush_icons.get(name, 0)
+
+
 def custom_icon_id(name):
     """icon_value for a custom icon by bare name, or 0 if it is not loaded"""
     return _preview_id(CUSTOM_PREFIX + name)
@@ -190,6 +261,9 @@ def icon_args(icon_ref, fallback='BLANK1'):
     """
     if is_custom_icon(icon_ref):
         icon_id = custom_icon_id(icon_ref[len(CUSTOM_PREFIX):])
+        return {"icon_value": icon_id} if icon_id else {"icon": fallback}
+    if is_brush_icon(icon_ref):
+        icon_id = brush_icon_id(icon_ref[len(BRUSH_PREFIX):])
         return {"icon_value": icon_id} if icon_id else {"icon": fallback}
     return {"icon": safe_icon(icon_ref, fallback)}
 

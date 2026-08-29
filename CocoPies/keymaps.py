@@ -113,6 +113,16 @@ def register_pie_menus():
             
             key = _resolve_key(pie_data.key)
 
+            # A pie with no key is registered as a menu but gets no keymap
+            # item. That is a real configuration, not a broken one: a pie
+            # reached only from another pie's slot (a chained sub-pie) has
+            # nothing to bind, and keymap_items.new() with an empty type
+            # raises. Without this the whole pie lands in the except below and
+            # looks like a registration failure.
+            if not key:
+                _debug(f"No shortcut on {pie_data.idname}; menu only")
+                continue
+
             # A pie can be scoped to several editors at once, so this walks
             # every scope and collects the (keymap name, space type) pairs
             # first. Deduplicated before anything is created: scopes overlap

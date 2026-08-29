@@ -11,7 +11,7 @@ from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 from .items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
+    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS, COL_ICON_UNITS_WIDE,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
     SCOPE_COLUMNS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
@@ -20,15 +20,29 @@ from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut, oskey_label,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
-    addon_version_string, find_external_conflicts,
+    addon_version_string, find_external_conflicts, pie_menu_groups,
 )
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
-from .previews import slot_button_args, icon_args
+from .previews import slot_button_args, icon_args, is_custom_icon, is_brush_icon
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
+from .ui import COCOPIE_UL_pie_menus, GROUP_UILISTS
 
+
+def icon_column_units(pie):
+    """How wide the Icon column is for this pie.
+
+    Square -- and so aligned with the Pos button next to it -- unless the pie
+    holds an image icon, which draws larger than a built-in one and would be
+    clipped at that width. Decided once for the whole pie so the Label column
+    starts at the same place on every row.
+    """
+    for item in pie.items:
+        if is_custom_icon(item.icon) or is_brush_icon(item.icon):
+            return COL_ICON_UNITS_WIDE
+    return COL_ICON_UNITS
 
 
 def _equal_slots(parent, count):
@@ -58,6 +72,14 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     
     pie_menus: CollectionProperty(type=COCOPIE_PieMenuData)
     active_pie_index: IntProperty(default=0)
+
+    # Names of every starter pie this configuration has ever been given, as a
+    # JSON list. What makes "add starters the user has never seen" different
+    # from "add starters that are missing": an update's new starters appear on
+    # their own, while a starter the user deliberately deleted stays deleted
+    # instead of coming back at every startup. Restore Starter Pies is the
+    # deliberate way to get a deleted one back. See sync_starter_pies().
+    seeded_starters: StringProperty(default="", options={'HIDDEN'})
     
     def draw(self, context):
         layout = self.layout
@@ -100,12 +122,33 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             col.label(text="No pie menus yet", icon='INFO')
             col.label(text="Create one with the button below.")
         else:
-            layout.template_list(
-                "COCOPIE_UL_pie_menus", "",
-                self, "pie_menus",
-                self, "active_pie_index",
-                rows=max(4, min(len(self.pie_menus), 10)),
-            )
+            # One section per editor: a heading, then a list holding only that
+            # editor's pies. The heading is a plain label *between* the lists,
+            # deliberately not drawn inside a row -- a heading drawn inside
+            # draw_item becomes part of the first pie's row, taking that row's
+            # click and its selection highlight with it.
+            groups = pie_menu_groups(self.pie_menus)
+            for position, (key, label, indices) in enumerate(groups):
+                if position > 0:
+                    layout.separator(factor=0.35)
+
+                heading = layout.row(align=True)
+                heading.active = False
+                heading.label(text=label.upper())
+
+                # Sized to its own contents: every pie in the section is
+                # visible at once, so no section scrolls on its own until it
+                # gets long enough to be worth it.
+                # .get rather than [key]: a pie carrying a scope this Blender
+                # does not know has no list class of its own, and showing it
+                # in an unfiltered list beats raising out of draw()
+                list_cls = GROUP_UILISTS.get(key, COCOPIE_UL_pie_menus)
+                layout.template_list(
+                    list_cls.bl_idname, f"cocopie_group_{key}",
+                    self, "pie_menus",
+                    self, "active_pie_index",
+                    rows=min(len(indices), 10),
+                )
 
         # Buttons: New Pie Menu takes whatever width the reorder pair leaves,
         # which is a fixed two icon buttons' worth
@@ -347,9 +390,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         box.separator(factor=0.5)
 
         table = box.column(align=True)
-        self.draw_item_header(table)
+        icon_units = icon_column_units(pie)
+        self.draw_item_header(table, icon_units)
         for index, item in enumerate(pie.items):
-            self.draw_single_item(table, pie, item, index)
+            self.draw_single_item(table, pie, item, index, icon_units)
 
         # Status line — anything that needs attention
         box.separator(factor=0.5)
@@ -369,7 +413,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             row.label(text=f"{len(missing)} direction(s) named but with no command yet",
                       icon='INFO')
 
-    def draw_item_header(self, layout):
+    def draw_item_header(self, layout, icon_units=COL_ICON_UNITS):
         """Dim column captions sized to match draw_single_item's columns"""
         header = layout.row(align=True)
         header.scale_y = 0.7
@@ -384,7 +428,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         cell.label(text="Pos")
 
         cell = header.row(align=True)
-        cell.ui_units_x = COL_ICON_UNITS
+        cell.ui_units_x = icon_units
         cell.label(text="Icon")
 
         cell = header.row(align=True)
@@ -399,7 +443,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         cell.ui_units_x = COL_TOOLS_UNITS
         cell.label(text="")
 
-    def draw_single_item(self, layout, pie, item, index):
+    def draw_single_item(self, layout, pie, item, index, icon_units=COL_ICON_UNITS):
         """Draw one direction's row. The row is the slot -- index is position."""
         used = slot_is_used(item)
 
@@ -429,7 +473,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         # Icon selector button
         icon_btn = body.row(align=True)
-        icon_btn.ui_units_x = COL_ICON_UNITS
+        icon_btn.ui_units_x = icon_units
         op = icon_btn.operator("cocopie.select_icon", text="",
                                **icon_args(item.icon, 'BLANK1'))
         op.pie_index = self.active_pie_index

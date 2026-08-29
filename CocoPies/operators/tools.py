@@ -26,7 +26,7 @@ from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
 from ..previews import (
     icon_args, custom_icon_names, custom_icon_dirs, register_previews,
-    CUSTOM_PREFIX,
+    CUSTOM_PREFIX, BRUSH_PREFIX, brush_icon_names,
 )
 
 
@@ -213,6 +213,10 @@ class COCOPIE_OT_select_icon(Operator):
     # A props_dialog can't scroll, so the grid is capped and the footer tells
     # you to keep typing when there's more than fits
     GRID_COLUMNS = 24
+    # Image icons -- custom PNGs and the sculpt brush icons -- draw larger than
+    # Blender's own, so at 24 even columns each cell is narrower than the icon
+    # and crops it. Fewer, wider columns for those tabs.
+    IMAGE_GRID_COLUMNS = 16
     GRID_MAX_ROWS = 13
 
     pie_index: IntProperty()
@@ -257,8 +261,11 @@ class COCOPIE_OT_select_icon(Operator):
     def _filtered_icons(self):
         # Custom icons are not in Blender's catalogue -- they are files
         # CocoPies loaded -- so they are listed by reference, prefix and all
-        if self.category == 'CUSTOM':
-            refs = [CUSTOM_PREFIX + name for name in custom_icon_names()]
+        if self.category in ('CUSTOM', 'BRUSH'):
+            if self.category == 'CUSTOM':
+                refs = [CUSTOM_PREFIX + name for name in custom_icon_names()]
+            else:
+                refs = [BRUSH_PREFIX + name for name in brush_icon_names()]
             needle = self.search.strip().lower()
             if needle:
                 refs = [r for r in refs if needle in r.lower()]
@@ -340,11 +347,14 @@ class COCOPIE_OT_select_icon(Operator):
                 empty.label(text="Try a shorter word, or switch to the All tab")
             return
 
-        limit = self.GRID_COLUMNS * self.GRID_MAX_ROWS
+        columns = (self.IMAGE_GRID_COLUMNS
+                   if self.category in ('CUSTOM', 'BRUSH')
+                   else self.GRID_COLUMNS)
+        limit = columns * self.GRID_MAX_ROWS
         shown = icons[:limit]
 
         box = layout.box()
-        grid = box.grid_flow(row_major=True, columns=self.GRID_COLUMNS,
+        grid = box.grid_flow(row_major=True, columns=columns,
                              align=True, even_columns=True, even_rows=True)
         for name in shown:
             cell = grid.row(align=True)

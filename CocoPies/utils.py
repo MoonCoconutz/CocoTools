@@ -17,7 +17,7 @@ from .items import (
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
+    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
 )
 
 # The key this addon is registered under, and the key its preferences are
@@ -124,15 +124,39 @@ def ensure_keymap_scopes(pie):
     return pie.keymap_scopes
 
 
+def normalized_scope(value):
+    """A scope this code can actually use, falling back to 'WINDOW'.
+
+    A stored scope can come back as "" or as something KEYMAP_CONFIG has never
+    heard of. Blender saves an EnumProperty by integer, so a value that no
+    longer lands on a real item reads back as the empty string -- which is
+    exactly what happened when an item was once inserted mid-list and
+    renumbered everything after it (see items.py). A pie in that state used to
+    fall out of the Pie Menus list altogether: its group key matched no
+    section, so no section drew it and it was invisible and un-fixable.
+
+    Resolving to 'WINDOW' instead keeps such a pie visible, editable, and
+    registered somewhere sane. Applied here rather than at each call site so
+    the list, the keymap registration and the conflict check cannot end up
+    disagreeing about which scope a pie has.
+    """
+    return value if value in KEYMAP_CONFIG else 'WINDOW'
+
+
 def pie_scope_types(pie):
     """Every scope enum value this pie is registered into, de-duplicated and
-    in the order the user listed them"""
+    in the order the user listed them.
+
+    Never empty, and every entry is a key of KEYMAP_CONFIG -- see
+    normalized_scope().
+    """
     ensure_keymap_scopes(pie)
     seen = []
     for scope in pie.keymap_scopes:
-        if scope.keymap_type not in seen:
-            seen.append(scope.keymap_type)
-    return seen
+        value = normalized_scope(scope.keymap_type)
+        if value not in seen:
+            seen.append(value)
+    return seen or ['WINDOW']
 
 
 def keymap_names_for_pie(pie):
@@ -142,6 +166,75 @@ def keymap_names_for_pie(pie):
     for scope_type in pie_scope_types(pie):
         names |= keymap_names_for(scope_type)
     return names
+
+
+# The Pie Menus list is drawn as one section per editor: a plain label, then
+# a template_list showing only that editor's pies (see draw_left_column and
+# COCOPIE_UL_pie_menus). Grouping is display-only and read-only -- nothing
+# here ever reorders prefs.pie_menus. Two earlier attempts at this feature
+# are worth not repeating: physically re-sorting the collection with .move()
+# corrupted pies' stored data, and drawing the section header inside
+# draw_item made the header part of the first pie's row, so it swallowed
+# that row's click and its selection highlight.
+
+# Section order: the Editor dropdown's own order (Window, then Modes, then
+# Editors), skipping its bare ("", "Modes", "") heading rows since those
+# carry no real scope id.
+_GROUP_SCOPE_ORDER = [item[0] for item in KEYMAP_TYPE_ITEMS if item[0]]
+
+# A pie spanning more than one editor belongs to no single one of them, so it
+# gets its own section rather than being filed under just the first.
+MULTI_GROUP_KEY = 'MULTI'
+MULTI_GROUP_LABEL = "Multiple Editors"
+
+# Every section that can ever exist, in display order. Fixed and known up
+# front, which is what lets one UIList subclass be registered per group
+# (see ui/lists.py) instead of one shared class having to work out at draw
+# time which section it is being asked to draw.
+GROUP_KEYS = [MULTI_GROUP_KEY] + _GROUP_SCOPE_ORDER
+
+
+def pie_group_key(pie):
+    """Which section this pie belongs in -- a scope id, or MULTI_GROUP_KEY"""
+    scopes = pie_scope_types(pie)
+    if len(scopes) > 1:
+        return MULTI_GROUP_KEY
+    return scopes[0] if scopes else 'WINDOW'
+
+
+def group_key_label(key):
+    """The heading text for a section key"""
+    if key == MULTI_GROUP_KEY:
+        return MULTI_GROUP_LABEL
+    return next((item[1] for item in KEYMAP_TYPE_ITEMS if item[0] == key), key)
+
+
+def pie_group_label(pie):
+    """The heading text of the section this pie belongs under"""
+    return group_key_label(pie_group_key(pie))
+
+
+def pie_menu_groups(pie_menus):
+    """The sections to draw, as [(key, label, [collection indices])].
+
+    Only sections that actually hold a pie are returned, in GROUP_KEYS
+    order; within a section, pies keep their stored order.
+    """
+    by_key = {}
+    for index, pie in enumerate(pie_menus):
+        by_key.setdefault(pie_group_key(pie), []).append(index)
+
+    groups = [(key, group_key_label(key), by_key[key])
+              for key in GROUP_KEYS if key in by_key]
+
+    # A pie carrying a scope this Blender doesn't know would otherwise be
+    # silently dropped from every section, and so from the list entirely
+    known = set(GROUP_KEYS)
+    for key in by_key:
+        if key not in known:
+            groups.append((key, group_key_label(key), by_key[key]))
+
+    return groups
 
 
 def _keymaps_overlap(pie_a, pie_b):
@@ -160,9 +253,17 @@ def find_shortcut_conflicts(prefs, pie, index):
     if not pie.enabled:
         return []
 
+    # A pie with no key registers no keymap item at all (it is reached from
+    # another pie's slot instead), so it can neither take a shortcut from
+    # anything nor lose one to it. Without this, every shortcut-less pie
+    # reported every other shortcut-less pie as a conflict -- they all match
+    # on the empty key.
+    if not pie.key:
+        return []
+
     conflicts = []
     for i, other in enumerate(prefs.pie_menus):
-        if i == index or not other.enabled:
+        if i == index or not other.enabled or not other.key:
             continue
 
         # Any modifier held on either side matches every modifier state on

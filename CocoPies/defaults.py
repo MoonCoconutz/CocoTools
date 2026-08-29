@@ -27,6 +27,37 @@ from .presets import (
 )
 
 
+# Since 4.3 a sculpt brush is an *asset*, not a tool setting, so selecting one
+# means activating it out of Blender's bundled "Essentials" library rather than
+# setting an enum. The identifier is a path inside that library, and it is
+# built with os.path.join deliberately: Blender matches it against a
+# platform-native relative path, so this is a backslashed path on Windows.
+# Embedding it with repr() keeps that correct through storage, since the
+# command is kept as text and parsed back with ast.literal_eval.
+_SCULPT_BRUSH_LIBRARY = ("brushes", "essentials_brushes-mesh_sculpt.blend", "Brush")
+
+
+def _sculpt_brush_command(brush_name):
+    """The command that activates one bundled sculpt brush by its asset name"""
+    identifier = os.path.join(*_SCULPT_BRUSH_LIBRARY, brush_name)
+    return ("bpy.ops.brush.asset_activate(asset_library_type='ESSENTIALS', "
+            f"relative_asset_identifier={identifier!r})")
+
+
+def _sub_pie_command(idname):
+    """The command that opens another pie from a slot of this one"""
+    return f"bpy.ops.wm.call_menu_pie(name='{idname}')"
+
+
+def _brush_slots(entries):
+    """[(position, brush asset name, icon)] -> pie item dicts"""
+    return [
+        {"label": name, "icon": icon, "position": position, "enabled": True,
+         "command": _sculpt_brush_command(name)}
+        for position, name, icon in entries
+    ]
+
+
 # Workspaces the bundled scripts switch to. Each has a .py file shipped in
 # scripts/workspaces/ beside this module, and one slot in the Workspace pie.
 # They run as script files rather than inline commands on purpose: the Workspace
@@ -302,20 +333,416 @@ def default_pie_definitions(script_paths):
                             "bmesh.update_edit_mesh(context.object.data)"},
             ],
         },
+        # The next six starters port pies from the "3D Viewport Pie Menus"
+        # extension (blender_org/viewport_pie_menus) using only stock Blender
+        # operators -- no dependency on that extension staying installed.
+        # Two of the originals (Mesh Select, Proportional Edit) used a
+        # mouse-drag gesture to pick between a single fallback action on a
+        # tap and the full pie on a hold; CocoPies has no drag-distance
+        # gesture yet, only Tap to Toggle's hold-duration timer, used here
+        # as the nearest equivalent.
+        {
+            "name": "Mesh Delete",
+            "idname": "COCOPIE_MT_mesh_delete",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"], "key": "X",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Limited Dissolve", "icon": "STICKY_UVS_LOC", "position": 0, "enabled": True,
+                 "command": "bpy.ops.mesh.dissolve_limited()"},
+                {"label": "Merge By Distance", "icon": "NONE", "position": 1, "enabled": True,
+                 "command": "bpy.ops.mesh.remove_doubles()"},
+                {"label": "Dissolve Edges", "icon": "SNAP_EDGE", "position": 2, "enabled": True,
+                 "command": "bpy.ops.mesh.dissolve_edges()"},
+                {"label": "Delete Edges", "icon": "EDGESEL", "position": 3, "enabled": True,
+                 "command": "bpy.ops.mesh.delete(type='EDGE')"},
+                {"label": "Delete Vertices", "icon": "VERTEXSEL", "position": 4, "enabled": True,
+                 "command": "bpy.ops.mesh.delete(type='VERT')"},
+                {"label": "Delete Faces", "icon": "FACESEL", "position": 5, "enabled": True,
+                 "command": "bpy.ops.mesh.delete(type='FACE')"},
+                {"label": "Dissolve Vertices", "icon": "SNAP_VERTEX", "position": 6, "enabled": True,
+                 "command": "bpy.ops.mesh.dissolve_verts()"},
+                {"label": "Dissolve Faces", "icon": "SNAP_FACE", "position": 7, "enabled": True,
+                 "command": "bpy.ops.mesh.dissolve_faces()"},
+            ],
+        },
+        {
+            "name": "Mesh Merge",
+            "idname": "COCOPIE_MT_mesh_merge",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"], "key": "M",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "By Distance", "icon": "PROP_ON", "position": 0, "enabled": True,
+                 "command": "bpy.ops.mesh.remove_doubles()"},
+                {"label": "At Center", "icon": "SNAP_FACE_CENTER", "position": 1, "enabled": True,
+                 "command": "bpy.ops.mesh.merge(type='CENTER')"},
+                {"label": "Collapse", "icon": "FULLSCREEN_EXIT", "position": 2, "enabled": True,
+                 "command": "bpy.ops.mesh.merge(type='COLLAPSE')"},
+                {"label": "At First", "icon": "TRACKING_REFINE_BACKWARDS", "position": 4, "enabled": True,
+                 "command": "bpy.ops.mesh.merge(type='FIRST')"},
+                {"label": "At Last", "icon": "TRACKING_REFINE_FORWARDS", "position": 5, "enabled": True,
+                 "command": "bpy.ops.mesh.merge(type='LAST')"},
+                {"label": "At 3D Cursor", "icon": "PIVOT_CURSOR", "position": 7, "enabled": True,
+                 "command": "bpy.ops.mesh.merge(type='CURSOR')"},
+            ],
+        },
+        # Original fallback on a tap was mesh.select_all(action='TOGGLE'),
+        # which itself alternates select-all/deselect-all depending on
+        # current state -- Select All/Deselect All on tap_toggle_a/b
+        # reproduces that same alternation.
+        {
+            "name": "Mesh Select",
+            "idname": "COCOPIE_MT_mesh_select",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"], "key": "A",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_toggle_a": "3",  # Top: Select All
+            "tap_toggle_b": "2",  # Bottom: Deselect All
+            "items": [
+                {"label": "Select Less", "icon": "REMOVE", "position": 0, "enabled": True,
+                 "command": "bpy.ops.mesh.select_less()"},
+                {"label": "Select More", "icon": "ADD", "position": 1, "enabled": True,
+                 "command": "bpy.ops.mesh.select_more()"},
+                {"label": "Deselect All", "icon": "OUTLINER_DATA_POINTCLOUD", "position": 2, "enabled": True,
+                 "command": "bpy.ops.mesh.select_all(action='DESELECT')"},
+                {"label": "Select All", "icon": "OUTLINER_OB_POINTCLOUD", "position": 3, "enabled": True,
+                 "command": "bpy.ops.mesh.select_all(action='SELECT')"},
+                {"label": "Invert Selection", "icon": "CLIPUV_DEHLT", "position": 4, "enabled": True,
+                 "command": "bpy.ops.mesh.select_all(action='INVERT')"},
+                {"label": "Select Linked", "icon": "FILE_3D", "position": 5, "enabled": True,
+                 "command": "bpy.ops.mesh.select_linked()"},
+            ],
+        },
+        {
+            "name": "Add Object",
+            "idname": "COCOPIE_MT_object_add",
+            "keymap_type": "OBJECT_MODE", "keymap_scopes": ["OBJECT_MODE"], "key": "A",
+            "ctrl": True, "shift": True, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "UV Sphere", "icon": "MESH_UVSPHERE", "position": 0, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_uv_sphere_add()"},
+                {"label": "Cube", "icon": "MESH_CUBE", "position": 1, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_cube_add()"},
+                {"label": "Suzanne", "icon": "MESH_MONKEY", "position": 2, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_monkey_add()"},
+                {"label": "Plane", "icon": "MESH_PLANE", "position": 3, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_plane_add()"},
+                {"label": "Cylinder", "icon": "MESH_CYLINDER", "position": 4, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_cylinder_add()"},
+                {"label": "Circle", "icon": "MESH_CIRCLE", "position": 5, "enabled": True,
+                 "command": "bpy.ops.mesh.primitive_circle_add()"},
+                {"label": "Bezier Curve", "icon": "CURVE_BEZCURVE", "position": 6, "enabled": True,
+                 "command": "bpy.ops.curve.primitive_bezier_curve_add()"},
+                {"label": "More...", "icon": "THREE_DOTS", "position": 7, "enabled": True,
+                 "command": 'bpy.ops.wm.call_menu(name="VIEW3D_MT_add")'},
+            ],
+        },
+        # Split into two starters (rather than one pie with two keymap
+        # scopes) because their contents genuinely differ by mode: Object
+        # Mode shows Root/Inverse Square falloffs directly, Mesh Edit mode
+        # shows Connected/Projected toggles in those same two slots instead.
+        # Each drops one slot the original spent on a "More..." submenu of
+        # extra falloff shapes -- a genuine extension-only Menu class, not
+        # portable without keeping that extension installed.
+        {
+            "name": "Proportional Edit (Object Mode)",
+            "idname": "COCOPIE_MT_prop_edit_object",
+            "keymap_type": "OBJECT_MODE", "keymap_scopes": ["OBJECT_MODE"], "key": "O",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_toggle_a": "3",  # Top: Toggle Proportional
+            "tap_toggle_b": "3",
+            "items": [
+                {"label": "Smooth", "icon": "SMOOTHCURVE", "position": 0, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SMOOTH'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+                {"label": "Sharp", "icon": "SHARPCURVE", "position": 2, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SHARP'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+                {"label": "Toggle Proportional", "icon": "PROP_ON", "position": 3, "enabled": True,
+                 "command": "bpy.context.tool_settings.use_proportional_edit_objects = "
+                            "not bpy.context.tool_settings.use_proportional_edit_objects"},
+                {"label": "Root", "icon": "ROOTCURVE", "position": 4, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'ROOT'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+                {"label": "Inverse Square", "icon": "INVERSESQUARECURVE", "position": 5, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'INVERSE_SQUARE'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+                {"label": "Linear", "icon": "LINCURVE", "position": 6, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'LINEAR'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+                {"label": "Sphere", "icon": "SPHERECURVE", "position": 7, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SPHERE'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
+            ],
+        },
+        {
+            "name": "Proportional Edit (Mesh Edit)",
+            "idname": "COCOPIE_MT_prop_edit_mesh",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"], "key": "O",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_toggle_a": "3",  # Top: Toggle Proportional
+            "tap_toggle_b": "3",
+            "items": [
+                {"label": "Smooth", "icon": "SMOOTHCURVE", "position": 0, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SMOOTH'\n"
+                            "bpy.context.tool_settings.use_proportional_edit = True"},
+                {"label": "Sharp", "icon": "SHARPCURVE", "position": 2, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SHARP'\n"
+                            "bpy.context.tool_settings.use_proportional_edit = True"},
+                {"label": "Toggle Proportional", "icon": "PROP_ON", "position": 3, "enabled": True,
+                 "command": "bpy.context.tool_settings.use_proportional_edit = "
+                            "not bpy.context.tool_settings.use_proportional_edit"},
+                {"label": "Toggle Connected", "icon": "PROP_CON", "position": 4, "enabled": True,
+                 "command": "bpy.context.tool_settings.use_proportional_connected = "
+                            "not bpy.context.tool_settings.use_proportional_connected"},
+                {"label": "Toggle Projected", "icon": "PROP_PROJECTED", "position": 5, "enabled": True,
+                 "command": "bpy.context.tool_settings.use_proportional_projected = "
+                            "not bpy.context.tool_settings.use_proportional_projected"},
+                {"label": "Linear", "icon": "LINCURVE", "position": 6, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'LINEAR'\n"
+                            "bpy.context.tool_settings.use_proportional_edit = True"},
+                {"label": "Sphere", "icon": "SPHERECURVE", "position": 7, "enabled": True,
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SPHERE'\n"
+                            "bpy.context.tool_settings.use_proportional_edit = True"},
+            ],
+        },
+        {
+            # "3D View Generic" rather than "3D View" on purpose: that keymap
+            # stays live while another tool is running, which is where Blender
+            # itself keeps N. Bound in "3D View" the pie would go dead exactly
+            # when a modal operator is up.
+            "name": "Region Toggle",
+            "idname": "COCOPIE_MT_region_toggle",
+            "keymap_type": "3D_VIEW_GENERIC", "keymap_scopes": ["3D_VIEW_GENERIC"],
+            "key": "N",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Toolbar", "icon": "TOOL_SETTINGS", "position": 0, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_toolbar = True"},
+                {"label": "Sidebar", "icon": "MENU_PANEL", "position": 1, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_ui = True"},
+                # Bottom-right rather than bottom: the asset shelf only exists
+                # in the sculpt/paint/pose modes, so it greys out in object
+                # mode and does not earn the easiest slot in the pie.
+                {"label": "Asset Shelf", "icon": "ASSET_MANAGER", "position": 7, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_asset_shelf = True"},
+                {"label": "Tool Settings", "icon": "PREFERENCES", "position": 3, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_tool_header = True"},
+                {"label": "Header", "icon": "TOPBAR", "position": 4, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_header = True"},
+                {"label": "Adjust Last Operation", "icon": "LOOP_BACK", "position": 5, "enabled": True,
+                 "command": "bpy.context.space_data.show_region_hud = True"},
+            ],
+        },
+        {
+            "name": "Animation",
+            "idname": "COCOPIE_MT_animation",
+            "keymap_type": "OBJECT_NONMODAL", "keymap_scopes": ["OBJECT_NONMODAL"],
+            "key": "SPACE",
+            "ctrl": False, "shift": True, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Jump to Start", "icon": "REW", "position": 0, "enabled": True,
+                 "command": "bpy.ops.screen.frame_jump(end=False)"},
+                {"label": "Jump to End", "icon": "FF", "position": 1, "enabled": True,
+                 "command": "bpy.ops.screen.frame_jump(end=True)"},
+                {"label": "Play Reverse", "icon": "PLAY_REVERSE", "position": 2, "enabled": True,
+                 "command": "bpy.ops.screen.animation_play(reverse=True)"},
+                {"label": "Play / Pause", "icon": "PLAY", "position": 3, "enabled": True,
+                 "command": "bpy.ops.screen.animation_play()"},
+                {"label": "Previous Keyframe", "icon": "PREV_KEYFRAME", "position": 4, "enabled": True,
+                 "command": "bpy.ops.screen.keyframe_jump(next=False)"},
+                {"label": "Next Keyframe", "icon": "NEXT_KEYFRAME", "position": 5, "enabled": True,
+                 "command": "bpy.ops.screen.keyframe_jump(next=True)"},
+                {"label": "Auto Keying", "icon": "REC", "position": 6, "enabled": True,
+                 "command": "bpy.context.tool_settings.use_keyframe_insert_auto = True"},
+                {"label": "Keyframe Menu", "icon": "KEYINGSET", "position": 7, "enabled": True,
+                 "command": "bpy.ops.wm.call_menu(name='VIEW3D_MT_object_animation')"},
+            ],
+        },
+        {
+            # Five slots, laid out as the 3D Viewport Pie Menus version is:
+            # the two "set" actions on the right, the three "clear" ones on
+            # the left, and the bottom kept empty so a mis-flick does nothing.
+            "name": "Object Parenting",
+            "idname": "COCOPIE_MT_object_parenting",
+            "keymap_type": "OBJECT_MODE", "keymap_scopes": ["OBJECT_MODE"],
+            "key": "P",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Clear Parent", "icon": "X", "position": 0, "enabled": True,
+                 "command": "bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')"},
+                {"label": "Set Parent", "icon": "CON_CHILDOF", "position": 1, "enabled": True,
+                 "command": "bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)"},
+                {"label": "Clear Parent (Without Correction)", "icon": "UNLINKED",
+                 "position": 4, "enabled": True,
+                 "command": "bpy.ops.object.parent_clear(type='CLEAR')"},
+                # INVOKE_DEFAULT rather than a plain call: it is what makes
+                # parent_set raise its own type menu instead of silently
+                # running with whatever type was last used. A positional
+                # argument does not parse as a native button, so this slot
+                # runs through cocopie.execute_command -- which is fine, and
+                # is the whole reason that fallback path exists.
+                {"label": "Set Parent (Advanced)", "icon": "CON_CHILDOF",
+                 "position": 5, "enabled": True,
+                 "command": "bpy.ops.object.parent_set('INVOKE_DEFAULT')"},
+                {"label": "Clear Offset Correction", "icon": "DRIVER_DISTANCE",
+                 "position": 6, "enabled": True,
+                 "command": "bpy.ops.object.parent_clear(type='CLEAR_INVERSE')"},
+            ],
+        },
+        # --- Sculpt Brush Select -------------------------------------------
+        # One entry pie on W plus four sub-pies it opens. There are far more
+        # than eight sculpt brushes, so they are grouped by family exactly as
+        # the 3D Viewport Pie Menus version groups them. The four sub-pies
+        # carry no shortcut of their own on purpose: they are reached only
+        # from the entry pie, and a pie with no key registers as a menu with
+        # no keymap item (see register_pie_menus).
+        {
+            "name": "Sculpt Brush Select",
+            "idname": "COCOPIE_MT_sculpt_brush_select",
+            "keymap_type": "SCULPT", "keymap_scopes": ["SCULPT"], "key": "W",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Transform Brushes...", "icon": "brush:snake_hook",
+                 "position": 0, "enabled": True,
+                 "command": _sub_pie_command("COCOPIE_MT_sculpt_brush_transform")},
+                {"label": "Volume Brushes...", "icon": "brush:blob",
+                 "position": 1, "enabled": True,
+                 "command": _sub_pie_command("COCOPIE_MT_sculpt_brush_volume")},
+                # Bottom is left empty: the original puts Blender's brush
+                # asset-shelf popup selector here, which is a UI widget rather
+                # than a command and has no slot equivalent.
+                {"label": "Mask", "icon": "brush:mask", "position": 3, "enabled": True,
+                 "command": _sculpt_brush_command("Mask")},
+                {"label": "Grab", "icon": "brush:grab", "position": 4, "enabled": True,
+                 "command": _sculpt_brush_command("Grab")},
+                {"label": "Draw", "icon": "brush:draw", "position": 5, "enabled": True,
+                 "command": _sculpt_brush_command("Draw")},
+                {"label": "Contrast Brushes...", "icon": "brush:flatten",
+                 "position": 6, "enabled": True,
+                 "command": _sub_pie_command("COCOPIE_MT_sculpt_brush_contrast")},
+                {"label": "Special Brushes...", "icon": "brush:draw_face_sets",
+                 "position": 7, "enabled": True,
+                 "command": _sub_pie_command("COCOPIE_MT_sculpt_brush_special")},
+            ],
+        },
+        {
+            "name": "Sculpt Brushes: Transform",
+            "idname": "COCOPIE_MT_sculpt_brush_transform",
+            "keymap_type": "SCULPT", "keymap_scopes": ["SCULPT"], "key": "",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": _brush_slots([
+                (0, "Elastic Grab", 'brush:elastic_deform'),
+                (1, "Nudge", 'brush:nudge'),
+                (2, "Relax Slide", 'brush:topology'),
+                (3, "Snake Hook", 'brush:snake_hook'),
+                (4, "Twist", 'brush:rotate'),
+                (5, "Pose", 'brush:pose'),
+                (6, "Pinch/Magnify", 'brush:pinch'),
+                (7, "Thumb", 'brush:thumb'),
+            ]),
+        },
+        {
+            "name": "Sculpt Brushes: Volume",
+            "idname": "COCOPIE_MT_sculpt_brush_volume",
+            "keymap_type": "SCULPT", "keymap_scopes": ["SCULPT"], "key": "",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": _brush_slots([
+                (0, "Blob", 'brush:blob'),
+                (1, "Clay", 'brush:clay'),
+                (2, "Inflate/Deflate", 'brush:inflate'),
+                (3, "Draw Sharp", 'brush:draw_sharp'),
+                (4, "Clay Strips", 'brush:clay_strips'),
+                (5, "Crease Polish", 'brush:crease'),
+                (6, "Clay Thumb", 'brush:clay_thumb'),
+                (7, "Layer", 'brush:layer'),
+            ]),
+        },
+        {
+            "name": "Sculpt Brushes: Contrast",
+            "idname": "COCOPIE_MT_sculpt_brush_contrast",
+            "keymap_type": "SCULPT", "keymap_scopes": ["SCULPT"], "key": "",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": _brush_slots([
+                (0, "Flatten/Contrast", 'brush:flatten'),
+                (1, "Scrape/Fill", 'brush:scrape'),
+                (2, "Fill/Deepen", 'brush:fill'),
+                (3, "Scrape Multiplane", 'brush:multiplane_scrape'),
+                (6, "Smooth", 'brush:smooth'),
+            ]),
+        },
+        {
+            "name": "Sculpt Brushes: Special",
+            "idname": "COCOPIE_MT_sculpt_brush_special",
+            "keymap_type": "SCULPT", "keymap_scopes": ["SCULPT"], "key": "",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": _brush_slots([
+                (0, "Grab Cloth", 'brush:cloth'),
+                (1, "Erase Multires Displacement", 'brush:displacement_eraser'),
+                (2, "Density", 'brush:simplify'),
+                (3, "Paint Soft", 'brush:paint'),
+                (4, "Smear", 'brush:smear'),
+                (5, "Face Set Paint", 'brush:draw_face_sets'),
+                (6, "Boundary", 'brush:boundary'),
+                (7, "Smear Multires Displacement", 'brush:displacement_smear'),
+            ]),
+        },
     ]
+
+
+def _seeded_starter_names(prefs):
+    """Names of the starter pies this configuration has already been given"""
+    raw = getattr(prefs, "seeded_starters", "") or ""
+    if not raw:
+        return set()
+    try:
+        names = json.loads(raw)
+    except ValueError:
+        return set()
+    return set(names) if isinstance(names, list) else set()
+
+
+def _record_seeded_starters(prefs, names):
+    """Remember these starter names as already given, additively"""
+    if not hasattr(prefs, "seeded_starters"):
+        return
+    prefs.seeded_starters = json.dumps(sorted(_seeded_starter_names(prefs) | set(names)))
 
 
 def ensure_default_pies(prefs):
     """Add any starter pie that isn't present, and return how many were added.
 
-    Matched by name, so a starter pie the user has renamed, edited or deleted
-    is never resurrected or overwritten -- only genuinely missing ones are
-    added. On a fresh install that means all of them.
+    Matched by name, so a starter pie the user has renamed or edited is never
+    resurrected or overwritten -- only genuinely missing ones are added. On a
+    fresh install that means all of them.
+
+    This is the *deliberate* restore, behind the Restore Starter Pies button:
+    it brings a deleted starter back regardless of having been seeded before.
+    Automatic seeding at startup goes through sync_starter_pies() instead.
     """
     existing = {pie.name for pie in prefs.pie_menus}
+    definitions = default_pie_definitions(bundled_script_paths())
     added = 0
 
-    for definition in default_pie_definitions(bundled_script_paths()):
+    for definition in definitions:
         if definition["name"] in existing:
             continue
 
@@ -324,6 +751,42 @@ def ensure_default_pies(prefs):
         _apply_pie_dict(pie, definition)
         added += 1
 
+    _record_seeded_starters(prefs, [d["name"] for d in definitions])
+    return added
+
+
+def sync_starter_pies(prefs):
+    """Add starter pies this configuration has never been given, and return
+    how many were added.
+
+    Runs at startup, and is what makes a new starter shipped by an update turn
+    up on its own rather than waiting for the user to press Restore Starter
+    Pies. It is deliberately *not* "add whatever is missing": a starter the
+    user deleted on purpose is already recorded as seeded, so it stays gone
+    instead of returning at every startup.
+
+    One-off consequence of introducing that record: on the first startup after
+    this change, an existing configuration has an empty record, so any starter
+    it is missing counts as never-seen and is added -- including one deleted
+    before the record existed. It only happens that once; after it, deletions
+    stick.
+    """
+    definitions = default_pie_definitions(bundled_script_paths())
+    seeded = _seeded_starter_names(prefs)
+    existing = {pie.name for pie in prefs.pie_menus}
+    added = 0
+
+    for definition in definitions:
+        name = definition["name"]
+        if name in seeded or name in existing:
+            continue
+
+        pie = prefs.pie_menus.add()
+        pie.name = name
+        _apply_pie_dict(pie, definition)
+        added += 1
+
+    _record_seeded_starters(prefs, [d["name"] for d in definitions])
     return added
 
 
