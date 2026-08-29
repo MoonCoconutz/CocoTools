@@ -61,6 +61,14 @@ COL_POS_UNITS = ITEM_ROW_UNITS
 # a custom PNG, or one of the sculpt brush icons -- is drawn slightly larger
 # and gets clipped on both sides at that width.
 #
+# The wide variant is sized purely so an image icon is not clipped. Trying to
+# make the button frame hug the icon instead is a dead end and was tried: an
+# icon_value icon is drawn at a fixed size inside the button's own padding, so
+# a narrower cell clips it and a wider one leaves the frame standing off it as
+# an empty well. There is no width that fits. The frame is therefore not drawn
+# at all for these icons (emboss=False in draw_single_item), which is what
+# makes the extra width harmless.
+#
 # The width is chosen per pie rather than per row (see icon_column_units in
 # preferences.py): varying it row by row would leave the Label column ragged
 # down the table. So a pie of ordinary icons keeps square buttons, and only a

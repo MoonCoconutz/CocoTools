@@ -485,10 +485,21 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         pos_cell.alignment = 'CENTER'
         pos_cell.label(**slot_button_args(item.position))
 
-        # Icon selector button
+        # Icon selector button.
+        #
+        # Drawn without a frame when it carries an image icon. A built-in icon
+        # fills the button and looks like the button it is; an icon_value one
+        # is drawn at a fixed size inside the button's padding, so the frame
+        # never lines up with it -- narrow the cell and the icon is clipped,
+        # widen it and the frame stands off as an empty well, with nothing in
+        # between. Dropping the frame sidesteps that: the icon draws at its own
+        # size against the row, still clickable, and an unused slot is blank
+        # rather than an empty box.
+        is_image_icon = is_custom_icon(item.icon) or is_brush_icon(item.icon)
         icon_btn = body.row(align=True)
         icon_btn.ui_units_x = icon_units
         op = icon_btn.operator("cocopie.select_icon", text="",
+                               emboss=not is_image_icon,
                                **icon_args(item.icon, 'BLANK1'))
         op.pie_index = self.active_pie_index
         op.item_index = index
