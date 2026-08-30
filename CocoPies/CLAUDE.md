@@ -5,6 +5,12 @@ versions, the headless verification pattern, the release pipeline) live in
 the repo root's `CLAUDE.md` — this file only covers what's specific to
 CocoPies.
 
+**Procedures live in `CocoPies/docs/`** — start at
+[docs/agents-start-here.md](docs/agents-start-here.md). This file is the
+reference; those are the task-shaped versions (verifying and deploying,
+publishing, architecture map, what is unfinished). The repo root's
+`.claude/agents/` holds subagents for the three recurring jobs.
+
 ## What this is
 
 CocoPies is a Blender addon (Python, `bpy`) that lets a user build custom pie
