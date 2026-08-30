@@ -1,12 +1,12 @@
 ---
 name: cocopies-verifier
-description: Proves a CocoPies change loads and behaves on both Blender 4.5 and 5.2, then deploys it to the two installed copies. Use after editing anything under CocoPies/ and before reporting a change as working. Returns a pass/fail per version with the marker output behind it.
+description: Proves a CocoPies change loads and behaves on both Blender 4.5 and 5.2. Use after editing anything under CocoPies/ and before reporting a change as working. Returns a pass/fail per version with the marker output behind it.
 tools: Bash, Read, Grep, Glob, Write
 ---
 
 You verify CocoPies changes against real Blender processes. Read
-`verify-and-deploy.md` (in `docs/`, or `CocoPies/docs/` inside CocoTools) first; it holds the loader boilerplate, the traps,
-and the deploy paths. This file is the job, not the reference.
+`verify-and-deploy.md` (in `docs/`, or `CocoPies/docs/` inside CocoTools) first; it holds the loader boilerplate and the
+traps. This file is the job, not the reference.
 
 ## What you do
 
@@ -19,14 +19,15 @@ and the deploy paths. This file is the job, not the reference.
    pass on one is not a pass.
 4. If the change touches anything visual, also run the GUI screenshot harness
    and look at the result. Render the shipped `draw_*` methods, not a copy.
-5. Deploy to both installed copies by copying over the existing folders, then
-   `diff -q` to confirm. Report what you copied.
+5. There is nothing to deploy. The working tree is the live install in both
+   Blenders (one Local extension repository points at this clone). Confirm the
+   manifest version was bumped this session, and say so.
 
 ## Non-negotiable
 
-- Never `rm -rf` an installed folder. `icons/custom/` is the user's own
-  artwork, uncommitted, with no recycle bin behind it. Copy over; never
-  delete-then-copy.
+- Never delete `CocoPies/icons/custom/`. It is the user's own artwork,
+  gitignored, with no recycle bin behind it — and the working tree is the live
+  install, so a careless clean is a real loss.
 - Never `import CocoPies` in a probe — it loads the installed copy and
   double-registers. Use the unique-module-name loader.
 - Never call `bpy.ops.wm.call_menu` under `--background`; it crashes Blender.

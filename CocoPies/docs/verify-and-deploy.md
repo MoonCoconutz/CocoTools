@@ -130,33 +130,29 @@ screenshotted by the tooling, and popups are transient. Never switch a
 `'PROPERTIES'` instead and costs him his viewport. Ask for a screenshot, or
 better, reproduce the same layout in the harness above.
 
-## Deploying to the two installs
+## There is nothing to deploy
 
-Copy files over the existing folders. **Never delete-then-copy** — `icons/custom/`
-holds the user's own artwork with no recycle bin behind it.
+The working tree is the live install in both Blenders, via the Local extension
+repository pointed at this clone's root. Saving a file is the deploy. See
+[agents-start-here.md](agents-start-here.md).
 
-```bash
-A="$HOME/AppData/Roaming/Blender Foundation/Blender/4.5/scripts/addons/CocoPies"
-B="$HOME/AppData/Roaming/Blender Foundation/Blender/5.2/extensions/mooncoconutz_github_io/CocoPies"
-```
+What still has to happen every time:
 
-Copy only the files you changed, then confirm with `diff -q`. Two asymmetries
-to respect:
-
-- `__init__.py` — the 4.5 copy carries `bl_info`; the 5.2 copy must **not**
-  (Blender strips it from an extension and prints a deprecation warning).
-- Version — 4.5 reads `bl_info`, 5.2 reads `blender_manifest.toml`. Bump both,
-  and see [publishing.md](publishing.md) for why leaving them at the published
-  version is dangerous.
+- **Bump `blender_manifest.toml`** in the same session as the work — the only
+  version there is. See [publishing.md](publishing.md) for why.
+- **Reload the running Blender**, below. Saving a file changes nothing in a
+  session that has already imported the modules.
 
 ## Reloading a running Blender
 
-Copying files alone does nothing; Blender caches loaded modules, and
+Saving a file does nothing on its own; Blender caches loaded modules, and
 `importlib.reload()` does not reload a package's submodules.
 
 ```python
 import addon_utils, sys
-name = "CocoPies"   # 5.2: "bl_ext.mooncoconutz_github_io.CocoPies"
+# Read the exact name from bpy.context.preferences.addons -- it depends on
+# what the local repository was called, e.g. bl_ext.cocotools_dev.CocoPies
+name = "bl_ext.<repo_module>.CocoPies"
 addon_utils.disable(name, default_set=False)
 for n in [m for m in sys.modules if m == name or m.startswith(name + ".")]:
     del sys.modules[n]
