@@ -24,42 +24,58 @@ registers and behaves inside a real Blender.
 It must work on **Blender 4.5 and 5.2** — both are LTS releases the user
 actually runs. An API present in one and not the other is a real bug.
 
-## The four places CocoPies exists
+## There is one copy
 
-This is the single most confusing thing about the project, and most mistakes
-start with losing track of which copy is being edited.
+A single CocoTools clone, registered in **both** Blender 4.5 and 5.2 as a
+**Local extension repository** pointed at the clone's root (Preferences ▸ Get
+Extensions ▸ repositories ▸ **+** ▸ Add Local Repository). Blender lists every
+folder there holding a `blender_manifest.toml`, so `CocoPies/` *is* the live
+install in both Blenders. Editing a file is editing the install — there is no
+copy step and no deploy step.
 
-| Copy | Path | What it is |
-|---|---|---|
-| **Local repo** | `%USERPROFILE%\Documents\Claude\CocoPies` | Where you edit. Git remote `cocotools`; `origin` is an **archived** repo that rejects pushes. |
-| **4.5 install** | `%APPDATA%\Blender Foundation\Blender\4.5\scripts\addons\CocoPies\` | Legacy add-on. Version in `bl_info`. |
-| **5.2 install** | `%APPDATA%\Blender Foundation\Blender\5.2\extensions\mooncoconutz_github_io\CocoPies\` | **Extension**, not an add-on. Version in `blender_manifest.toml`, and its `__init__.py` has no `bl_info`. |
-| **CocoTools** | `github.com/MoonCoconutz/CocoTools`, folder `CocoPies/` | What ships. Unrelated git history to the local repo. |
+CocoPies is an **extension** in both, so:
 
-Both installs must be updated on every deploy or the two Blenders silently
-drift apart. Casing is exact.
+- module name is `bl_ext.<repo_module>.CocoPies` — read the exact value from
+  `bpy.context.preferences.addons`, it depends on the name given to the local
+  repo.
+- there is no `bl_info` anywhere; the version lives only in
+  `blender_manifest.toml`.
+- `icons/custom/` sits at `CocoPies/icons/custom/`, gitignored — the user's own
+  artwork, with no backup behind it.
+
+Publishing is separate and unchanged: commit to `main` on
+`github.com/MoonCoconutz/CocoTools`, then a tag or a `workflow_dispatch`
+builds the feed. See [publishing.md](publishing.md).
+
+### History, for reading old commits and docs
+
+Until 2026-08-30 there were four copies: a standalone local repo, a legacy
+4.5 add-on install, a separate 5.2 extension install, and CocoTools. They
+drifted constantly and most mistakes in this project started with losing track
+of which one was being edited. That setup is gone. If a doc or commit message
+mentions "the two installs", "the local repo", or copying files across, it
+predates this.
 
 ## Rules that are not negotiable
 
 These each cost the project real damage at least once.
 
-1. **Never `rm -rf` an installed folder, even to redeploy.** `icons/custom/`
-   inside it holds the user's own artwork, deliberately uncommitted. Copy
-   over the folder; never delete-then-copy.
+1. **Never delete `CocoPies/icons/custom/`.** It holds the user's own artwork,
+   deliberately uncommitted, with no recycle bin behind it. The working tree
+   is the live install now, so a careless clean here is a real loss.
 2. **Never reload with `bpy.ops.preferences.addon_disable`.** It passes
    `default_set=True`, which drops the addon's whole `preferences.addons`
    entry — every stored pie with it — and re-registering then reseeds
    starters over the user's pies. Use the `addon_utils` form in
    [verify-and-deploy.md](verify-and-deploy.md).
-3. **Never blanket-copy the package into CocoTools.** The two have drifted in
-   both directions; a wholesale copy silently reverts published fixes. See
-   [publishing.md](publishing.md).
-4. **Never renumber an existing `KEYMAP_TYPE_ITEMS` entry.** Blender stores an
+3. **Never renumber an existing `KEYMAP_TYPE_ITEMS` entry.** Blender stores an
    `EnumProperty` as its integer, so those numbers are the on-disk format of
    every scope the user has ever set.
-5. **Bump the version in the same session as the work.** Committing under an
+4. **Bump the version in the same session as the work.** Committing under an
    already-published version lets Blender's extension updater reinstall the
-   older zip over the working copy. It has happened, twice, in one session.
+   older zip over the working copy. It has happened, twice, in one session —
+   and now that the working copy *is* the install, that overwrite lands
+   directly on the git working tree.
 
 ## Working with this user
 

@@ -7,7 +7,7 @@ CocoPies.
 
 **Procedures live in `CocoPies/docs/`** — start at
 [docs/agents-start-here.md](docs/agents-start-here.md). This file is the
-reference; those are the task-shaped versions (verifying and deploying,
+reference; those are the task-shaped versions (verifying a change,
 publishing, architecture map, what is unfinished). The repo root's
 `.claude/agents/` holds subagents for the three recurring jobs.
 

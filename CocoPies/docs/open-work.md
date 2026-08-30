@@ -3,65 +3,57 @@
 State as of **2026-08-30**. Check the facts before acting on them — this file
 is a starting point, not an authority.
 
-## 1. Close the local ↔ CocoTools drift
+## 1. Finish the move to a single working copy
 
-**Why it matters:** the local repo is behind CocoTools on several files, so
-any future "copy the package across and commit" reverts published work. It was
-caught one command short of doing exactly that.
+**Decided 2026-08-30:** the standalone local repo and both hand-managed
+installs are retired in favour of one CocoTools clone registered as a Local
+extension repository in 4.5 and 5.2. The docs already describe that state.
 
-CocoTools is ahead in `presets.py` (a published
-`_repoint_missing_bundled_script()` fix), `utils.py`, `scripts/uv/` (a whole
-folder), and `README.md`. See the table in [publishing.md](publishing.md).
+Still to do on the user's machine, in order:
 
-Backporting into the local repo would close it, with two decisions to make
-first:
+1. **Save Preset** in each Blender, and copy `icons/custom/` somewhere safe.
+   The module name changes from `CocoPies` to `bl_ext.<repo>.CocoPies`, and
+   `AddonPreferences` is keyed by it, so **every stored pie orphans**.
+2. Clone CocoTools; add it as a Local Repository in both Blenders.
+3. Remove the old 4.5 legacy add-on and the old 5.2 extension install.
+4. **Load Preset** in each; restore `icons/custom/` into
+   `CocoPies/icons/custom/`.
+5. Delete the old standalone repo once both Blenders are happy.
 
-- `__init__.py` — CocoTools has no `bl_info` (extension), the local copy needs
-  one for the 4.5 legacy install. These may have to stay deliberately
-  different, in which case say so in `CLAUDE.md` rather than "fixing" it.
-- `CLAUDE.md` — CocoTools split it into a shared root file and a
-  CocoPies-specific one. The local repo still has the old monolithic version.
-  Either adopt the split locally or accept the divergence explicitly.
+Until step 5 is done, treat any file found in the old repo as stale.
 
-The user was offered this backport and had not answered when this file was
-written.
+## 2. 1.10.2 is committed but unverified and unpublished
 
-## 2. 1.10.1 is committed but not released
+The image-icon picker cells were scaled (`IMAGE_CELL_SCALE = 1.5`, columns
+16 → 11) and the manifest bumped to `1.10.2`, on branch
+`claude/cocopies-addon-start-53ht5o`. **Not verified** — that session had no
+Blender, so neither the headless run nor the screenshot harness was possible.
+`1.5` is a guess.
 
-`CocoPies-v1.10.1` exists in `main` (commits `bf33ffe`, `b7ed844`) with the
-manifest bumped, but **no tag has been pushed**, so nothing has been built or
-published to the Blender feed. Last published tag is `CocoPies-v1.10.0`.
+Before this goes near `main`: measure it with the real-window harness in
+[verify-and-deploy.md](verify-and-deploy.md) and adjust the constant.
 
-To release, and only with the user's go-ahead:
+## 3. 1.10.1 was published without a tag
+
+It reached the feed on 2026-08-30 via `workflow_dispatch`, not a tag, because
+that session's git credentials rejected tag pushes with a 403. The workflow
+rebuilds every extension from current `main` either way, so the feed is
+correct — but **no `CocoPies-v1.10.1` tag exists**, so there is no release
+marker in git for it.
+
+Tag it retroactively if that matters, from a session that can push tags:
 
 ```bash
-git tag CocoPies-v1.10.1 && git push origin CocoPies-v1.10.1
+git tag CocoPies-v1.10.1 07f5f13 && git push origin CocoPies-v1.10.1
 ```
-
-## 3. The installed copies were hand-bumped
-
-Both installs were updated by copying files, and their version strings edited
-by hand to `1.10.1` (4.5's `bl_info`, 5.2's manifest) so the extension updater
-cannot reinstall the older published zip over them. They are therefore *not*
-byte-identical to what a real `extension build` would produce. If anything
-looks strange in the 5.2 install, reinstall it properly rather than debugging
-the hand-deploy — see the recovery recipe in [publishing.md](publishing.md).
-
-## 4. Possible follow-up on the brush icons
-
-Converting the sculpt brush icons from `.dat` geometry to PNG fixed the click
-target, the selection highlight, the grid spacing and the item-row alignment —
-but it also means they now draw at normal icon size (~18px) rather than the
-oversized ~31px they used to. That is inherent to them behaving like icons.
-
-If the user wants them larger, the lever is now available in a way it was not
-before: the button genuinely contains the icon, so the picker's cells can be
-scaled with `scale_x`/`scale_y`. Raising `IMAGE_GRID_COLUMNS` down from 16
-would also give each one more room. He has not asked for this; do not do it
-unprompted.
 
 ## Recently closed, for context
 
+- The four-copies setup was retired for a single CocoTools clone (item 1).
+  With it, the local ↔ CocoTools drift and the hand-bumped install versions
+  both stopped being things to track.
+- Bigger brush icons in the picker were asked for and implemented — see item 2
+  for the catch.
 - Sculpt brush icons converted from `bpy.app.icons` triangle geometry to PNGs
   through the preview collection; the two workarounds built around the old
   behaviour (the Icon column's second wider width, and dropping the button

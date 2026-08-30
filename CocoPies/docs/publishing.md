@@ -3,12 +3,11 @@
 CocoPies ships from the **CocoTools monorepo**, not from its own repository.
 
 - Remote: `https://github.com/MoonCoconutz/CocoTools`, branch `main`.
-- The local repo's `origin` (`MoonCoconutz/CocoPies`) is **archived and
-  read-only** — pushing to it fails with `403 ... This repository was archived`.
-  The local remote named `cocotools` points at the right place, but the two
-  histories are **unrelated** (no common ancestor), so `main` cannot be pushed
-  across. Publishing means copying content into a CocoTools checkout and
-  committing there.
+- You are already working in a CocoTools clone, so publishing is an ordinary
+  commit and push. No copying between repositories.
+- `MoonCoconutz/CocoPies` (the old standalone repo) is **archived and
+  read-only**; pushing to it fails with `403 ... This repository was archived`.
+  It only matters for reading pre-2026-08 history.
 
 CocoTools layout:
 
@@ -22,60 +21,26 @@ CocoDelete/  CocoPies/  CocoSelections/
 `CocoTools/CocoPies/` is flat: the package files directly, plus that
 extension's own `CLAUDE.md`, `README.md` and `blender_manifest.toml`.
 
-There is no permanent checkout. Clone one into a scratch directory when you
-need it; do not rely on a path from a previous session's scratchpad.
+The user's clone of this repo is also his dev install — see
+[agents-start-here.md](agents-start-here.md).
 
-## The rule: copy only what this session changed
+## Drift: closed
 
-**Never blanket-copy `CocoPies/*` over CocoTools.** The two have drifted in
-*both* directions, and a wholesale copy silently reverts published work. This
-was caught in review on 2026-08-30, one command short of deleting a shipped bug
-fix.
+Until 2026-08-30 CocoPies lived in a standalone local repo *and* here, and the
+two had drifted in both directions — `presets.py`, `utils.py`, `scripts/uv/`
+and `README.md` were all ahead here, and a wholesale copy across would have
+silently reverted published work (caught in review, one command short).
 
-Before copying any file, confirm CocoTools' version of it matches the local
-commit your session started from:
+That is over: there is one working copy, this one. There is no other side to
+diff against and nothing to copy. If an older doc or commit tells you to check
+CocoTools against a local checkout before copying, it predates this.
 
-```bash
-git archive <local-pre-session-sha> | tar -x -C /tmp/base
-diff -rq --strip-trailing-cr -x __pycache__ /tmp/CocoTools/CocoPies /tmp/base/CocoPies
-```
+## The version lives in one place
 
-Files that come back identical are safe to copy wholesale. Files that differ
-hold something one side does not have — read the diff before deciding, and by
-default leave CocoTools' version alone.
+`CocoPies/blender_manifest.toml` → `version = "x.y.z"`. There is no `bl_info`
+any more; the legacy 4.5 add-on install that needed one is gone.
 
-Note that CRLF/LF differences make almost everything *look* modified. Use
-`--strip-trailing-cr` when diffing and `git diff --ignore-cr-at-eol` when
-reviewing, or you will not see the real changes among the noise.
-
-### Known drift, as of 2026-08-30
-
-CocoTools is **ahead** of the local repo in all of these:
-
-| File | What CocoTools has |
-|---|---|
-| `presets.py` | `_repoint_missing_bundled_script()` — repoints starter-pie `execute_script()` paths when the addon folder has moved. 34 lines, published, absent locally. |
-| `utils.py` | Differs; not yet analysed. |
-| `__init__.py` | **No `bl_info`.** CocoPies is an extension there, and Blender strips a `bl_info` and warns. The local copy still has one. |
-| `scripts/uv/` | An entire folder absent locally. |
-| `README.md` | Differs; not yet analysed. |
-| `CLAUDE.md` | CocoTools has **two** — a root one for shared conventions and `CocoPies/CLAUDE.md` for extension-specific notes, which explicitly defers to the root. The local root `CLAUDE.md` is the older monolithic version and maps cleanly onto neither. |
-
-Two files that must therefore **never** be copied across: `__init__.py` and
-`CLAUDE.md`. For docs, put a change in whichever of the two `CLAUDE.md` files
-owns that topic — shared verification and release material in the root one,
-architecture and UI gotchas in `CocoPies/CLAUDE.md`.
-
-See [open-work.md](open-work.md); closing this drift is an outstanding task.
-
-## Versions live in two places
-
-| Where | Field |
-|---|---|
-| local repo | `CocoPies/__init__.py` → `bl_info["version"]` tuple |
-| CocoTools | `CocoPies/blender_manifest.toml` → `version = "x.y.z"` |
-
-Bump both, in the same session as the work.
+Bump it in the same session as the work.
 
 **Why this matters more than it looks.** The publish workflow refuses to build
 if a tag's version does not match the manifest — but nothing stops you
@@ -94,8 +59,9 @@ at all.
   own shorter enum. Reading is harmless; **saving preferences in that state
   writes the misreading back as real data.**
 
-Bumping the installed copies past the feed's version is what keeps the updater
-from reverting a hand-deploy.
+Since the working tree is now the live install, that overwrite would land on
+your git checkout. Keeping the manifest version ahead of the feed's is what
+prevents it.
 
 ## Releasing
 
@@ -123,15 +89,13 @@ Two consequences:
 Tagging is a release to real users. Confirm with the user before pushing one,
 even when the commit itself was authorised.
 
-## Recovering an install the updater has reverted
+## Recovering from the updater overwriting the working tree
 
-Copy the source over the folder (never delete-then-copy), or better, build a
-real package so the installed version is genuinely higher than the feed's:
+Only possible if a *remote* repository is still subscribed alongside the local
+one. The overwrite lands on the git checkout, so git is the recovery tool:
+`git status` shows what was clobbered, `git checkout -- <paths>` restores it.
 
-```bash
-blender --command extension build --source-dir <folder> --output-dir dist
-```
+`icons/custom/` is the exception — it is gitignored, so git cannot bring it
+back. That is the one thing to have a copy of elsewhere.
 
-then `bpy.ops.extensions.package_install_files(filepath=..., repo="mooncoconutz_github_io", enable_on_install=True)`.
-That install keeps the addon's preferences entry intact, unlike
-`bpy.ops.preferences.addon_disable`.
+Then bump the manifest above the feed's version so it cannot happen again.

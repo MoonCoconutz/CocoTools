@@ -217,7 +217,11 @@ class COCOPIE_OT_select_icon(Operator):
     # rather than glyphs, and there are only a few dozen of them rather than a
     # few hundred. Fewer columns gives each one room to be told apart, which
     # matters more here than fitting the maximum number on screen.
-    IMAGE_GRID_COLUMNS = 16
+    IMAGE_GRID_COLUMNS = 11
+    # An icon draws at a fixed ~18px inside its button; the only way to make
+    # artwork read larger is to scale the button around it. Columns are cut in
+    # step so the grid keeps the same overall width.
+    IMAGE_CELL_SCALE = 1.5
     GRID_MAX_ROWS = 13
 
     pie_index: IntProperty()
@@ -366,6 +370,9 @@ class COCOPIE_OT_select_icon(Operator):
                              even_columns=True, even_rows=True)
         for name in shown:
             cell = grid.row(align=True)
+            if image_tab:
+                cell.scale_x = self.IMAGE_CELL_SCALE
+                cell.scale_y = self.IMAGE_CELL_SCALE
             is_current = name == current
             if not is_current:
                 # Flat cells keep a 300-icon grid calm; only the active one
