@@ -21,16 +21,19 @@ has no other copy.
 
 Until it is done, treat any file found in the old standalone repo as stale.
 
-## 2. 1.10.2 is committed but unverified and unpublished
+## 2. 1.10.2 is published but unverified
 
 The image-icon picker cells were scaled (`IMAGE_CELL_SCALE = 1.5`, columns
-16 → 11) and the manifest bumped to `1.10.2`, on branch
-`claude/cocopies-addon-start-53ht5o`. **Not verified** — that session had no
-Blender, so neither the headless run nor the screenshot harness was possible.
-`1.5` is a guess.
+16 → 11) and the manifest bumped to `1.10.2`. It is on `main` and on the feed.
 
-Before this goes near `main`: measure it with the real-window harness in
-[verify-and-deploy.md](verify-and-deploy.md) and adjust the constant.
+**Never verified.** That session had no Blender, so neither the headless run nor
+the screenshot harness was possible, and `1.5` is a guess rather than a
+measurement. It went to the feed only because there was no dev channel to look
+at it in — which is what item 1 fixes.
+
+Once the dev channel exists: measure it with the real-window harness in
+[verify-and-deploy.md](verify-and-deploy.md), adjust the constant, and publish
+the corrected value.
 
 ## 3. 1.10.1 was published without a tag
 
