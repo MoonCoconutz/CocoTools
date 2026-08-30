@@ -9,18 +9,17 @@ is a starting point, not an authority.
 installs are retired in favour of one CocoTools clone registered as a Local
 extension repository in 4.5 and 5.2. The docs already describe that state.
 
-Still to do on the user's machine, in order:
+Still to do on the user's machine. The steps are written out in
+[../../docs/dev-setup.md](../../docs/dev-setup.md) — it covers all three
+extensions, since one local repository serves the whole monorepo. The clone
+goes at `%USERPROFILE%\Documents\Claude\CocoTools`.
 
-1. **Save Preset** in each Blender, and copy `icons/custom/` somewhere safe.
-   The module name changes from `CocoPies` to `bl_ext.<repo>.CocoPies`, and
-   `AddonPreferences` is keyed by it, so **every stored pie orphans**.
-2. Clone CocoTools; add it as a Local Repository in both Blenders.
-3. Remove the old 4.5 legacy add-on and the old 5.2 extension install.
-4. **Load Preset** in each; restore `icons/custom/` into
-   `CocoPies/icons/custom/`.
-5. Delete the old standalone repo once both Blenders are happy.
+The part that matters for CocoPies: the module name changes, and
+`AddonPreferences` is keyed by it, so **every stored pie orphans**. Save Preset
+first, Load Preset after, and back up `icons/custom/` — it is gitignored and
+has no other copy.
 
-Until step 5 is done, treat any file found in the old repo as stale.
+Until it is done, treat any file found in the old standalone repo as stale.
 
 ## 2. 1.10.2 is committed but unverified and unpublished
 

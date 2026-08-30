@@ -132,6 +132,10 @@ path, only `module_bl_info`'s prefix check does.
 
 ## Dev install: a Local Repository pointed at this working directory
 
+Setting this up from scratch is written out step by step in
+[docs/dev-setup.md](docs/dev-setup.md), including what carries over and what
+does not. The rest of this section is the reference.
+
 Every extension here is developed through one **Local extension repository
 that points directly at this git working directory** — added once via
 Blender's own UI (Edit ▸ Preferences ▸ Get Extensions ▸ repositories
