@@ -42,39 +42,35 @@ _GRID_POPUP_PADDING = 1.2
 # that alone is what made every earlier attempt at a square popup fail.
 GRID_POPUP_WIDTH = int((3 * GRID_CELL_UNITS + _GRID_POPUP_PADDING) * _UI_UNIT_Y)
 
-# Height of one item row, and the width of the two icon-only columns in it.
+# Height of one item row, and the width of the icon-only columns in it.
 #
-# UI_UNIT_X and UI_UNIT_Y are both Blender's widget_unit, so a row's scale_y
-# and a column's ui_units_x are the same size in the same units: setting them
-# to the same number is what makes the Pos and Icon buttons come out square.
-# They are derived from one constant rather than set side by side so they
-# cannot drift apart again. Both are fixed widths, so the buttons stay square
-# no matter how wide the Preferences window is stretched.
+# An icon-only button is one widget_unit square before anything scales it, and
+# scale_x and scale_y both multiply that same unit -- so giving the row and the
+# button the same number is what makes the Icon button come out square, and it
+# stays square if this number changes.
+#
+# ui_units_x cannot do that job. It sets the width of the *cell*, and an
+# icon-only button does not stretch to fill its cell: measured in a real window,
+# a button in a 1.75-unit cell is still 1 unit wide, sitting in a cell half
+# again as wide as itself. The cell width still has to be set, so the header
+# captions line up with the rows, but the button's own size comes from scale_x
+# (see draw_single_item).
 ITEM_ROW_UNITS = 1.4
 
 # Column widths shared by the item rows and their header, so the two line up
 COL_CHECK_UNITS = 1.2
 COL_POS_UNITS = ITEM_ROW_UNITS
-# The Icon column has two widths, because the two kinds of icon do not draw
-# the same. A built-in icon fits a square cell exactly, and squaring it is what
-# lines the Icon button up with the Pos button beside it. An icon_value one --
-# a custom PNG, or one of the sculpt brush icons -- is drawn slightly larger
-# and gets clipped on both sides at that width.
+
+# One Icon column width, for every kind of icon, and the same number the button
+# inside it is scaled by -- so the cell is exactly the size of the square button
+# it holds, with no dead space beside it.
 #
-# The wide variant is sized purely so an image icon is not clipped. Trying to
-# make the button frame hug the icon instead is a dead end and was tried: an
-# icon_value icon is drawn at a fixed size inside the button's own padding, so
-# a narrower cell clips it and a wider one leaves the frame standing off it as
-# an empty well. There is no width that fits. The frame is therefore not drawn
-# at all for these icons (emboss=False in draw_single_item), which is what
-# makes the extra width harmless.
-#
-# The width is chosen per pie rather than per row (see icon_column_units in
-# preferences.py): varying it row by row would leave the Label column ragged
-# down the table. So a pie of ordinary icons keeps square buttons, and only a
-# pie that actually holds an image icon pays the extra width.
+# There used to be a second, wider column: the sculpt brush icons were triangle
+# geometry, which Blender draws about half again the size of every other icon,
+# so they spilled out of a square button and a pie holding one had to widen the
+# whole column. They are images now (see previews.py) and draw centred inside
+# their button like anything else, which is what let this go back to one width.
 COL_ICON_UNITS = ITEM_ROW_UNITS
-COL_ICON_UNITS_WIDE = ITEM_ROW_UNITS * 1.4
 COL_LABEL_SCALE = 1.8
 COL_CMD_SCALE = 2.4
 

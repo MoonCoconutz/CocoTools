@@ -1,15 +1,18 @@
 """Icons CocoPies loads itself, rather than taking from Blender.
 
-Two kinds live here:
+Three kinds live here:
 
 * the eight slot arrows, because Blender ships no diagonal arrow -- its whole
   arrow set is cardinal only, so half a pie's directions have nothing to point
   at;
+* the sculpt brush icons, which Blender dropped from its built-in set in 4.3;
 * whatever the user drops into a custom icons folder, so a pie slot can carry
   artwork Blender does not have at all.
 
-Both go through one preview collection, which is the same route MACHIN3tools
-and MESHmachine take for their custom icons.
+All three go through one preview collection, which is the same route
+MACHIN3tools and MESHmachine take for their custom icons. Keeping them on one
+mechanism is deliberate: an icon loaded any other way does not draw the same
+size or in the same place inside its button.
 """
 
 import os
@@ -24,20 +27,30 @@ from .icons import safe_icon
 # from one of Blender's own identifiers
 CUSTOM_PREFIX = "custom:"
 
-# Sculpt brush icons, which are a third kind again. They are triangle geometry
-# rather than images, and load through bpy.app.icons instead of the preview
-# collection -- so they need no GPU and, unlike a preview, still resolve under
-# --background. Blender dropped these icons from its built-in set when brushes
+# Sculpt brush icons. Blender dropped these from its built-in set when brushes
 # became assets in 4.3; the built-in set now has three brush icons in total,
 # which is not enough to tell thirty-odd sculpt brushes apart.
+#
+# They ship as PNGs and load through the same preview collection as the custom
+# icons, rather than as triangle geometry through bpy.app.icons. Geometry icons
+# are drawn at roughly half again the size of every other icon and overflow the
+# button they belong to, which is not a cosmetic detail: the button underneath
+# stays icon-sized, so the click target covers only a corner of the artwork, the
+# selection highlight is hidden behind it, and neighbouring icons in a grid
+# touch. As images they draw like Blender's own icons -- centred inside their
+# button, at the same size as everything around them.
 BRUSH_PREFIX = "brush:"
+
+# How a brush icon is keyed inside the preview collection, kept distinct from
+# the custom icons so a user PNG named after a brush cannot shadow it
+BRUSH_KEY = "brush__"
 
 _LOADABLE = (".png", ".jpg", ".jpeg")
 
 # Filled on register; None while the addon is not registered
 _previews = None
 _custom_names = []
-_brush_icons = {}
+_brush_names = []
 
 
 def icons_dir():
@@ -57,43 +70,31 @@ def custom_icon_dirs():
 
 
 def brush_icons_dir():
-    """Folder the sculpt brush icon geometry ships in"""
+    """Folder the sculpt brush icon PNGs ship in"""
     return os.path.join(icons_dir(), "brushes")
 
 
-def _load_brush_icons():
-    """Load icons/brushes/*.dat, keyed by the last dot-separated name part.
+def _load_brush_icons(collection):
+    """Load icons/brushes/*.png into `collection`, keyed by bare file name.
 
-    brush.sculpt.draw_sharp.dat becomes "draw_sharp", matching how Blender's
-    own icon files are named, so a slot refers to it as brush:draw_sharp.
+    draw_sharp.png becomes "draw_sharp", which is what a slot refers to as
+    brush:draw_sharp.
     """
-    loaded = {}
+    names = []
     folder = brush_icons_dir()
     if not os.path.isdir(folder):
-        return loaded
+        return names
     for filename in sorted(os.listdir(folder)):
         stem, ext = os.path.splitext(filename)
-        if ext.lower() != ".dat":
+        if ext.lower() != ".png":
             continue
         try:
-            icon_id = bpy.app.icons.new_triangles_from_file(
-                os.path.join(folder, filename))
+            collection.load(BRUSH_KEY + stem,
+                            os.path.join(folder, filename), 'IMAGE')
+            names.append(stem)
         except Exception as e:
             print(f"CocoPies: could not load brush icon {filename}: {e}")
-            continue
-        if icon_id:
-            loaded[stem.split(".")[-1]] = icon_id
-    return loaded
-
-
-def _release_brush_icons():
-    global _brush_icons
-    for icon_id in _brush_icons.values():
-        try:
-            bpy.app.icons.release(icon_id)
-        except Exception:
-            pass
-    _brush_icons = {}
+    return names
 
 
 def _load_slot_arrows(collection):
@@ -173,13 +174,9 @@ def register_previews():
 
     Safe when any of the files are missing -- each kind degrades on its own.
     """
-    global _previews, _custom_names, _brush_icons
+    global _previews, _custom_names, _brush_names
 
     unregister_previews()
-
-    # Independent of the preview collection: these come from bpy.app.icons, so
-    # they survive a collection that fails to create at all.
-    _brush_icons = _load_brush_icons()
 
     try:
         collection = bpy.utils.previews.new()
@@ -189,8 +186,9 @@ def register_previews():
 
     arrows = _load_slot_arrows(collection)
     _custom_names = _load_custom(collection)
+    _brush_names = _load_brush_icons(collection)
 
-    if arrows or _custom_names:
+    if arrows or _custom_names or _brush_names:
         _previews = collection
     else:
         try:
@@ -200,8 +198,7 @@ def register_previews():
 
 
 def unregister_previews():
-    global _previews, _custom_names
-    _release_brush_icons()
+    global _previews, _custom_names, _brush_names
     if _previews is not None:
         try:
             bpy.utils.previews.remove(_previews)
@@ -209,6 +206,7 @@ def unregister_previews():
             pass
         _previews = None
     _custom_names = []
+    _brush_names = []
 
 
 def _preview_id(key):
@@ -234,7 +232,7 @@ def is_custom_icon(icon_ref):
 
 def brush_icon_names():
     """Names of the sculpt brush icons currently loaded, without the prefix"""
-    return sorted(_brush_icons)
+    return list(_brush_names)
 
 
 def is_brush_icon(icon_ref):
@@ -243,7 +241,7 @@ def is_brush_icon(icon_ref):
 
 def brush_icon_id(name):
     """icon_value for a brush icon by bare name, or 0 if it is not loaded"""
-    return _brush_icons.get(name, 0)
+    return _preview_id(BRUSH_KEY + name)
 
 
 def custom_icon_id(name):

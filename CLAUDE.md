@@ -95,6 +95,29 @@ operators; treat an empty result as inconclusive, not proof of absence.
 Preview icons (`bpy.utils.previews`) need a GPU, so `icon_id` is `0` headless
 — that's a false negative, not a real bug; check those in a live session.
 
+**A real window can be driven from the command line, which beats guessing at
+layout.** Anything about how something *draws* — a button's size, where an icon
+lands inside it, whether two things line up — cannot be answered headlessly, and
+does not have to be answered by asking the user for a screenshot either:
+
+```bash
+blender.exe --factory-startup --no-window-focus --window-geometry 40 40 1150 800 --python probe.py
+```
+
+`--factory-startup` keeps the user's other addons and preferences out of it
+(their addons also crash headlessly on GPU calls), and `--no-window-focus`
+stops the window stealing focus mid-work. In the script: set
+`bpy.context.preferences.use_preferences_save = False` **first** so it can never
+write preferences back, load the extension by path under a unique module name,
+draw the real UI into an `invoke_props_dialog` from a `bpy.app.timers` callback,
+`bpy.ops.screen.screenshot(filepath=...)` a second later, then
+`bpy.ops.wm.quit_blender()`. The screenshot includes popups. Shipped `draw_*`
+methods can be called directly with a `types.SimpleNamespace` standing in for
+`self`, so this tests the real code rather than a copy of it.
+
+Do **not** try to force a draw with `bpy.ops.wm.call_menu` under
+`--background`: it crashes Blender with an access violation.
+
 **To exercise an extension's manifest-reading path** (any code calling
 `addon_utils.module_bl_info()`), the verification module name above isn't
 enough on its own — `addon_utils.module_bl_info()` only parses

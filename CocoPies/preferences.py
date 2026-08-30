@@ -11,7 +11,7 @@ from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 from .items import (
     POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
     GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS, COL_ICON_UNITS_WIDE,
+    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
     SCOPE_COLUMNS,
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
@@ -27,7 +27,7 @@ from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
-from .previews import slot_button_args, icon_args, is_custom_icon, is_brush_icon
+from .previews import slot_button_args, icon_args
 from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
 from .ui import draw_pie_row
 
@@ -35,14 +35,12 @@ from .ui import draw_pie_row
 def icon_column_units(pie):
     """How wide the Icon column is for this pie.
 
-    Square -- and so aligned with the Pos button next to it -- unless the pie
-    holds an image icon, which draws larger than a built-in one and would be
-    clipped at that width. Decided once for the whole pie so the Label column
-    starts at the same place on every row.
+    One square, the same for every pie and every row. Kept as a function
+    because the table header and the rows both have to agree on it, and it used
+    to differ per pie: an icon loaded as triangle geometry drew wider than its
+    button, so a pie holding one widened the whole column. Nothing draws that
+    way any more (see previews.py), so there is one width again.
     """
-    for item in pie.items:
-        if is_custom_icon(item.icon) or is_brush_icon(item.icon):
-            return COL_ICON_UNITS_WIDE
     return COL_ICON_UNITS
 
 
@@ -485,21 +483,23 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         pos_cell.alignment = 'CENTER'
         pos_cell.label(**slot_button_args(item.position))
 
-        # Icon selector button.
-        #
-        # Drawn without a frame when it carries an image icon. A built-in icon
-        # fills the button and looks like the button it is; an icon_value one
-        # is drawn at a fixed size inside the button's padding, so the frame
-        # never lines up with it -- narrow the cell and the icon is clipped,
-        # widen it and the frame stands off as an empty well, with nothing in
-        # between. Dropping the frame sidesteps that: the icon draws at its own
-        # size against the row, still clickable, and an unused slot is blank
-        # rather than an empty box.
-        is_image_icon = is_custom_icon(item.icon) or is_brush_icon(item.icon)
-        icon_btn = body.row(align=True)
-        icon_btn.ui_units_x = icon_units
+        # Icon selector button. One square button per row, framed whatever it
+        # holds -- a built-in icon, a PNG or nothing -- because every kind of
+        # icon now draws the same way: centred inside the button at the same
+        # size as Blender's own. That was not true while the brush icons were
+        # triangle geometry, which drew half again as large as the button and
+        # spilled out of it; the column used to carry a second, wider width and
+        # drop the frame for those icons to hide it. Both went away with the
+        # icons themselves (see previews.py).
+        # The cell reserves the column so the header caption lines up with it;
+        # scale_x is what actually sizes the button, since an icon-only button
+        # sits at its natural one unit inside however wide a cell it is given.
+        # Scaled by the same number as the row's height, so it comes out square.
+        icon_cell = body.row(align=True)
+        icon_cell.ui_units_x = icon_units
+        icon_btn = icon_cell.row(align=True)
+        icon_btn.scale_x = ITEM_ROW_UNITS
         op = icon_btn.operator("cocopie.select_icon", text="",
-                               emboss=not is_image_icon,
                                **icon_args(item.icon, 'BLANK1'))
         op.pie_index = self.active_pie_index
         op.item_index = index

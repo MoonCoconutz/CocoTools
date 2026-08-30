@@ -341,7 +341,23 @@ arguments — to read.
 ## Blender UI layout gotchas (learned the expensive way)
 
 - An icon-only button **collapses to its content** instead of filling its
-  share of a row. Pin the width explicitly on any row of icon-only buttons.
+  share of a row, and `ui_units_x` on the row does **not** change that — the
+  cell gets the width, the button stays one unit wide inside it. `scale_x` is
+  the only thing that resizes the button itself. Measured in a real window:
+  the button is exactly one widget_unit square before scaling, and `scale_x` /
+  `scale_y` multiply that same unit, so equal numbers give a square button.
+  Set both: `ui_units_x` on the cell so the table header lines up with the
+  rows, `scale_x` on the button so it fills the cell.
+- **An icon is only drawn at icon size if it is an icon.** A built-in icon or a
+  `bpy.utils.previews` image draws ~18px centred inside its button. Triangle
+  geometry loaded with `bpy.app.icons.new_triangles_from_file()` draws ~31px —
+  bigger than the 23px button, which does not grow to fit it. That is not
+  cosmetic: the button is the click target and the selection highlight, so an
+  overflowing icon means only a corner of it is clickable, the highlight hides
+  underneath it, and neighbours in a grid touch whatever spacing the layout
+  asks for. The sculpt brush icons were geometry for exactly this reason and
+  are now PNGs (`CocoPies/icons/brushes/`, see its README). Keep every icon on
+  the preview-collection path.
 - `separator(type='LINE')` only renders as a visible divider stacked in a
   **column**; inside a row it's just a stray dash. A row separator adds
   height and no width, which is why a square popup and a row separator are

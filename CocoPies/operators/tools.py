@@ -213,9 +213,10 @@ class COCOPIE_OT_select_icon(Operator):
     # A props_dialog can't scroll, so the grid is capped and the footer tells
     # you to keep typing when there's more than fits
     GRID_COLUMNS = 24
-    # Image icons -- custom PNGs and the sculpt brush icons -- draw larger than
-    # Blender's own, so at 24 even columns each cell is narrower than the icon
-    # and crops it. Fewer, wider columns for those tabs.
+    # Image icons -- custom PNGs and the sculpt brush icons -- are artwork
+    # rather than glyphs, and there are only a few dozen of them rather than a
+    # few hundred. Fewer columns gives each one room to be told apart, which
+    # matters more here than fitting the maximum number on screen.
     IMAGE_GRID_COLUMNS = 16
     GRID_MAX_ROWS = 13
 
@@ -347,15 +348,22 @@ class COCOPIE_OT_select_icon(Operator):
                 empty.label(text="Try a shorter word, or switch to the All tab")
             return
 
-        columns = (self.IMAGE_GRID_COLUMNS
-                   if self.category in ('CUSTOM', 'BRUSH')
+        image_tab = self.category in ('CUSTOM', 'BRUSH')
+        columns = (self.IMAGE_GRID_COLUMNS if image_tab
                    else self.GRID_COLUMNS)
         limit = columns * self.GRID_MAX_ROWS
         shown = icons[:limit]
 
+        # An unaligned grid puts Blender's own button spacing between the
+        # cells; an aligned one packs them edge to edge. Built-in icons are
+        # glyphs with their own generous margin, so they read as separate
+        # either way and stay tighter packed. Image icons carry artwork right
+        # up to their edges, so they want the gap to read as separate choices
+        # rather than as one strip of picture.
         box = layout.box()
         grid = box.grid_flow(row_major=True, columns=columns,
-                             align=True, even_columns=True, even_rows=True)
+                             align=not image_tab,
+                             even_columns=True, even_rows=True)
         for name in shown:
             cell = grid.row(align=True)
             is_current = name == current
