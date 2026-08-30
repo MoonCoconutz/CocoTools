@@ -31,14 +31,10 @@ CUSTOM_PREFIX = "custom:"
 # became assets in 4.3; the built-in set now has three brush icons in total,
 # which is not enough to tell thirty-odd sculpt brushes apart.
 #
-# They ship as PNGs and load through the same preview collection as the custom
-# icons, rather than as triangle geometry through bpy.app.icons. Geometry icons
-# are drawn at roughly half again the size of every other icon and overflow the
-# button they belong to, which is not a cosmetic detail: the button underneath
-# stays icon-sized, so the click target covers only a corner of the artwork, the
-# selection highlight is hidden behind it, and neighbouring icons in a grid
-# touch. As images they draw like Blender's own icons -- centred inside their
-# button, at the same size as everything around them.
+# They ship twice: as PNGs through the preview collection, and as triangle
+# geometry through bpy.app.icons (see _brush_geo below). One slot reference
+# resolves on either path, and each path is used where its drawing size is
+# right -- PNGs everywhere a button is icon-sized, geometry in a pie slot.
 BRUSH_PREFIX = "brush:"
 
 # How a brush icon is keyed inside the preview collection, kept distinct from
@@ -72,6 +68,64 @@ def custom_icon_dirs():
 def brush_icons_dir():
     """Folder the sculpt brush icon PNGs ship in"""
     return os.path.join(icons_dir(), "brushes")
+
+
+# Brush icon geometry, kept alongside the PNGs rather than instead of them.
+#
+# The two paths draw at different sizes and each is right in one place. A
+# preview PNG draws ~19px centred inside its button and never larger, whatever
+# the button does -- measured in a real window, on both 4.5 and 5.2. Triangle
+# geometry draws ~31px and the button does not grow to fit it.
+#
+# In the icon picker that overflow is a bug: the buttons there are icon-sized,
+# so the artwork spills past its own click target and its neighbours. In a pie
+# slot the button is a wide bar, nothing it can overflow, and the extra size is
+# the whole point -- a pie is read at a glance from the corner of the eye.
+#
+# Wrapping a slot in a box or column to enlarge a PNG instead is not an
+# alternative: Blender only draws its number shortcuts on a slot that is a
+# direct child of the pie layout, so a wrapped slot silently loses them.
+_brush_geo = {}
+
+
+def _load_brush_geometry():
+    """Load icons/brushes/*.dat through bpy.app.icons, keyed by brush name.
+
+    brush.sculpt.draw_sharp.dat becomes "draw_sharp", matching the PNG next to
+    it so one slot's `brush:` reference resolves on either path.
+    """
+    global _brush_geo
+    _release_brush_geometry()
+    folder = brush_icons_dir()
+    if not os.path.isdir(folder):
+        return
+    loaded = {}
+    for filename in sorted(os.listdir(folder)):
+        stem, ext = os.path.splitext(filename)
+        if ext.lower() != ".dat":
+            continue
+        try:
+            loaded[stem.split(".")[-1]] = bpy.app.icons.new_triangles_from_file(
+                os.path.join(folder, filename))
+        except Exception as e:
+            print(f"CocoPies: could not load brush geometry {filename}: {e}")
+    _brush_geo = loaded
+
+
+def _release_brush_geometry():
+    """Hand every loaded geometry icon back, so a reload does not leak them"""
+    global _brush_geo
+    for icon_id in _brush_geo.values():
+        try:
+            bpy.app.icons.release(icon_id)
+        except Exception:
+            pass
+    _brush_geo = {}
+
+
+def brush_geo_icon_id(name):
+    """Geometry icon id for a brush name, or 0 if it has none"""
+    return _brush_geo.get(name, 0)
 
 
 def _load_brush_icons(collection):
@@ -187,6 +241,7 @@ def register_previews():
     arrows = _load_slot_arrows(collection)
     _custom_names = _load_custom(collection)
     _brush_names = _load_brush_icons(collection)
+    _load_brush_geometry()
 
     if arrows or _custom_names or _brush_names:
         _previews = collection
@@ -207,6 +262,7 @@ def unregister_previews():
         _previews = None
     _custom_names = []
     _brush_names = []
+    _release_brush_geometry()
 
 
 def _preview_id(key):
@@ -264,6 +320,36 @@ def icon_args(icon_ref, fallback='BLANK1'):
         icon_id = brush_icon_id(icon_ref[len(BRUSH_PREFIX):])
         return {"icon_value": icon_id} if icon_id else {"icon": fallback}
     return {"icon": safe_icon(icon_ref, fallback)}
+
+
+def pie_icon_args(icon_ref, fallback='NONE'):
+    """Keyword arguments drawing a slot's icon *in a pie*.
+
+    Same contract as icon_args(), but a brush icon resolves to its geometry
+    rather than its PNG, so it draws at ~31px instead of ~19px in the wide bar
+    a pie slot gives it. Everything else -- custom artwork, Blender's own
+    icons -- is unchanged, since only the brush set ships both ways.
+    """
+    if is_brush_icon(icon_ref):
+        icon_id = brush_geo_icon_id(icon_ref[len(BRUSH_PREFIX):])
+        if icon_id:
+            return {"icon_value": icon_id}
+    return icon_args(icon_ref, fallback)
+
+
+def image_icon_label(icon_ref):
+    """Readable name for an image icon, for a button drawn under its artwork.
+
+    Only the prefix and the underscores go. The case is left as the author
+    wrote it -- a brush icon ships with a name Blender chose, but a custom one
+    is whatever the user called their file, and title-casing that would be
+    guessing at what they meant.
+    """
+    for prefix in (CUSTOM_PREFIX, BRUSH_PREFIX):
+        if icon_ref.startswith(prefix):
+            icon_ref = icon_ref[len(prefix):]
+            break
+    return icon_ref.replace("_", " ")
 
 
 def slot_button_args(position):

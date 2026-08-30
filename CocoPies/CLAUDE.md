@@ -361,9 +361,21 @@ arguments — to read.
   cosmetic: the button is the click target and the selection highlight, so an
   overflowing icon means only a corner of it is clickable, the highlight hides
   underneath it, and neighbours in a grid touch whatever spacing the layout
-  asks for. The sculpt brush icons were geometry for exactly this reason and
-  are now PNGs (`CocoPies/icons/brushes/`, see its README). Keep every icon on
-  the preview-collection path.
+  asks for. The sculpt brush icons therefore ship **both** ways in
+  `CocoPies/icons/brushes/` — a `.png` and a `.dat` per brush — and which one
+  is used depends on the button. Everywhere a button is icon-sized (the icon
+  picker, the Preferences list) the PNG is right, and `icon_args()` returns
+  it. In a pie slot the button is a wide bar with nothing to overflow, and the
+  extra size is the point, so `pie_icon_args()` returns the geometry instead.
+  Do not "unify" these back onto one path: going all-PNG makes pie icons tiny
+  again, and going all-geometry brings back the picker bug above.
+- **Never wrap a pie slot in a box or a column.** Blender only draws its
+  number shortcuts on a slot that is a direct child of the `menu_pie()`
+  layout, so a wrapped slot silently loses the keyboard number that picks it,
+  and the bar splits into a clickable half and a dead half. Confirmed in a
+  real window, wrapped and plain slots side by side in one pie. This is what
+  makes `template_icon()` unusable for enlarging a pie slot's artwork, and why
+  the geometry path above exists.
 - `separator(type='LINE')` only renders as a visible divider stacked in a
   **column**; inside a row it's just a stray dash. A row separator adds
   height and no width, which is why a square popup and a row separator are

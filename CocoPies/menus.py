@@ -17,7 +17,7 @@ from .items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import slot_is_used
-from .previews import icon_args
+from .previews import icon_args, pie_icon_args
 from .icons import (
     ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
 )
@@ -111,7 +111,11 @@ def _parse_bpy_ops_call(command):
 # spaces into the label text. Doing it here instead of in the stored label
 # keeps the padding out of the user's data, so it never shows up in the
 # Preferences list, in an exported preset, or in a label they are editing.
-_ICON_VALUE_LABEL_PAD = "  "
+# Five, not two: a pie slot's brush icon is geometry (~31px, see
+# previews.pie_icon_args), so it reaches further into the label than the ~19px
+# icon this padding was first measured against. Five is the user's own call on
+# how the gap should look, not a measurement -- don't "correct" it back.
+_ICON_VALUE_LABEL_PAD = "     "
 
 
 def _label_for(label, icon_kw):
@@ -121,6 +125,13 @@ def _label_for(label, icon_kw):
     return label
 
 
+# A slot stays a *direct* child of the pie layout -- never wrapped in a box or
+# a column to make room for a bigger icon. Blender only draws its number
+# shortcuts on direct children, so a wrapped slot silently loses the keyboard
+# number that picks it, and splits the bar into a clickable half and a dead
+# one. Confirmed in a real window: wrapped slots came back with no numbers
+# while the plain ones beside them kept theirs. A brush icon gets its size
+# from previews.pie_icon_args() instead, which is free of that trade-off.
 def create_pie_menu_class(pie_data):
     """Dynamically create a pie menu class"""
     
@@ -156,7 +167,7 @@ def create_pie_menu_class(pie_data):
                 try:
                     # Custom icons draw through icon_value, Blender's through icon, so the
                     # whole keyword pair is built once and splatted into each call
-                    icon_kw = icon_args(slot.icon, 'NONE')
+                    icon_kw = pie_icon_args(slot.icon, 'NONE')
                     label = _label_for(slot.label, icon_kw)
                     command = slot.command
                     
@@ -256,7 +267,7 @@ def create_pie_menu_class(pie_data):
                         op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
                         op.command = command
                 except Exception as e:
-                    pie.label(text=label)
+                    pie.label(text=slot.label)
             else:
                 pie.separator()
     

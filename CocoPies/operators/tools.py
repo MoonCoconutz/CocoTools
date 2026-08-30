@@ -26,7 +26,7 @@ from ..menus import execute_script, create_pie_menu_class
 from ..keymaps import register_pie_menus, unregister_pie_menus
 from ..previews import (
     icon_args, custom_icon_names, custom_icon_dirs, register_previews,
-    CUSTOM_PREFIX, BRUSH_PREFIX, brush_icon_names,
+    CUSTOM_PREFIX, BRUSH_PREFIX, brush_icon_names, image_icon_label,
 )
 
 
@@ -217,12 +217,20 @@ class COCOPIE_OT_select_icon(Operator):
     # rather than glyphs, and there are only a few dozen of them rather than a
     # few hundred. Fewer columns gives each one room to be told apart, which
     # matters more here than fitting the maximum number on screen.
-    IMAGE_GRID_COLUMNS = 11
-    # An icon draws at a fixed ~18px inside its button; the only way to make
-    # artwork read larger is to scale the button around it. Columns are cut in
-    # step so the grid keeps the same overall width.
-    IMAGE_CELL_SCALE = 1.5
+    IMAGE_GRID_COLUMNS = 8
+    # An icon inside a button draws at a fixed ~19px no matter what the button
+    # does -- measured, and identical on 4.5 and 5.2. Scaling the cell only
+    # grows the frame around unchanged artwork, which is what the earlier
+    # scale_x/scale_y attempt here did. template_icon() is the one thing that
+    # genuinely resizes it, because it draws from the preview collection's
+    # 256px image rather than the small icon mip: 19px at scale 1, ~21px per
+    # step after that. It has no operator of its own, though, so an image cell
+    # is the icon stacked over a button that carries the click and the name.
+    IMAGE_ICON_SCALE = 2.0
     GRID_MAX_ROWS = 13
+    # A stacked cell is ~75px tall against a flat cell's ~19px, and the dialog
+    # can't scroll, so image tabs need their own much lower cap.
+    IMAGE_MAX_ROWS = 5
 
     pie_index: IntProperty()
     item_index: IntProperty()
@@ -355,7 +363,8 @@ class COCOPIE_OT_select_icon(Operator):
         image_tab = self.category in ('CUSTOM', 'BRUSH')
         columns = (self.IMAGE_GRID_COLUMNS if image_tab
                    else self.GRID_COLUMNS)
-        limit = columns * self.GRID_MAX_ROWS
+        limit = columns * (self.IMAGE_MAX_ROWS if image_tab
+                           else self.GRID_MAX_ROWS)
         shown = icons[:limit]
 
         # An unaligned grid puts Blender's own button spacing between the
@@ -369,18 +378,27 @@ class COCOPIE_OT_select_icon(Operator):
                              align=not image_tab,
                              even_columns=True, even_rows=True)
         for name in shown:
-            cell = grid.row(align=True)
-            if image_tab:
-                cell.scale_x = self.IMAGE_CELL_SCALE
-                cell.scale_y = self.IMAGE_CELL_SCALE
             is_current = name == current
-            if not is_current:
-                # Flat cells keep a 300-icon grid calm; only the active one
-                # gets a button frame
-                cell.emboss = 'NONE'
+            if image_tab:
+                # Artwork on top at a size worth looking at, and under it the
+                # button that does the clicking -- it carries the name, and its
+                # depress state is what marks the current choice.
+                cell = grid.column(align=True)
+                args = icon_args(name)
+                cell.template_icon(icon_value=args.get("icon_value", 0),
+                                   scale=self.IMAGE_ICON_SCALE)
+                label, button = image_icon_label(name), cell
+            else:
+                cell = grid.row(align=True)
+                if not is_current:
+                    # Flat cells keep a 300-icon grid calm; only the active one
+                    # gets a button frame
+                    cell.emboss = 'NONE'
+                label, button = "", cell
             try:
-                op = cell.operator("cocopie.set_icon_choice", text="",
-                                   depress=is_current, **icon_args(name))
+                kwargs = {} if image_tab else icon_args(name)
+                op = button.operator("cocopie.set_icon_choice", text=label,
+                                     depress=is_current, **kwargs)
                 op.pie_index = self.pie_index
                 op.item_index = self.item_index
                 op.icon_name = name
