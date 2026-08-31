@@ -7,7 +7,6 @@ one repository.
 | --- | --- |
 | [CocoPies](CocoPies/README.md) | Build custom pie menus entirely from the addon's own Preferences panel — no code required. |
 | [CocoSelections](CocoSelections/README.md) | Store named object selections and restore them later, from the 3D viewport sidebar. |
-| [CocoDelete](CocoDelete/README.md) | `X` deletes straight away in mesh and curve edit mode — no delete menu, no confirmation popup. |
 
 ## Install
 

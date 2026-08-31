@@ -16,7 +16,6 @@ specific development notes live in that extension's own `CLAUDE.md`
 | --- | --- |
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
-| `CocoDelete/` | `X` deletes without the confirmation menu in mesh/curve edit mode. See `CocoDelete/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
 them. "Development" means editing the Python under an extension's folder,
@@ -84,7 +83,8 @@ real install claims the `bl_idname` at Blender's own startup before the
 script's `register()` runs, `bpy.utils.register_class()` then raises no
 exception but the class never reaches `bpy.types`, and
 `bpy.ops.<category>.<name>.poll()` raises `AttributeError: ... could not be
-found`. This is not a bug in the extension - confirmed on `CocoDelete`, whose
+found`. This is not a bug in the extension - was confirmed on the since-removed
+`CocoDelete`, whose
 real install worked correctly. For an extension already installed here, verify
 against that real install instead: drop `--factory-startup` and check
 `bpy.context.preferences.addons`, `<operator>.poll()`, and `<operator>()`

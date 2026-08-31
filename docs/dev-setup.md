@@ -25,7 +25,7 @@ the public feed. That is backwards. After this, the feed is only ever touched
 for real releases.
 
 Blender scans a local repository's immediate children for
-`blender_manifest.toml`, so **CocoPies, CocoSelections and CocoDelete all
+`blender_manifest.toml`, so **CocoPies and CocoSelections both
 appear at once** from the one directory. A new extension folder added later
 shows up on its own.
 
@@ -41,7 +41,6 @@ What that costs, per extension:
 | Extension | Where its data lives | Effect |
 |---|---|---|
 | **CocoPies** | `AddonPreferences` — every pie menu | **All pies appear gone**, and starter pies get seeded into the blank. Back up first. |
-| **CocoDelete** | `AddonPreferences` — three on/off toggles | Back to defaults (all on). Re-tick if you had changed them. |
 | **CocoSelections** | the Scene, saved in each `.blend` | Unaffected. Nothing to do. |
 
 Nothing is corrupted and the old entry is not deleted — the data just does not
@@ -58,7 +57,6 @@ Do all of it in **both** Blender 4.5 and 5.2. They have separate preferences.
 - Copy **`CocoPies/icons/custom/`** out of the installed folder. It holds your
   own artwork, is deliberately not in git, and has no backup behind it. Find
   the installed path in Preferences → Add-ons → CocoPies (expand the entry).
-- **CocoDelete** — note which of its three toggles you have changed, if any.
 - **CocoSelections** — nothing; its data is in your `.blend` files.
 
 ### 2. Clone the repo
@@ -93,14 +91,12 @@ Only once the local copies are enabled and working, uninstall the feed copies.
 - Copy `icons/custom/` back into
   `%USERPROFILE%\Documents\Claude\CocoTools\CocoPies\icons\custom\`. It is
   gitignored there, so it stays yours and never ships.
-- **CocoDelete** — re-tick anything you had changed.
 
 ### 6. Check it took
 
 - CocoPies: the pies are all back, in the right sections, with the right
   shortcuts; a shortcut actually fires the pie in the viewport; the icon picker
   shows your custom icons on the Custom tab.
-- CocoDelete: `X` in mesh edit mode deletes without the confirmation menu.
 - CocoSelections: the sidebar panel lists the sets saved in an existing
   `.blend`.
 

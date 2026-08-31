@@ -375,7 +375,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         # own hold/tap timing (see COCOPIE_OT_hold_or_tap), since keyboard
         # keys have no built-in event value for that distinction.
         col.separator(factor=0.5)
-        tt = col.row(align=True, heading="Tap / Hold")
+        tt = col.row(align=True, heading="Quick Tap")
         tt.prop(pie, "tap_toggle", text="")
         action = tt.row(align=True)
         action.enabled = pie.tap_toggle

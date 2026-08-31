@@ -16,7 +16,7 @@ CocoTools layout:
 .github/workflows/publish-extensions.yml
 CLAUDE.md                 <- shared conventions
 README.md
-CocoDelete/  CocoPies/  CocoSelections/
+CocoPies/  CocoSelections/
 ```
 
 `CocoTools/CocoPies/` is flat: the package files directly, plus that
