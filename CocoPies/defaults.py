@@ -78,6 +78,22 @@ def bundled_scripts_dir():
                         "scripts", "workspaces")
 
 
+# The mesh delete script, which a starter pie runs on tap. Resolved the same
+# way and for the same reason as the workspace scripts: the path is baked into
+# stored pie data, so it has to point at wherever this install actually is.
+MESH_DELETE_SCRIPT = "MeshDeleteNoMenu.py"
+
+
+def delete_script_path():
+    """Absolute path to the bundled mesh delete script, or None if missing"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "scripts", "delete", MESH_DELETE_SCRIPT)
+    if os.path.exists(path):
+        return path
+    print(f"CocoPies: bundled script missing: {path}")
+    return None
+
+
 def _icon(*candidates):
     """The first of `candidates` this Blender actually has.
 
@@ -137,7 +153,77 @@ def default_pie_definitions(script_paths):
         prop = f"bpy.context.space_data.overlay.{name}"
         return f"{prop} = not {prop}"
 
+    delete_script = delete_script_path()
+    mesh_delete_tap = ('execute_script("%s")' % delete_script.replace("\\", "/")
+                       if delete_script else "")
+
     return [
+        # X in mesh and curve edit: tapped it deletes, held it opens the pie.
+        # One key doing both is the whole point -- these replace the CocoDelete
+        # extension, which bound X itself and raced CocoPies for it, with
+        # whichever registered first winning. The tap runs a bundled script
+        # rather than that extension's operator, so nothing here depends on
+        # another add-on being installed and enabled.
+        {
+            "name": "Mesh Delete",
+            "idname": "COCOPIE_MT_mesh_delete",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"],
+            "key": "X",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_action": "COMMAND",
+            "tap_command": mesh_delete_tap,
+            "items": [
+                {"label": "Limited Dissolve", "position": 0,
+                 "command": "bpy.ops.mesh.dissolve_limited()",
+                 "icon": _icon("STICKY_UVS_LOC"), "enabled": True},
+                {"label": "Merge By Distance", "position": 1,
+                 "command": "bpy.ops.mesh.remove_doubles()",
+                 "icon": "NONE", "enabled": True},
+                {"label": "Dissolve Edges", "position": 2,
+                 "command": "bpy.ops.mesh.dissolve_edges()",
+                 "icon": _icon("SNAP_EDGE"), "enabled": True},
+                {"label": "Delete Edges", "position": 3,
+                 "command": "bpy.ops.mesh.delete(type='EDGE')",
+                 "icon": _icon("EDGESEL"), "enabled": True},
+                {"label": "Delete Vertices", "position": 4,
+                 "command": "bpy.ops.mesh.delete(type='VERT')",
+                 "icon": _icon("VERTEXSEL"), "enabled": True},
+                {"label": "Delete Faces", "position": 5,
+                 "command": "bpy.ops.mesh.delete(type='FACE')",
+                 "icon": _icon("FACESEL"), "enabled": True},
+                {"label": "Dissolve Vertices", "position": 6,
+                 "command": "bpy.ops.mesh.dissolve_verts()",
+                 "icon": _icon("SNAP_VERTEX"), "enabled": True},
+                {"label": "Dissolve Faces", "position": 7,
+                 "command": "bpy.ops.mesh.dissolve_faces()",
+                 "icon": _icon("SNAP_FACE"), "enabled": True},
+            ],
+        },
+        {
+            "name": "Curve Delete",
+            "idname": "COCOPIE_MT_curve_delete",
+            "keymap_type": "CURVE", "keymap_scopes": ["CURVE"],
+            "key": "X",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_action": "COMMAND",
+            # A one-liner rather than a script: curve delete needs no
+            # select-mode branching, so there is nothing for a script to hold
+            "tap_command": "bpy.ops.curve.delete(type='SEGMENT')",
+            "items": [
+                {"label": "Delete Vertices", "position": 0,
+                 "command": "bpy.ops.curve.delete(type='VERT')",
+                 "icon": _icon("DOT"), "enabled": True},
+                {"label": "Delete Segment", "position": 1,
+                 "command": "bpy.ops.curve.delete(type='SEGMENT')",
+                 "icon": _icon("DRIVER_DISTANCE"), "enabled": True},
+            ],
+        },
         {
             "name": "Workspace Menu",
             "idname": "COCOPIE_MT_workspace",

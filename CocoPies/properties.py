@@ -112,11 +112,19 @@ class COCOPIE_KeymapScope(PropertyGroup):
 
 class COCOPIE_PieMenuData(PropertyGroup):
     """Stores data for a single pie menu"""
+    # Confirming the field is the end of the rename, so the row goes back to
+    # being a plain selected row rather than leaving an edit box open on it
+    def _update_name(self, context):
+        prefs = get_prefs(context)
+        if prefs is not None:
+            prefs.renaming_pie_index = -1
+        update_pie_menu(self, context)
+
     name: StringProperty(
         name="Menu Name",
         description="Name of the pie menu",
         default="New Pie Menu",
-        update=update_pie_menu
+        update=_update_name
     )
     
     idname: StringProperty(

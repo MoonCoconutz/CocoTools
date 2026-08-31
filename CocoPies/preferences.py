@@ -71,6 +71,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     
     pie_menus: CollectionProperty(type=COCOPIE_PieMenuData)
     active_pie_index: IntProperty(default=0)
+    # Which row is currently being renamed in place, or -1 for none. Session
+    # state rather than settings: a rename is over as soon as it is confirmed
+    # or another row is clicked, so this is never meaningfully saved.
+    renaming_pie_index: IntProperty(default=-1)
 
     # Names of every starter pie this configuration has ever been given, as a
     # JSON list. What makes "add starters the user has never seen" different

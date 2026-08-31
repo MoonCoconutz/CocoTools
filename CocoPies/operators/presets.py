@@ -68,6 +68,8 @@ class COCOPIE_OT_save_preset(Operator):
                     "tap_toggle": pie.tap_toggle,
                     "tap_toggle_a": pie.tap_toggle_a,
                     "tap_toggle_b": pie.tap_toggle_b,
+                    "tap_action": pie.tap_action,
+                    "tap_command": pie.tap_command,
                     "items": []
                 }
                 

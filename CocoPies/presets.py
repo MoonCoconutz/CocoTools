@@ -110,6 +110,12 @@ def _apply_pie_dict(pie, pie_dict):
     pie.tap_toggle = pie_dict.get("tap_toggle", False)
     pie.tap_toggle_a = pie_dict.get("tap_toggle_a", "0")
     pie.tap_toggle_b = pie_dict.get("tap_toggle_b", "0")
+    pie.tap_action = pie_dict.get("tap_action", 'TOGGLE')
+    # Through the same repointer as an item's command: a tap command can be an
+    # execute_script() call with an absolute path baked in, which is exactly
+    # what does not survive being carried to another machine or install.
+    pie.tap_command = _repoint_missing_bundled_script(
+        pie_dict.get("tap_command", ""))
 
 
 def _merge_preset_menus(prefs, incoming, mode):

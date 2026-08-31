@@ -33,47 +33,57 @@ def draw_pie_row(layout, prefs, pie, index, is_active):
 
     name_shortcut_split = row.split(factor=NAME_SPLIT, align=True)
 
-    # The name doubles as the row's select button. Embossed only while active:
-    # an unembossed operator button reads as a plain label, so an inactive row
-    # carries no button frame and the list stays flat, while the active one is
-    # unmistakable. depress is what paints it in the theme's selected colour.
+    # The name doubles as the row's select button, and the selected row has
+    # two states. Selected: name and shortcut are both depressed, so the row
+    # carries one unbroken band of the theme's selected colour -- `template_list`
+    # draws a real row background and this list is deliberately not one (see
+    # the module docstring), so the buttons have to be the highlight. Renaming:
+    # the name half becomes the field, the shortcut half stays depressed so
+    # the row still reads as current.
+    #
+    # Clicking the name of an already-selected row is what switches between
+    # them, which makes a double-click on any row rename it: first click
+    # selects, second lands on the name of what is now the selected row.
     name_col = name_shortcut_split.row(align=True)
     name_col.active = pie.enabled
-    if is_active:
-        # Renaming in place. Blender's double-click-to-rename belongs to
-        # template_list, which this list deliberately is not (see the module
-        # docstring), so the second click has to land on something already
-        # editable: the selected row draws its name as the field itself.
-        # Double-clicking an unselected row therefore still renames it --
-        # the first click selects and redraws, the second lands in the field.
-        #
-        # A text field cannot carry the depressed selection colour the name
-        # button used to, so the marker does it instead -- the row would
-        # otherwise be the only one in the list with nothing showing it is
-        # current. A box around the row was the alternative and was rejected:
-        # it indents the row and reintroduces exactly the framing this list
-        # exists to avoid.
-        marker = name_col.row(align=True)
-        marker.operator("cocopie.select_pie", text="", icon='LAYER_ACTIVE',
-                        depress=True).index = index
+    is_renaming = is_active and prefs.renaming_pie_index == index
+    if is_renaming:
+        # No focus call here on purpose. activate_init only applies inside a
+        # popup, and Blender exposes no operator that puts a field into edit
+        # mode, so the field cannot open with the cursor already in it -- the
+        # click that lands on it is what focuses it. A rename popup was tried
+        # instead, purely to get that focus, and rejected: it is a worse
+        # trade than one extra click.
         name_col.prop(pie, "name", text="")
     else:
-        name_col.alignment = 'LEFT'
+        # EXPAND on the selected row so the button fills its half rather than
+        # shrinking to the text, which is what makes the band full width
+        name_col.alignment = 'EXPAND' if is_active else 'LEFT'
         op = name_col.operator("cocopie.select_pie",
                                text=pie.name or "Untitled",
-                               emboss=False, depress=False)
+                               emboss=is_active, depress=is_active)
         op.index = index
+        op.rename_if_active = True
 
     shortcut_actions_split = name_shortcut_split.split(factor=SHORTCUT_SPLIT,
                                                        align=True)
 
     shortcut_col = shortcut_actions_split.row(align=True)
-    shortcut_col.alignment = 'RIGHT'
     shortcut_col.active = pie.enabled
     if find_shortcut_conflicts(prefs, pie, index):
         warn = shortcut_col.row(align=True)
+        warn.alignment = 'RIGHT'
         warn.label(text="", icon='ERROR')
-    shortcut_col.label(text=format_shortcut(pie))
+    if is_active:
+        # Carries the selected colour across the rest of the row. Selects
+        # rather than renames, so a click aimed at the shortcut does not open
+        # a field the user was not reaching for.
+        shortcut_col.operator("cocopie.select_pie",
+                              text=format_shortcut(pie),
+                              depress=True).index = index
+    else:
+        shortcut_col.alignment = 'RIGHT'
+        shortcut_col.label(text=format_shortcut(pie))
 
     actions_col = shortcut_actions_split.row(align=True)
     actions_col.alignment = 'RIGHT'

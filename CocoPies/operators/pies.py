@@ -232,11 +232,23 @@ class COCOPIE_OT_select_pie(Operator):
     bl_options = {'INTERNAL'}
     
     index: IntProperty()
-    
+    # Clicking the name of the row that is *already* selected starts a rename
+    # rather than re-selecting it, which is what makes a double-click on any
+    # row rename it: the first click selects, the second lands on this. Only
+    # the name half asks for it -- clicking the shortcut half of a selected
+    # row should not open a field the user was not aiming at.
+    rename_if_active: BoolProperty(default=False)
+
     def execute(self, context):
         try:
             prefs = context.preferences.addons[ADDON_ID].preferences
-            prefs.active_pie_index = self.index
+            if self.rename_if_active and prefs.active_pie_index == self.index:
+                prefs.renaming_pie_index = self.index
+            else:
+                prefs.active_pie_index = self.index
+                # Selecting anything else ends a rename in progress, so the
+                # field cannot be left open on a row that is no longer current
+                prefs.renaming_pie_index = -1
         except Exception as e:
             self.report({'ERROR'}, f"Failed to select: {str(e)}")
         return {'FINISHED'}
