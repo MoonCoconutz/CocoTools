@@ -107,7 +107,16 @@ class COCOPIE_OT_hold_or_tap(Operator):
     def modal(self, context, event):
         if event.type == self.key and event.value == 'RELEASE':
             self._cancel_timer(context)
-            bpy.ops.cocopie.tap_toggle_direction(pie_index=self.pie_index)
+            pie = get_pie(context, self.pie_index)
+            # A tap runs a command instead of a direction when the pie says
+            # so. Routed through cocopie.execute_command, the same operator a
+            # pie item uses, so a tap and a slot behave identically -- same
+            # namespace, same error reporting, same undo push.
+            if pie is not None and pie.tap_action == 'COMMAND':
+                if pie.tap_command:
+                    bpy.ops.cocopie.execute_command(command=pie.tap_command)
+            else:
+                bpy.ops.cocopie.tap_toggle_direction(pie_index=self.pie_index)
             return {'FINISHED'}
 
         if event.type == 'TIMER':

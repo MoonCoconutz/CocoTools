@@ -38,12 +38,31 @@ def draw_pie_row(layout, prefs, pie, index, is_active):
     # carries no button frame and the list stays flat, while the active one is
     # unmistakable. depress is what paints it in the theme's selected colour.
     name_col = name_shortcut_split.row(align=True)
-    name_col.alignment = 'LEFT'
     name_col.active = pie.enabled
-    op = name_col.operator("cocopie.select_pie",
-                           text=pie.name or "Untitled",
-                           emboss=is_active, depress=is_active)
-    op.index = index
+    if is_active:
+        # Renaming in place. Blender's double-click-to-rename belongs to
+        # template_list, which this list deliberately is not (see the module
+        # docstring), so the second click has to land on something already
+        # editable: the selected row draws its name as the field itself.
+        # Double-clicking an unselected row therefore still renames it --
+        # the first click selects and redraws, the second lands in the field.
+        #
+        # A text field cannot carry the depressed selection colour the name
+        # button used to, so the marker does it instead -- the row would
+        # otherwise be the only one in the list with nothing showing it is
+        # current. A box around the row was the alternative and was rejected:
+        # it indents the row and reintroduces exactly the framing this list
+        # exists to avoid.
+        marker = name_col.row(align=True)
+        marker.operator("cocopie.select_pie", text="", icon='LAYER_ACTIVE',
+                        depress=True).index = index
+        name_col.prop(pie, "name", text="")
+    else:
+        name_col.alignment = 'LEFT'
+        op = name_col.operator("cocopie.select_pie",
+                               text=pie.name or "Untitled",
+                               emboss=False, depress=False)
+        op.index = index
 
     shortcut_actions_split = name_shortcut_split.split(factor=SHORTCUT_SPLIT,
                                                        align=True)

@@ -214,6 +214,34 @@ class COCOPIE_PieMenuData(PropertyGroup):
         default=False,
         update=_update_tap_toggle,
     )
+    # What a tap does. Explicit numbers because Blender stores an
+    # EnumProperty as its integer value -- see this addon's CLAUDE.md; adding
+    # an item above an existing one without a number repoints stored pies.
+    tap_action: EnumProperty(
+        name="On Tap",
+        description="What a quick tap runs, while a hold still opens the pie",
+        items=[
+            ('TOGGLE', "Toggle Two Directions",
+             "Alternate between the two chosen directions", 1),
+            ('COMMAND', "Run a Command",
+             "Run one command directly, whatever is in the pie", 2),
+        ],
+        default='TOGGLE',
+        update=update_pie_menu,
+    )
+    # The command form exists so a tap can do something the pie does not
+    # contain at all -- most usefully, hand the key back to whatever owned it
+    # before. X in mesh edit is the case this was built for: tap deletes
+    # (bpy.ops.mesh.cocodelete_delete()), hold opens the delete pie. Kept as
+    # a plain command string rather than a reference to another extension, so
+    # CocoPies needs to know nothing about what is on the other end.
+    tap_command: StringProperty(
+        name="Tap Command",
+        description="Python run by a quick tap, in the same form as a pie "
+                    "item's command",
+        default="",
+        update=update_pie_menu,
+    )
     tap_toggle_a: EnumProperty(
         name="First", description="One of the two directions a tap alternates between",
         items=_tap_toggle_direction_items, update=update_pie_menu,

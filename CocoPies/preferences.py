@@ -371,12 +371,32 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         # own hold/tap timing (see COCOPIE_OT_hold_or_tap), since keyboard
         # keys have no built-in event value for that distinction.
         col.separator(factor=0.5)
-        tt = col.row(align=True, heading="Tap to Toggle")
+        tt = col.row(align=True, heading="Tap / Hold")
         tt.prop(pie, "tap_toggle", text="")
-        pickers = tt.row(align=True)
-        pickers.enabled = pie.tap_toggle
-        pickers.prop(pie, "tap_toggle_a", text="")
-        pickers.prop(pie, "tap_toggle_b", text="")
+        action = tt.row(align=True)
+        action.enabled = pie.tap_toggle
+        action.prop(pie, "tap_action", text="")
+
+        # Only one of the two tap forms has anything to configure at a time,
+        # and an empty row here would just look like something failed to draw
+        # Split by hand rather than with heading="": under use_property_split
+        # every prop() claims the value column for itself, so a second one on
+        # the same row wraps to its own line -- and a sub-row does not help,
+        # since the setting is inherited by children. Turning the split off
+        # and placing the label column explicitly is what keeps a pair of
+        # fields side by side and still aligned with the rows above.
+        # Compared against three other arrangements in a real window.
+        detail = col.row(align=True)
+        detail.enabled = pie.tap_toggle
+        detail.use_property_split = False
+        halves = detail.split(factor=0.4)
+        halves.label(text="")
+        fields = halves.row(align=True)
+        if pie.tap_action == 'COMMAND':
+            fields.prop(pie, "tap_command", text="", icon='CONSOLE')
+        else:
+            fields.prop(pie, "tap_toggle_a", text="")
+            fields.prop(pie, "tap_toggle_b", text="")
 
     def draw_pie_items(self, layout, pie):
         """Draw the item table for the selected pie menu"""
