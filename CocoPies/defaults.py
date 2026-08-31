@@ -158,50 +158,12 @@ def default_pie_definitions(script_paths):
                        if delete_script else "")
 
     return [
-        # X in mesh and curve edit: tapped it deletes, held it opens the pie.
-        # One key doing both is the whole point -- these replace the CocoDelete
-        # extension, which bound X itself and raced CocoPies for it, with
-        # whichever registered first winning. The tap runs a bundled script
-        # rather than that extension's operator, so nothing here depends on
-        # another add-on being installed and enabled.
-        {
-            "name": "Mesh Delete",
-            "idname": "COCOPIE_MT_mesh_delete",
-            "keymap_type": "MESH", "keymap_scopes": ["MESH"],
-            "key": "X",
-            "ctrl": False, "shift": False, "alt": False,
-            "enabled": True,
-            "event_value": "CLICK_DRAG",
-            "tap_toggle": True,
-            "tap_action": "COMMAND",
-            "tap_command": mesh_delete_tap,
-            "items": [
-                {"label": "Limited Dissolve", "position": 0,
-                 "command": "bpy.ops.mesh.dissolve_limited()",
-                 "icon": _icon("STICKY_UVS_LOC"), "enabled": True},
-                {"label": "Merge By Distance", "position": 1,
-                 "command": "bpy.ops.mesh.remove_doubles()",
-                 "icon": "NONE", "enabled": True},
-                {"label": "Dissolve Edges", "position": 2,
-                 "command": "bpy.ops.mesh.dissolve_edges()",
-                 "icon": _icon("SNAP_EDGE"), "enabled": True},
-                {"label": "Delete Edges", "position": 3,
-                 "command": "bpy.ops.mesh.delete(type='EDGE')",
-                 "icon": _icon("EDGESEL"), "enabled": True},
-                {"label": "Delete Vertices", "position": 4,
-                 "command": "bpy.ops.mesh.delete(type='VERT')",
-                 "icon": _icon("VERTEXSEL"), "enabled": True},
-                {"label": "Delete Faces", "position": 5,
-                 "command": "bpy.ops.mesh.delete(type='FACE')",
-                 "icon": _icon("FACESEL"), "enabled": True},
-                {"label": "Dissolve Vertices", "position": 6,
-                 "command": "bpy.ops.mesh.dissolve_verts()",
-                 "icon": _icon("SNAP_VERTEX"), "enabled": True},
-                {"label": "Dissolve Faces", "position": 7,
-                 "command": "bpy.ops.mesh.dissolve_faces()",
-                 "icon": _icon("SNAP_FACE"), "enabled": True},
-            ],
-        },
+        # X in curve edit: tapped it deletes the segment, held it opens the
+        # pie. One key doing both is the point -- this and the Quick Tap on
+        # Mesh Delete below replace the CocoDelete extension, which bound X
+        # itself and raced CocoPies for it, whichever registered first
+        # winning. Curve needs no script: its delete takes no select-mode
+        # branching, unlike mesh.
         {
             "name": "Curve Delete",
             "idname": "COCOPIE_MT_curve_delete",
@@ -435,6 +397,13 @@ def default_pie_definitions(script_paths):
             "keymap_type": "MESH", "keymap_scopes": ["MESH"], "key": "X",
             "ctrl": False, "shift": False, "alt": False,
             "enabled": True,
+            # Tapped, X deletes through the bundled script -- which carries
+            # the select-mode branching that made CocoDelete worth having --
+            # while holding X opens this pie. See the Curve Delete note above.
+            "event_value": "CLICK_DRAG",
+            "tap_toggle": True,
+            "tap_action": "COMMAND",
+            "tap_command": mesh_delete_tap,
             "items": [
                 {"label": "Limited Dissolve", "icon": "STICKY_UVS_LOC", "position": 0, "enabled": True,
                  "command": "bpy.ops.mesh.dissolve_limited()"},
@@ -839,6 +808,11 @@ def ensure_default_pies(prefs):
         pie = prefs.pie_menus.add()
         pie.name = definition["name"]
         _apply_pie_dict(pie, definition)
+        # Added as we go, not just read once up front: two definitions sharing
+        # a name would otherwise both pass the check and seed two pies. That
+        # happened -- a second Mesh Delete was added to this list beside the
+        # one already here, and a fresh install got both.
+        existing.add(definition["name"])
         added += 1
 
     _record_seeded_starters(prefs, [d["name"] for d in definitions])
@@ -874,6 +848,9 @@ def sync_starter_pies(prefs):
         pie = prefs.pie_menus.add()
         pie.name = name
         _apply_pie_dict(pie, definition)
+        # See ensure_default_pies: kept current so two definitions sharing a
+        # name cannot both seed
+        existing.add(name)
         added += 1
 
     _record_seeded_starters(prefs, [d["name"] for d in definitions])
