@@ -20,7 +20,7 @@ https://mooncoconutz.github.io/CocoTools/index.json
 
 CocoPies then shows up as an installable/updatable extension there — enable
 it. (This addon used to be its own single-extension repository at
-`MoonCoconutz/CocoPies`; it's since moved into the CocoTools toolbox
+`MoonCoconutz/CocoPies`, which no longer exists; it moved into the CocoTools toolbox
 repository, same code, new home.)
 
 The editor lives in the addon's own preferences panel — expand CocoPies in

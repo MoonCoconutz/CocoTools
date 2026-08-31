@@ -5,9 +5,10 @@ CocoPies ships from the **CocoTools monorepo**, not from its own repository.
 - Remote: `https://github.com/MoonCoconutz/CocoTools`, branch `main`.
 - You are already working in a CocoTools clone, so publishing is an ordinary
   commit and push. No copying between repositories.
-- `MoonCoconutz/CocoPies` (the old standalone repo) is **archived and
-  read-only**; pushing to it fails with `403 ... This repository was archived`.
-  It only matters for reading pre-2026-08 history.
+- `MoonCoconutz/CocoPies` (the old standalone repo) was **deleted on
+  2026-08-31** — it 404s now. Nothing is lost with it: the subtree merge
+  carried every pre-2026-08 commit into this repo, reachable from `main`.
+  Don't go looking for it to read old history; it's already here.
 
 CocoTools layout:
 

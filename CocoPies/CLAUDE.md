@@ -88,8 +88,8 @@ Preview icons (`bpy.utils.previews`) need a GPU, so `icon_id` is `0` headless
 
 ## This extension's git history predates this monorepo
 
-CocoPies used to be its own repository (`MoonCoconutz/CocoPies`, now
-archived) and was folded into CocoTools via `git subtree`, with its full
+CocoPies used to be its own repository (`MoonCoconutz/CocoPies`, deleted on
+2026-08-31) and was folded into CocoTools via `git subtree`, with its full
 commit history preserved — including two folder renames before this repo
 even existed (`cocopie/` → `CocoPie/` → `CocoPies/`). A plain
 `git log -- CocoPies/keymaps.py` from the CocoTools root will **not** show
