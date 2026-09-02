@@ -323,6 +323,7 @@ def find_shortcut_conflicts(prefs, pie, index):
 COCOPIE_KEYMAP_IDNAMES = {
     'cocopie.hold_or_tap',
     'cocopie.tap_toggle_direction',
+    'cocopie.execute_command',
 }
 
 
@@ -395,7 +396,12 @@ def _build_external_index():
     """
     index = {}
     wm = bpy.context.window_manager
-    kc = getattr(wm.keyconfigs, 'user', None)
+    # The keyconfig actually in force -- see live_keyconfigs(). Reading `user`
+    # here described a keyconfig Blender was not dispatching from whenever a
+    # keymap preset was loaded, so the panel could report a shortcut as free
+    # while a live binding on it was busy swallowing the key.
+    live = live_keyconfigs()
+    kc = live[0] if live else None
     if kc is None:
         return index
 
@@ -405,22 +411,32 @@ def _build_external_index():
     # the user bound it themselves in the Keymap editor. Absence from `default`
     # alone does not make something an addon's -- a hand-edited binding on a
     # stock operator looks exactly the same from there.
-    def _idnames_in(kc_name):
+    # Matched on the whole binding, not just the operator id. Generic
+    # operators are the reason: wm.call_menu is bound by Blender and by half
+    # the addons in a stack, so an idname test labelled Blender's own X delete
+    # menu as an add-on's -- misleading anywhere, and actively wrong next to a
+    # checkbox offering to switch it off.
+    def _identities_in(kc_name):
         found = set()
         other_kc = getattr(wm.keyconfigs, kc_name, None)
         if other_kc is None:
             return found
         for km in other_kc.keymaps:
             for kmi in km.keymap_items:
-                found.add(kmi.idname)
+                found.add(binding_identity(kmi, km.name))
         return found
 
-    default_idnames = _idnames_in('default')
-    addon_idnames = _idnames_in('addon')
+    default_identities = _identities_in('default')
+    addon_identities = _identities_in('addon')
 
     for km in kc.keymaps:
         for kmi in km.keymap_items:
-            if not kmi.active or not kmi.idname:
+            # Inactive items are indexed rather than skipped: once CocoPies
+            # suppresses one it goes inactive, and dropping it here would take
+            # its row -- and its checkbox -- out of the panel, leaving no way
+            # to switch it back on. find_external_conflicts filters the ones
+            # that are merely disabled from the ones we disabled.
+            if not kmi.idname:
                 continue
             if kmi.idname in COCOPIE_KEYMAP_IDNAMES:
                 continue
@@ -428,10 +444,13 @@ def _build_external_index():
                 menu_name = getattr(kmi.properties, 'name', '') or ''
                 if menu_name.startswith('COCOPIE_MT_'):
                     continue
-            if kmi.idname in addon_idnames:
-                source = "Add-on"
-            elif kmi.idname in default_idnames:
+            # Blender first: an addon shipping a binding identical to a stock
+            # one does not make the stock one the addon's.
+            item_identity = binding_identity(kmi, km.name)
+            if item_identity in default_identities:
                 source = "Blender"
+            elif item_identity in addon_identities:
+                source = "Add-on"
             else:
                 source = "Custom"
 
@@ -440,6 +459,8 @@ def _build_external_index():
                 'label': _keymap_item_label(kmi),
                 'keymap': km.name,
                 'value': kmi.value,
+                'menu': _kmi_menu_name(kmi),
+                'active': kmi.active,
                 'any': kmi.any,
                 'shift': bool(kmi.shift),
                 'ctrl': bool(kmi.ctrl),
@@ -485,10 +506,25 @@ def find_external_conflicts(pie, limit=6):
 
     live_keymaps = _ancestor_keymaps(keymap_names_for_pie(pie))
 
+    prefs = get_prefs()
+    suppressed = set()
+    if prefs is not None:
+        suppressed = {suppression_identity(e) for e in prefs.suppressed_bindings}
+
     hits = []
     seen = set()
     for other in candidates:
         if other['keymap'] not in live_keymaps:
+            continue
+
+        identity = (other['keymap'], other['idname'], pie.key.upper(),
+                    other['value'], other['menu'], other['any'],
+                    other['shift'], other['ctrl'], other['alt'], other['oskey'])
+        is_suppressed = identity in suppressed
+        # Something the user switched off in the Keymap editor is not fighting
+        # this pie for anything, so it is not a conflict. One CocoPies switched
+        # off still gets a row, ticked, so it can be handed back.
+        if not other['active'] and not is_suppressed:
             continue
 
         if pie.any_modifier or other['any']:
@@ -510,11 +546,171 @@ def find_external_conflicts(pie, limit=6):
         if key in seen:
             continue
         seen.add(key)
-        hits.append(other)
+        hits.append(dict(other, identity=identity, suppressed=is_suppressed))
         if len(hits) >= limit:
             break
 
     return hits
+
+
+# --- Suppressing someone else's shortcut -------------------------------------
+#
+# See COCOPIE_SuppressedBinding for why this exists at all. The short version:
+# a native PRESS binding beats a CLICK/CLICK_DRAG pie on the same key at any
+# keymap position, so the only way a Quick Tap pie can own its key is for the
+# other item to be switched off while CocoPies is loaded.
+
+
+def _kmi_menu_name(kmi):
+    """properties.name for the menu-calling operators, "" for everything else.
+
+    Reading .properties.name off an arbitrary operator raises rather than
+    returning None, and an unregistered operator's properties carry nothing at
+    all -- both of which happen while scanning a live keyconfig.
+    """
+    if kmi.idname not in ('wm.call_menu', 'wm.call_menu_pie'):
+        return ""
+    try:
+        return getattr(kmi.properties, 'name', '') or ""
+    except Exception:
+        return ""
+
+
+def binding_identity(kmi, keymap_name):
+    """The content-based identity of a keymap item, as a plain tuple"""
+    return (
+        keymap_name,
+        kmi.idname,
+        kmi.type,
+        kmi.value,
+        _kmi_menu_name(kmi),
+        bool(kmi.any),
+        bool(kmi.shift),
+        bool(kmi.ctrl),
+        bool(kmi.alt),
+        bool(kmi.oskey),
+    )
+
+
+def suppression_identity(entry):
+    """The same tuple, read back off a stored COCOPIE_SuppressedBinding"""
+    return (
+        entry.keymap,
+        entry.idname,
+        entry.key_type,
+        entry.value,
+        entry.menu_name,
+        bool(entry.any_modifier),
+        bool(entry.shift),
+        bool(entry.ctrl),
+        bool(entry.alt),
+        bool(entry.oskey),
+    )
+
+
+def find_suppression(prefs, identity):
+    """The stored entry matching this identity, or None"""
+    for entry in prefs.suppressed_bindings:
+        if suppression_identity(entry) == identity:
+            return entry
+    return None
+
+
+def live_keyconfigs():
+    """The keyconfigs whose `active` flags decide what actually fires.
+
+    `keyconfigs.user` is NOT reliably that one. Selecting a keymap preset makes
+    it `keyconfigs.active` while "Blender user" stays in the list untouched --
+    so on a machine running a preset (this one runs "MyPreset"), everything
+    read from or written to `user` describes a keyconfig Blender is not
+    dispatching from. Suppression aimed there switched off an item nobody was
+    consulting, and left the real one enabled and still stealing the key.
+
+    Both are returned, deduplicated: `active` is what counts, and `user` is the
+    same object whenever no preset is loaded.
+    """
+    kcs = getattr(bpy.context.window_manager, 'keyconfigs', None)
+    if kcs is None:
+        return []
+    found = []
+    for name in ('active', 'user'):
+        kc = getattr(kcs, name, None)
+        if kc is not None and not any(kc == seen for seen in found):
+            found.append(kc)
+    return found
+
+
+def _iter_matching_items(identities):
+    """Walk the live keyconfigs, yielding (identity, kmi) for wanted bindings.
+
+    `default` and `addon` are deliberately not walked: they are the templates
+    the active keyconfig is built from, and switching an item off in either
+    changes nothing about what fires.
+    """
+    for kc in live_keyconfigs():
+        for km in kc.keymaps:
+            for kmi in list(km.keymap_items):
+                identity = binding_identity(kmi, km.name)
+                if identity in identities:
+                    yield identity, kmi
+
+
+def record_prior_state(prefs, entry):
+    """Set entry.restore_on_unregister from the binding's state right now.
+
+    Called once, when a suppression is created -- never again. Deciding this at
+    apply time instead looks reasonable and is wrong: suppression switches the
+    item off, Save Preferences writes that off-state into userpref.blend, and
+    from the next launch onward every apply would see an already-off item,
+    conclude the user had disabled it by hand, and decline to restore it. The
+    key would then stay dead after CocoPies was disabled -- exactly what
+    storing suppressions here instead of applying them permanently is meant to
+    prevent. The honest question is "was it on when the box was ticked", and
+    that can only be answered at ticking time.
+    """
+    identity = suppression_identity(entry)
+    entry.restore_on_unregister = any(
+        kmi.active for _i, kmi in _iter_matching_items({identity}))
+    return entry.restore_on_unregister
+
+
+def apply_suppressions(prefs):
+    """Switch off every binding the user has ticked.
+
+    Deliberately does not touch restore_on_unregister; see record_prior_state
+    for why that flag is written once at ticking time and read-only after.
+    """
+    if not len(prefs.suppressed_bindings):
+        return 0
+    wanted = {suppression_identity(e) for e in prefs.suppressed_bindings}
+    touched = 0
+    for _identity, kmi in _iter_matching_items(wanted):
+        if kmi.active:
+            kmi.active = False
+            touched += 1
+    return touched
+
+
+def restore_suppressions(prefs):
+    """Switch back on everything apply_suppressions switched off.
+
+    Called from unregister, so disabling or uninstalling CocoPies hands the
+    user's keymap back exactly as it was found. Note this restores the running
+    session only: an `active = False` that reached userpref.blend via Save
+    Preferences stays there until preferences are saved again afterwards.
+    """
+    if not len(prefs.suppressed_bindings):
+        return 0
+    wanted = {suppression_identity(e): e
+              for e in prefs.suppressed_bindings if e.restore_on_unregister}
+    if not wanted:
+        return 0
+    touched = 0
+    for _identity, kmi in _iter_matching_items(set(wanted)):
+        if not kmi.active:
+            kmi.active = True
+            touched += 1
+    return touched
 
 
 def ensure_slot_items(pie):

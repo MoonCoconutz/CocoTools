@@ -148,7 +148,7 @@ here with its own manifest makes it show up in that same repository
 automatically.
 
 Each extension's module name is `bl_ext.<repo_module>.<id>` (e.g.
-`bl_ext.cocotools_dev.CocoPies`), not a bare id — confirmed live: every
+`bl_ext.CocoTools.CocoPies` here), not a bare id — confirmed live: every
 extension's `preferences.addons` key is `bl_ext.<repo_module>.<id>`. Find
 the exact current value from `bpy.context.preferences.addons` rather than
 assuming it — it depends on whatever name the local repo was given when it

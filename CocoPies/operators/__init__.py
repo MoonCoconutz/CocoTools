@@ -12,6 +12,7 @@ from .pies import (
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_pie_menu,
     COCOPIE_OT_add_keymap_scope,
+    COCOPIE_OT_toggle_suppress_binding,
     COCOPIE_OT_remove_keymap_scope,
 )
 from .presets import (
@@ -47,6 +48,7 @@ __all__ = [
     "COCOPIE_OT_remove_item",
     "COCOPIE_OT_move_pie_menu",
     "COCOPIE_OT_add_keymap_scope",
+    "COCOPIE_OT_toggle_suppress_binding",
     "COCOPIE_OT_remove_keymap_scope",
     "COCOPIE_OT_save_preset",
     "COCOPIE_OT_resolve_preset_conflict",

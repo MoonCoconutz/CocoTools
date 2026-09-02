@@ -786,6 +786,63 @@ def _record_seeded_starters(prefs, names):
     prefs.seeded_starters = json.dumps(sorted(_seeded_starter_names(prefs) | set(names)))
 
 
+# Blender's own X in mesh/curve edit opens a delete menu on PRESS, and a PRESS
+# binding is resolved before a CLICK/CLICK_DRAG one can be considered -- so the
+# two delete starters cannot own X by sitting above it (measured: CocoPies at
+# Mesh[9]/[10], Blender at Mesh[112], Blender still won). They ship with that
+# binding suppressed instead, which is what makes Quick Tap work the moment
+# they are seeded rather than after the user finds the checkbox.
+#
+# Only ever seeded alongside the starter that needs it, and only when it is not
+# recorded already, so a user who unticks the box does not get it back at the
+# next startup. Tuple order matches utils.binding_identity().
+STARTER_SUPPRESSIONS = {
+    "Mesh Delete": ("Mesh", "wm.call_menu", "X", "PRESS",
+                    "VIEW3D_MT_edit_mesh_delete", False, False, False, False, False),
+    "Curve Delete": ("Curve", "wm.call_menu", "X", "PRESS",
+                     "VIEW3D_MT_edit_curve_delete", False, False, False, False, False),
+}
+
+
+def seed_starter_suppression(prefs, starter_name):
+    """Record the keymap suppression a freshly seeded starter needs, if any."""
+    identity = STARTER_SUPPRESSIONS.get(starter_name)
+    if identity is None:
+        return False
+    from .utils import find_suppression, record_prior_state
+    if find_suppression(prefs, identity) is not None:
+        return False
+    entry = prefs.suppressed_bindings.add()
+    (entry.keymap, entry.idname, entry.key_type, entry.value, entry.menu_name,
+     entry.any_modifier, entry.shift, entry.ctrl, entry.alt,
+     entry.oskey) = identity
+    # Asked now, while the binding still has whatever state the user left it
+    # in. A user who had already switched Blender's X delete off by hand keeps
+    # it off when CocoPies is later removed.
+    record_prior_state(prefs, entry)
+    return True
+
+
+def migrate_starter_suppressions(prefs):
+    """Backfill suppressions for delete starters seeded before they existed.
+
+    Runs once. A configuration that already holds "Mesh Delete" is recorded as
+    seeded, so sync_starter_pies() correctly declines to touch it -- which
+    would otherwise leave every existing install with the pie but not the
+    keymap suppression that makes its Quick Tap actually fire.
+    """
+    if getattr(prefs, "starter_suppressions_migrated", False):
+        return 0
+    names = {pie.name for pie in prefs.pie_menus}
+    added = sum(1 for name in STARTER_SUPPRESSIONS
+                if name in names and seed_starter_suppression(prefs, name))
+    try:
+        prefs.starter_suppressions_migrated = True
+    except AttributeError:
+        pass
+    return added
+
+
 def ensure_default_pies(prefs):
     """Add any starter pie that isn't present, and return how many were added.
 
@@ -813,6 +870,7 @@ def ensure_default_pies(prefs):
         # happened -- a second Mesh Delete was added to this list beside the
         # one already here, and a fresh install got both.
         existing.add(definition["name"])
+        seed_starter_suppression(prefs, definition["name"])
         added += 1
 
     _record_seeded_starters(prefs, [d["name"] for d in definitions])
@@ -851,6 +909,7 @@ def sync_starter_pies(prefs):
         # See ensure_default_pies: kept current so two definitions sharing a
         # name cannot both seed
         existing.add(name)
+        seed_starter_suppression(prefs, name)
         added += 1
 
     _record_seeded_starters(prefs, [d["name"] for d in definitions])

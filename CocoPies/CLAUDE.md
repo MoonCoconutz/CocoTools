@@ -134,7 +134,7 @@ it. The user's pies come back looking *reverted* because they have been
 replaced by same-named starters. Five sessions read that as Blender corrupting
 data across a reload; it was CocoPies overwriting its own data. Use (with the
 real module name substituted for `<addon_id>`, e.g.
-`bl_ext.cocotools_dev.CocoPies`):
+`bl_ext.CocoTools.CocoPies` on this machine):
 
 ```python
 import addon_utils, sys
@@ -145,11 +145,11 @@ addon_utils.enable("<addon_id>", default_set=False, persistent=True)
 ```
 
 `default_set=False` leaves `preferences.addons` untouched, so the stored data
-survives. Verified field-by-field across a reload under the old bare
-`"CocoPies"` module name; re-confirm this again the first time it's
-exercised under the current `bl_ext.*` name in this repo, don't assume it
-carries over untested. Don't use `bpy.ops.script.reload()` either: it
-reloads every other addon in the user's stack for nothing.
+survives. Confirmed under the current `bl_ext.CocoTools.CocoPies` name on
+2026-08-31, snapshotting every pie's name, items, commands and icons to JSON
+either side of a dozen reloads: zero differences each time. Don't use
+`bpy.ops.script.reload()` either: it reloads every other addon in the user's
+stack for nothing.
 
 `register()` also guards the starter-pie seeding behind a module-level
 session flag, so only the first `register()` of a session may ever seed.
@@ -343,6 +343,40 @@ captured once, at the *top-level* context menu's draw time (where
 `context.button_operator` / `button_prop` are actually available), and
 stashed module-level (`_CAPTURED`) for the submenus — which get no draw
 arguments — to read.
+
+## Keymap gotchas (learned the expensive way, 2026-09-02)
+
+**A `PRESS` binding beats `CLICK`/`CLICK_DRAG` at any keymap position.** They
+are different events at different times: on key-down Blender emits `PRESS` and
+walks the keymap, a `CLICK` item cannot match it, and the walk continues to
+whatever `PRESS` item exists further down. Measured: CocoPies at `Mesh[9]` and
+`Mesh[10]`, Blender's native X delete at `Mesh[112]`, and Blender still won.
+Position is irrelevant; the only fix is switching the other item off. This is
+why Quick Tap's `CLICK_DRAG`/`CLICK` pair needs `suppressed_bindings` at all.
+
+**`keyconfigs.user` is the dispatch keyconfig, even when a preset is active.**
+Selecting a keymap preset makes it `keyconfigs.active`, but Blender builds
+`user` by merging that preset with `addon` and the user's own edits, and `user`
+is what fires. On this machine `active` is "MyPreset" and has *zero* CocoPies
+items in it, while `user` has 38. Read and write `user`; reading `active` was a
+wrong turn that cost an hour.
+
+**Never write `kmi.active` during `register()`.** Blender merges addon keymaps
+into `user` on its own schedule, after `register()` returns. Setting `active`
+on a keymap before that merge lands makes Blender skip the merge for that
+keymap *permanently* -- Mesh and Curve ended up with 0 of their 11 and 7 addon
+items while Weight Paint, which nothing suppressed, took all 4 of its own.
+Un-suppressing does not undo it and neither does `keyconfigs.update()`; the
+keymap stays stuck until Blender restarts. `keymaps.py` defers the suppression
+pass to a `bpy.app.timers` callback for exactly this reason -- do not "simplify"
+it back into `register_pie_menus`.
+
+**"Was it on before we touched it" can only be asked once.** Suppression turns
+an item off, Save Preferences writes that into `userpref.blend`, and from the
+next launch every check sees an already-off item. Recomputing the restore flag
+per register therefore concludes the user disabled it by hand and declines to
+restore -- leaving the key dead after CocoPies is removed. `record_prior_state`
+runs at ticking time only; `apply_suppressions` must never touch that flag.
 
 ## Blender UI layout gotchas (learned the expensive way)
 

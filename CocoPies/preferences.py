@@ -28,7 +28,7 @@ from .icons import (
 )
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .previews import slot_button_args, icon_args
-from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData
+from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData, COCOPIE_SuppressedBinding
 from .ui import draw_pie_row
 
 
@@ -70,6 +70,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
     
     pie_menus: CollectionProperty(type=COCOPIE_PieMenuData)
+    # Keymap items CocoPies holds switched off while it is loaded, so a Quick
+    # Tap pie can actually own a key Blender already binds on PRESS. Restored
+    # on unregister -- see apply_suppressions/restore_suppressions.
+    suppressed_bindings: CollectionProperty(type=COCOPIE_SuppressedBinding)
     active_pie_index: IntProperty(default=0)
     # Which row is currently being renamed in place, or -1 for none. Session
     # state rather than settings: a rename is over as soon as it is confirmed
@@ -83,6 +87,11 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     # instead of coming back at every startup. Restore Starter Pies is the
     # deliberate way to get a deleted one back. See sync_starter_pies().
     seeded_starters: StringProperty(default="", options={'HIDDEN'})
+    # One-shot: the delete starters gained their keymap suppression after they
+    # had already shipped, so configurations that were seeded before it exists
+    # need it backfilled once. Recorded rather than repeated, or unticking the
+    # box would be undone at the next startup.
+    starter_suppressions_migrated: BoolProperty(default=False, options={'HIDDEN'})
 
     # Section keys the user has collapsed in the Pie Menus list, as a JSON
     # list. Stored rather than kept in memory so the panel opens the way it
@@ -359,15 +368,38 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             ext_box.scale_y = 0.8
             header = ext_box.row()
             header.label(
-                text=f"{format_shortcut(pie)} is also bound elsewhere:",
+                text=f"{format_shortcut(pie)} is also bound elsewhere "
+                     f"(tick to switch off while CocoPies is on):",
                 icon='INFO',
             )
             for other in external:
-                row = ext_box.row()
+                row = ext_box.row(align=True)
                 row.alignment = 'LEFT'
-                row.label(
-                    text=f"    {other['label']}  ({other['source']}, {other['keymap']})",
+                # Greyed while suppressed, so a shortcut CocoPies is holding
+                # off reads as off at a glance rather than only via its text.
+                # `active` and not `enabled`: both dim the row, but `enabled`
+                # also refuses clicks, which would leave a ticked box with no
+                # way to untick it. This is Blender's own idiom for a field
+                # dimmed by a toggle above it -- still editable.
+                row.active = not other['suppressed']
+                # Ticked means "CocoPies is holding this off for me". Drawn as
+                # an operator rather than a prop because the row is derived
+                # from a live keyconfig scan, not from stored data -- there is
+                # no property to point at until the box is ticked.
+                toggle = row.operator(
+                    "cocopie.toggle_suppress_binding",
+                    text="",
+                    icon='CHECKBOX_HLT' if other['suppressed'] else 'CHECKBOX_DEHLT',
+                    emboss=False,
                 )
+                (toggle.keymap, toggle.idname_prop, toggle.key_type,
+                 toggle.value, toggle.menu_name, toggle.any_modifier,
+                 toggle.shift, toggle.ctrl, toggle.alt,
+                 toggle.oskey) = other['identity']
+                label = f"{other['label']}  ({other['source']}, {other['keymap']})"
+                if other['suppressed']:
+                    label += "  -- disabled by CocoPies"
+                row.label(text=label)
 
         # Replaces the Trigger entirely when on: holding the key opens the
         # pie, a quick tap alternates between the two chosen directions

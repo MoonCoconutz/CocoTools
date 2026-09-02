@@ -151,7 +151,7 @@ Saving a file does nothing on its own; Blender caches loaded modules, and
 ```python
 import addon_utils, sys
 # Read the exact name from bpy.context.preferences.addons -- it depends on
-# what the local repository was called, e.g. bl_ext.cocotools_dev.CocoPies
+# the clone folder name, not the repo label -- here bl_ext.CocoTools.CocoPies
 name = "bl_ext.<repo_module>.CocoPies"
 addon_utils.disable(name, default_set=False)
 for n in [m for m in sys.modules if m == name or m.startswith(name + ".")]:

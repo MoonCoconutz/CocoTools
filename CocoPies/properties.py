@@ -110,6 +110,42 @@ class COCOPIE_KeymapScope(PropertyGroup):
     )
 
 
+class COCOPIE_SuppressedBinding(PropertyGroup):
+    """One keymap item CocoPies is holding switched off on the user's behalf.
+
+    Blender resolves a PRESS binding before a CLICK/CLICK_DRAG one can even be
+    considered, so a native PRESS shortcut on the same key swallows a Quick Tap
+    pie no matter how far above it CocoPies sits (measured: our items at Mesh[9]
+    and Mesh[10], Blender's at Mesh[112], and Blender's still won). Position
+    cannot fix that; the only thing that can is switching the other item off.
+
+    Doing that is an edit to the *user* keyconfig, which is not ours to keep --
+    so it is stored here rather than applied permanently, re-applied on every
+    register, and undone on unregister. Disabling CocoPies gives the key back.
+
+    Identified by content, never by index. Keymap items are appended and
+    reindexed constantly; an index recorded now points at a different binding
+    after any addon registers, which is the same class of bug that left
+    fourteen orphaned items in this keymap.
+    """
+    keymap: StringProperty()
+    idname: StringProperty()
+    key_type: StringProperty()
+    value: StringProperty()
+    # wm.call_menu / wm.call_menu_pie are bound many times over with only
+    # properties.name telling them apart, so identity is incomplete without it
+    menu_name: StringProperty()
+    any_modifier: BoolProperty(default=False)
+    shift: BoolProperty(default=False)
+    ctrl: BoolProperty(default=False)
+    alt: BoolProperty(default=False)
+    oskey: BoolProperty(default=False)
+    # Set at apply time: False when the item was already switched off before
+    # CocoPies got to it, so unregister does not switch on something the user
+    # turned off themselves.
+    restore_on_unregister: BoolProperty(default=False)
+
+
 class COCOPIE_PieMenuData(PropertyGroup):
     """Stores data for a single pie menu"""
     # Confirming the field is the end of the rename, so the row goes back to

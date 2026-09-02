@@ -19,6 +19,7 @@ from .utils import (
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     COCOPIE_KEYMAP_IDNAMES, invalidate_external_shortcut_index,
+    apply_suppressions, restore_suppressions,
     pie_scope_types,
 )
 from .menus import execute_script, create_pie_menu_class
@@ -42,39 +43,98 @@ def _resolve_key(key):
 
 
 def _add_keymap_item(km, key, pie_data, pie_index):
-    """The pie's own keymap item -- unchanged behaviour when Tap to Toggle
-    is off. cocopie.hold_or_tap replaces this entirely when it is on: a
-    keyboard key has no native "held vs tapped" event value (CLICK_DRAG
-    needs the mouse to actually move, RELEASE fires the same regardless of
-    hold duration), so that distinction is timed by hand instead -- see
-    COCOPIE_OT_hold_or_tap. Bound on PRESS either way, since the modal makes
-    the pie's own Trigger setting moot once it is driving things."""
+    """Create this pie's keymap item(s). Returns a list of (km, kmi).
+
+    Quick Tap used to be one item on PRESS driving a modal operator that
+    timed hold-vs-tap by hand (COCOPIE_OT_hold_or_tap, kept registered but
+    no longer bound -- see below). It is now two ordinary keymap items, the
+    same pair the keymap editor would show:
+
+        CLICK_DRAG -> wm.call_menu_pie      (hold and move: the pie)
+        CLICK      -> the tap action        (press and release: the command)
+
+    Blender resolves those two natively, so the pie opens the instant the
+    drag threshold is crossed instead of after a fixed 0.2s of holding
+    still -- which also removes the failure where moving faster than the
+    timer got you a tap when you wanted the pie. The trade is that the
+    decision is now distance-based rather than time-based, so holding the
+    key without moving no longer opens anything; that is precisely what
+    CLICK_DRAG means everywhere else in Blender, which is the point.
+    """
+    modifiers = dict(
+        any=pie_data.any_modifier,
+        shift=pie_data.shift,
+        ctrl=pie_data.ctrl,
+        alt=pie_data.alt,
+        oskey=pie_data.oskey,
+    )
+    items = []
+
     if pie_data.tap_toggle:
-        kmi = km.keymap_items.new(
-            'cocopie.hold_or_tap',
-            key,
-            'PRESS',
-            any=pie_data.any_modifier,
-            shift=pie_data.shift,
-            ctrl=pie_data.ctrl,
-            alt=pie_data.alt,
-            oskey=pie_data.oskey,
-        )
-        kmi.properties.pie_index = pie_index
-        kmi.properties.key = key
+        # Drag first, matching how Blender's own keymaps order a drag/click
+        # pair. Ordering does not decide the winner here -- the event system
+        # does -- but keeping the same order makes the keymap editor read
+        # the way a built-in one does.
+        drag = km.keymap_items.new(
+            'wm.call_menu_pie', key, 'CLICK_DRAG', **modifiers)
+        drag.properties.name = pie_data.idname
+        items.append((km, drag))
+
+        if pie_data.tap_action == 'COMMAND':
+            # No command means no item, so the key falls through to whatever
+            # Blender itself binds rather than being swallowed by an
+            # operator that would only cancel. A half-configured Quick Tap
+            # therefore behaves like no Quick Tap at all on the tap side.
+            if pie_data.tap_command:
+                tap = km.keymap_items.new(
+                    'cocopie.execute_command', key, 'CLICK', **modifiers)
+                tap.properties.command = pie_data.tap_command
+                items.append((km, tap))
+        else:
+            tap = km.keymap_items.new(
+                'cocopie.tap_toggle_direction', key, 'CLICK', **modifiers)
+            tap.properties.pie_index = pie_index
+            items.append((km, tap))
     else:
         kmi = km.keymap_items.new(
-            'wm.call_menu_pie',
-            key,
-            pie_data.event_value,
-            any=pie_data.any_modifier,
-            shift=pie_data.shift,
-            ctrl=pie_data.ctrl,
-            alt=pie_data.alt,
-            oskey=pie_data.oskey,
-        )
+            'wm.call_menu_pie', key, pie_data.event_value, **modifiers)
         kmi.properties.name = pie_data.idname
-    return (km, kmi)
+        items.append((km, kmi))
+
+    return items
+
+
+def _apply_suppressions_deferred():
+    """Timer callback: suppress once the keyconfig has settled. Never repeats."""
+    try:
+        prefs = get_prefs()
+        if prefs is not None:
+            suppressed = apply_suppressions(prefs)
+            if suppressed:
+                _debug(f"Suppressed {suppressed} conflicting keymap item(s)")
+    except Exception as e:
+        print(f"CocoPies: Could not apply shortcut suppressions: {e}")
+    return None
+
+
+def _schedule_suppressions():
+    """Queue the suppression pass for after Blender's own keymap merge.
+
+    Re-scheduling is harmless -- apply_suppressions is idempotent -- but a
+    pending timer is dropped on unregister so a disabled addon cannot switch
+    something off a moment after being told to stop.
+    """
+    if bpy.app.timers.is_registered(_apply_suppressions_deferred):
+        return
+    bpy.app.timers.register(_apply_suppressions_deferred, first_interval=0.2)
+
+
+def _cancel_scheduled_suppressions():
+    if bpy.app.timers.is_registered(_apply_suppressions_deferred):
+        try:
+            bpy.app.timers.unregister(_apply_suppressions_deferred)
+        except Exception:
+            pass
 
 
 def register_pie_menus():
@@ -148,7 +208,7 @@ def register_pie_menus():
             for km_name, space_type in targets:
                 try:
                     km = kc.keymaps.new(name=km_name, space_type=space_type)
-                    registered_keymaps.append(
+                    registered_keymaps.extend(
                         _add_keymap_item(km, key, pie_data, pie_index))
                 except Exception as e:
                     print(f"CocoPies: Could not register keymap for {km_name}: {e}")
@@ -160,6 +220,16 @@ def register_pie_menus():
             print(f"CocoPies: Error registering pie menu {pie_data.idname}: {e}")
             import traceback
             traceback.print_exc()
+
+    # Deferred, not called here. Blender merges addon keymaps into the
+    # dispatch keyconfig on its own schedule, after register() returns; writing
+    # `active = False` into one of those keymaps before that merge has happened
+    # stops the merge for that keymap entirely -- measured, on this machine:
+    # Mesh and Curve ended up with 0 of their 11 and 7 addon items while
+    # Weight Paint, whose keymap nothing suppressed, took all 4 of its own.
+    # Un-suppressing afterwards does not undo it; the keymap stays stuck until
+    # Blender is restarted. So the edit has to wait for a settled keyconfig.
+    _schedule_suppressions()
 
 
 def unregister_pie_menus():
@@ -183,6 +253,19 @@ def unregister_pie_menus():
     one, both matching the same key.
     """
     global registered_pie_classes, registered_keymaps
+
+    # Before anything else: whatever CocoPies switched off, it switches back
+    # on. A user disabling the addon gets their keymap as they left it, which
+    # is the whole reason suppression is stored here instead of applied for
+    # good. Failing this must not stop the rest of the teardown, or a bad
+    # restore would also leak keymap items.
+    _cancel_scheduled_suppressions()
+    try:
+        prefs = get_prefs()
+        if prefs is not None:
+            restore_suppressions(prefs)
+    except Exception as e:
+        print(f"CocoPies: Could not restore suppressed shortcuts: {e}")
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon

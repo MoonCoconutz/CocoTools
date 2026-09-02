@@ -1,8 +1,10 @@
 import bpy
 
-from .properties import COCOPIE_KeymapScope, COCOPIE_PieMenuItem, COCOPIE_PieMenuData
+from .properties import (COCOPIE_KeymapScope, COCOPIE_PieMenuItem,
+                         COCOPIE_PieMenuData, COCOPIE_SuppressedBinding)
 from .preferences import COCOPIE_AddonPreferences
-from .defaults import COCOPIE_OT_restore_defaults, ensure_default_pies, sync_starter_pies
+from .defaults import (COCOPIE_OT_restore_defaults, ensure_default_pies,
+                       sync_starter_pies, migrate_starter_suppressions)
 from .keymaps import register_pie_menus, unregister_pie_menus
 from .utils import get_prefs
 from .ui import draw_pie_row
@@ -19,6 +21,7 @@ from .operators import (
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_pie_menu,
     COCOPIE_OT_add_keymap_scope,
+    COCOPIE_OT_toggle_suppress_binding,
     COCOPIE_OT_remove_keymap_scope,
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
@@ -42,6 +45,7 @@ from .operators import (
 classes = (
     COCOPIE_KeymapScope,
     COCOPIE_PieMenuItem,
+    COCOPIE_SuppressedBinding,
     COCOPIE_PieMenuData,
     COCOPIE_OT_restore_defaults,
     COCOPIE_OT_select_pie,
@@ -55,6 +59,7 @@ classes = (
     COCOPIE_OT_remove_item,
     COCOPIE_OT_move_pie_menu,
     COCOPIE_OT_add_keymap_scope,
+    COCOPIE_OT_toggle_suppress_binding,
     COCOPIE_OT_remove_keymap_scope,
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
@@ -151,6 +156,13 @@ def register():
                 added = sync_starter_pies(prefs)
                 if added:
                     print(f"CocoPies: added {added} starter pie menu(s)")
+                # Backfill for configurations seeded before the delete
+                # starters carried a keymap suppression. Runs once, and only
+                # for starters actually present.
+                backfilled = migrate_starter_suppressions(prefs)
+                if backfilled:
+                    print(f"CocoPies: suppressed {backfilled} conflicting "
+                          f"shortcut(s) for the delete starter pies")
             except Exception as e:
                 print(f"CocoPies: could not create the starter pie menus: {e}")
         elif len(prefs.pie_menus) == 0:

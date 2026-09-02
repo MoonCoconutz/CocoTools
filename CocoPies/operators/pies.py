@@ -16,6 +16,9 @@ from ..items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
 )
 from ..utils import (
+    apply_suppressions, restore_suppressions, find_suppression,
+    record_prior_state,
+    suppression_identity, invalidate_external_shortcut_index,
     ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
@@ -87,10 +90,18 @@ class COCOPIE_OT_tap_toggle_direction(Operator):
 
 
 class COCOPIE_OT_hold_or_tap(Operator):
-    """Bound to PRESS: opens the pie on a hold, runs the tap-toggle on a quick
-    release. Keyboard keys have no native "held vs tapped" event value --
-    CLICK_DRAG needs the mouse to actually move, and RELEASE fires the same
-    way regardless of how long the key was down -- so this times it by hand."""
+    """Retired, but still registered on purpose.
+
+    This timed hold-vs-tap by hand from a PRESS binding, because a keyboard
+    key has no native "held vs tapped" event value. Quick Tap now uses a
+    real CLICK_DRAG/CLICK pair instead (see _add_keymap_item), which Blender
+    resolves itself -- so nothing binds this any more.
+
+    It stays registered because a stale item pointing at it may still exist
+    in a saved user keyconfig, written before the switch. An unregistered
+    idname there is a broken keymap entry rather than a dead one; keeping the
+    class means such a leftover degrades to the old behaviour instead of
+    erroring, and unregister_pie_menus goes on sweeping the idname away."""
     bl_idname = "cocopie.hold_or_tap"
     bl_label = "Pie (Hold) / Toggle (Tap)"
     bl_options = {'INTERNAL'}
@@ -140,6 +151,59 @@ class COCOPIE_OT_hold_or_tap(Operator):
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
+
+
+class COCOPIE_OT_toggle_suppress_binding(Operator):
+    """Switch this shortcut off while CocoPies is enabled, so the pie can use
+    the key. Restored the moment CocoPies is disabled"""
+    bl_idname = "cocopie.toggle_suppress_binding"
+    bl_label = "Suppress Conflicting Shortcut"
+    bl_options = {'INTERNAL'}
+
+    # The full content identity of the keymap item, passed down from the row
+    # that drew it. "idname" is taken by Operator itself, hence idname_prop.
+    keymap: StringProperty()
+    idname_prop: StringProperty()
+    key_type: StringProperty()
+    value: StringProperty()
+    menu_name: StringProperty()
+    any_modifier: BoolProperty()
+    shift: BoolProperty()
+    ctrl: BoolProperty()
+    alt: BoolProperty()
+    oskey: BoolProperty()
+
+    def execute(self, context):
+        prefs = get_prefs()
+        if prefs is None:
+            return {'CANCELLED'}
+
+        identity = (self.keymap, self.idname_prop, self.key_type, self.value,
+                    self.menu_name, self.any_modifier, self.shift, self.ctrl,
+                    self.alt, self.oskey)
+
+        existing = find_suppression(prefs, identity)
+        if existing is not None:
+            # Hand the key back before forgetting we ever took it -- dropping
+            # the entry first would leave the item switched off with nothing
+            # left that knows to restore it.
+            restore_suppressions(prefs)
+            for i, entry in enumerate(prefs.suppressed_bindings):
+                if suppression_identity(entry) == identity:
+                    prefs.suppressed_bindings.remove(i)
+                    break
+        else:
+            entry = prefs.suppressed_bindings.add()
+            (entry.keymap, entry.idname, entry.key_type, entry.value,
+             entry.menu_name, entry.any_modifier, entry.shift, entry.ctrl,
+             entry.alt, entry.oskey) = identity
+            # Before apply_suppressions switches it off, while its own state is
+            # still the answer to "was this on before CocoPies touched it"
+            record_prior_state(prefs, entry)
+
+        apply_suppressions(prefs)
+        invalidate_external_shortcut_index()
+        return {'FINISHED'}
 
 
 class COCOPIE_OT_add_keymap_scope(Operator):
