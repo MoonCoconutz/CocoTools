@@ -31,7 +31,11 @@ from .keymaps import register_pie_menus, unregister_pie_menus
 # is what draws the popup -- still looking at the old dict.
 _pending_preset_data = {"pie_menus": [], "conflicts": [], "window": None}
 
-_EXECUTE_SCRIPT_RE = re.compile(r'^execute_script\((["\'])(.*)\1\)$')
+# Trailing keyword arguments are optional and preserved verbatim: a slot
+# may say execute_script("...", axis='X'), and rewriting only the path must
+# not drop what comes after it.
+_EXECUTE_SCRIPT_RE = re.compile(
+    r"""^execute_script\((["'])(.*?)\1\s*(,\s*.*?)?\)$""", re.DOTALL)
 
 
 def _repoint_missing_bundled_script(command):
@@ -55,13 +59,24 @@ def _repoint_missing_bundled_script(command):
         return command
     # Deferred import: defaults.py imports from this module at load time, so
     # importing it back at module level here would be circular.
-    from .defaults import bundled_scripts_dir
-    candidate = os.path.join(bundled_scripts_dir(), os.path.basename(old_path))
-    if not os.path.exists(candidate):
+    from .defaults import bundled_scripts_root
+    # Searched across the whole scripts/ tree, not just the workspace folder it
+    # started in. Bundled scripts now live in per-feature subfolders
+    # (scripts/delete, scripts/flatten), and looking only in one of them meant
+    # the others were quietly unrepointable -- the exact silent failure this
+    # function exists to prevent.
+    candidate = None
+    wanted = os.path.basename(old_path)
+    for folder, _dirs, files in os.walk(bundled_scripts_root()):
+        if wanted in files:
+            candidate = os.path.join(folder, wanted)
+            break
+    if candidate is None:
         return command
     fixed = candidate.replace("\\", "/")
+    extra = match.group(3) or ""
     print(f"CocoPies: repointed missing bundled script {old_path!r} -> {fixed!r}")
-    return 'execute_script("%s")' % fixed
+    return 'execute_script("%s"%s)' % (fixed, extra)
 
 
 def _apply_pie_dict(pie, pie_dict):

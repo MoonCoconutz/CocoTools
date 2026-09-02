@@ -3,34 +3,49 @@
 State as of **2026-09-03**. Check the facts before acting on them — this file
 is a starting point, not an authority.
 
-## 1. Three pies left from the port
+## 1. One pie left from the port
 
 Fifteen pies were picked out of Blender's own **3D Viewport Pie Menus**
-extension and rebuilt inside CocoPies. Twelve are done and in the shipped
-starters. These three are not:
+extension and rebuilt inside CocoPies. Fourteen are done. This one is not:
 
 | Pie | Shortcut | Editor | What it needs |
 | --- | --- | --- | --- |
-| **Apply Transforms** | `Ctrl+A` | Object Mode | Loc/Rot/Scale slots are stock `object.transform_apply`. Three convenience slots — apply-constraints, make-single-user, clear-all — are short wrappers around built-ins. |
-| **Mesh Flatten** | `Alt+R` | Mesh Edit | Three genuinely custom operators (`flatten_to_x/y/z`). Blender has no equivalent. |
-| **Object Relationships** | `Ctrl+X` | Object Mode | Messiest. Several custom operators, some of which open their own popups. |
+| **Object Relationships** | `Ctrl+X` | Object Mode | Several custom operators, some of which open their own popups. |
 
-**The port-vs-call decision is closed: port.** It was open for a while —
-whether to reimplement the source addon's operators or just call them and leave
-that extension installed. Calling is no longer possible: as of 2026-09-03 the
-only pie-related addon enabled on this machine is CocoPies itself, and
-`bpy.ops.transform.flatten_to_x` does not exist. The keymap leftovers from that
-extension were swept in the same session.
+**Read the source before porting.** It is still on disk at
+`%APPDATA%\Blender Foundation\Blender.5\extensionslender_orgiewport_pie_menus\`,
+and reading `pie_apply_transform.py` and `pie_mesh_flatten.py` rather than
+inferring from a screenshot caught three real defects: Soft-Apply Constraints
+is `visual_transform_apply` *only* and deliberately leaves constraints in
+place; Make Single-User passes `obdata` alone; and Mesh Flatten's hotkey is
+`Alt+X`, not the `Alt+R` an earlier version of this file claimed.
 
-Porting does not automatically mean a bundled script. Per the repo's own rule
-those are a last resort, and most of these "custom operators" are one to three
-built-in calls that fit in a slot command directly — `exec()` runs the command
-string, so several statements separated by newlines are fine.
-`scripts/delete/MeshDeleteNoMenu.py` is the precedent for the cases that really
-do need a file: branching on select mode, or anything needing a mode guard.
+**"Needs custom operators" has meant "needs a bundled script" zero times so
+far.** Apply Transforms' three turned out to be wrappers adding a tooltip and
+a poll message around a built-in. Mesh Flatten's looked like they needed a
+vertex loop, and the whole thing collapsed to one `transform.resize` with
+`center_override` once the user pointed out that flatten *is* scale-to-zero
+about a pivot. Reach for the built-in operator before writing a file;
+`scripts/delete/MeshDeleteNoMenu.py` is the only case that has genuinely
+earned one.
 
-Suggested order: **Apply Transforms** first (most slots need no new code at
-all), then Mesh Flatten, then Object Relationships.
+## 1b. Suppression freezes a keymap against later merges
+
+Open defect, and it fails silently.
+
+Blender stops merging addon keymap items into a keymap once `kmi.active` has
+been written there. `register_pie_menus` defers its suppression pass to a
+timer so the first merge lands first, which fixed startup -- but only startup.
+Any pie added to that keymap *later in the same session* never merges, and the
+shortcut does nothing at all with no error anywhere. Hit on 2026-09-03: Mesh
+Flatten was invisible on `Alt+X` until Blender was restarted, while every
+other Mesh pie -- all merged before suppression ran -- worked.
+
+Restarting Blender fixes it. Candidate real fixes, none tested:
+
+- restore, then re-suppress, after every `register_pie_menus`;
+- find a suppression mechanism that does not mark the keymap;
+- accept the limitation and say so in the UI instead of failing silently.
 
 ## 2. 1.10.1 was published without a tag
 
@@ -69,6 +84,9 @@ Consequences worth knowing:
 
 ## Recently closed, for context
 
+- **1.10.8** (2026-09-03): Apply Transforms and Mesh Flatten ported; menus
+  gained a List style (a flat dropdown instead of a pie), which is what let
+  Apply Transforms reproduce the source's Clear Transforms submenu.
 - **1.10.6** (2026-09-02): Quick Tap became a real `CLICK_DRAG`/`CLICK` pair
   instead of a hand-timed modal, and gained the ability to switch off a
   conflicting shortcut that would otherwise beat it. Three keymap findings from

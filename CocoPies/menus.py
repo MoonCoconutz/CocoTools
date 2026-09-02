@@ -23,14 +23,20 @@ from .icons import (
 )
 
 
-def execute_script(filepath):
-    """Helper to run an external Python script from a pie menu command"""
+def execute_script(filepath, **params):
+    """Run an external Python script from a pie menu command.
+
+    Keyword arguments land in the script's globals, so one script can serve a
+    whole family of slots -- `execute_script(path, axis='X')` rather than three
+    near-identical files per axis. A script written before this existed is
+    unaffected: it simply has no extra names to see.
+    """
     import os
     filepath = os.path.normpath(filepath)
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Script not found: {filepath}")
     with open(filepath, 'r', encoding='utf-8') as f:
-        exec(f.read(), {"bpy": bpy})
+        exec(f.read(), {"bpy": bpy, **params})
 
 
 def _resolve_bpy_data_path(path_str):

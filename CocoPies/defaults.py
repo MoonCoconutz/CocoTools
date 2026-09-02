@@ -72,6 +72,11 @@ WORKSPACE_TARGETS = (
 )
 
 
+def bundled_scripts_root():
+    """The scripts/ folder itself, which every bundled script lives under"""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+
+
 def bundled_scripts_dir():
     """Folder the example workspace scripts ship in, inside this package"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -92,6 +97,35 @@ def delete_script_path():
         return path
     print(f"CocoPies: bundled script missing: {path}")
     return None
+
+
+# Flatten to the global centre is a plain scaled-to-zero resize, so it stays a
+# slot command and draws as a native operator button.
+def _flatten_command(axis, pivot=None):
+    """Scale the selection to zero on one global axis.
+
+    Flatten *is* a scale-to-zero, so both halves of Mesh Flatten are one
+    built-in call and neither needs a bundled script. `pivot` names an
+    expression evaluated at click time to override the pivot point --
+    `center_override` takes it per call, so the user's own Pivot Point setting
+    is neither read nor written. A first attempt walked the vertex list in a
+    script and converted the cursor through the object's inverse world matrix;
+    this does the same job in one line, and does it in world space, which is
+    what "scale Z to 0 with the cursor as pivot" actually means.
+
+    Cursor *rotation* is deliberately not honoured -- orient_type stays GLOBAL,
+    so only the cursor's location is used. Verified: rotating the cursor does
+    not tilt the result.
+    """
+    value = tuple(0 if a == axis else 1 for a in "XYZ")
+    constraint = tuple(a == axis for a in "XYZ")
+    override = f"center_override={pivot}, " if pivot else ""
+    return (f"bpy.ops.transform.resize(value={value}, "
+            f"constraint_axis={constraint}, orient_type='GLOBAL', "
+            f"{override}mirror=False, use_proportional_edit=False)")
+
+
+CURSOR_PIVOT = "bpy.context.scene.cursor.location"
 
 
 def _icon(*candidates):
@@ -628,6 +662,46 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.context.tool_settings.use_keyframe_insert_auto = True"},
                 {"label": "Keyframe Menu", "icon": "KEYINGSET", "position": 7, "enabled": True,
                  "command": "bpy.ops.wm.call_menu(name='VIEW3D_MT_object_animation')"},
+            ],
+        },
+        {
+            # Ported from 3D Viewport Pie Menus (pie_mesh_flatten.py). Alt+X in
+            # Mesh Edit -- the source's own hotkey; do not "correct" it to
+            # Alt+R, which an earlier note in open-work.md had wrong.
+            #
+            # Slot order is the user's, not the source's: Z is on the
+            # straight up/down flicks because it is the axis reached for most.
+            #
+            # Diverges from the source in one deliberate way: its three
+            # flatten-to-object-origin slots are flatten-to-3D-cursor here
+            # (user's call, 2026-09-03) -- a cursor you can place beats a fixed
+            # local zero. Both halves are the same built-in scale-to-zero,
+            # differing only in the pivot, so this pie ships no scripts at all.
+            #
+            # The source's LEFT slot is a box holding six "flatten to the
+            # selection's bounding box" buttons. Dropped at the user's request
+            # (2026-09-03) rather than ported: a pie slot cannot hold a box,
+            # and the six entries were not wanted. LEFT and RIGHT are both
+            # empty as a result; RIGHT is empty in the source too.
+            "name": "Mesh Flatten",
+            "idname": "COCOPIE_MT_mesh_flatten",
+            "keymap_type": "MESH", "keymap_scopes": ["MESH"],
+            "key": "X",
+            "ctrl": False, "shift": False, "alt": True,
+            "enabled": True,
+            "items": [
+                {"label": "Cursor Z", "icon": "PIVOT_CURSOR", "position": 2, "enabled": True,
+                 "command": _flatten_command("Z", CURSOR_PIVOT)},
+                {"label": "Center Z", "icon": "ORIENTATION_GLOBAL", "position": 3, "enabled": True,
+                 "command": _flatten_command("Z")},
+                {"label": "Center X", "icon": "ORIENTATION_GLOBAL", "position": 4, "enabled": True,
+                 "command": _flatten_command("X")},
+                {"label": "Center Y", "icon": "ORIENTATION_GLOBAL", "position": 5, "enabled": True,
+                 "command": _flatten_command("Y")},
+                {"label": "Cursor X", "icon": "PIVOT_CURSOR", "position": 6, "enabled": True,
+                 "command": _flatten_command("X", CURSOR_PIVOT)},
+                {"label": "Cursor Y", "icon": "PIVOT_CURSOR", "position": 7, "enabled": True,
+                 "command": _flatten_command("Y", CURSOR_PIVOT)},
             ],
         },
         {
