@@ -631,6 +631,84 @@ def default_pie_definitions(script_paths):
             ],
         },
         {
+            # Ported from 3D Viewport Pie Menus (pie_apply_transform.py), slot
+            # for slot in its own order. Its three "custom operators" turned
+            # out to need no porting: two are thin wrappers that only add a
+            # tooltip and a poll message and then call a built-in, and the
+            # third is three built-in calls in a row.
+            #
+            # Soft-Apply Constraints is exactly `visual_transform_apply` and
+            # nothing else -- it bakes what the constraints currently produce
+            # into the object's own matrix and *leaves the constraints in
+            # place*, which is what "soft" means here. Do not "improve" this by
+            # clearing them afterwards: that is a different, destructive
+            # operation, and it is not what this slot has ever done.
+            #
+            # Blender's own Ctrl+A is a menu on PRESS and this pie is PRESS
+            # too, so the addon keyconfig wins on position -- no keymap
+            # suppression needed, unlike the delete pies whose CLICK/CLICK_DRAG
+            # pair loses to any PRESS binding at any position.
+            "name": "Apply Transforms",
+            "idname": "COCOPIE_MT_apply_transforms",
+            "keymap_type": "OBJECT_MODE", "keymap_scopes": ["OBJECT_MODE"],
+            "key": "A",
+            "ctrl": True, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Rot/Scale", "icon": "CON_SIZELIKE", "position": 0, "enabled": True,
+                 "command": "bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)"},
+                {"label": "Loc/Rot/Scale", "icon": "ORIENTATION_LOCAL", "position": 1, "enabled": True,
+                 "command": "bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)"},
+                {"label": "Soft-Apply Constraints", "icon": "CONSTRAINT", "position": 2, "enabled": True,
+                 "command": "bpy.ops.object.visual_transform_apply()"},
+                {"label": "Rotation", "icon": "CON_ROTLIKE", "position": 3, "enabled": True,
+                 "command": "bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)"},
+                {"label": "Location", "icon": "CON_LOCLIKE", "position": 4, "enabled": True,
+                 "command": "bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)"},
+                {"label": "Scale", "icon": "CON_SIZELIKE", "position": 5, "enabled": True,
+                 "command": "bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)"},
+                # The source swaps this slot for `instancer_empty_to_collection`
+                # when the active object is a collection-instance empty. Not
+                # reproduced: a CocoPies slot has one fixed label, so the branch
+                # would leave a button reading "Make Single-User" doing
+                # something else entirely. `obdata=True` alone, as the source.
+                {"label": "Make Single-User", "icon": "DUPLICATE", "position": 6, "enabled": True,
+                 "command": "bpy.ops.object.make_single_user(obdata=True)"},
+                # wm.call_menu, not call_menu_pie: the slot draw turns this
+                # into a real dropdown button (menus.py), and the menu on the
+                # other end is a LIST-style CocoPies menu. Five clears do not
+                # want eight compass directions, which is why the source draws
+                # it with pie.menu() too.
+                {"label": "Clear Transforms", "icon": "THREE_DOTS", "position": 7, "enabled": True,
+                 "command": "bpy.ops.wm.call_menu(name='COCOPIE_MT_clear_transforms')"},
+            ],
+        },
+        {
+            # Drawn as a dropdown, not a pie -- menu_style LIST. Slot
+            # positions become top-to-bottom order there, so these run 0..4 in
+            # the order the source lists them. No shortcut of its own: it is
+            # only ever reached from the Clear Transforms slot above.
+            "name": "Clear Transforms",
+            "idname": "COCOPIE_MT_clear_transforms",
+            "menu_style": "LIST",
+            "keymap_type": "OBJECT_MODE", "keymap_scopes": ["OBJECT_MODE"],
+            "key": "",
+            "ctrl": False, "shift": False, "alt": False,
+            "enabled": True,
+            "items": [
+                {"label": "Clear All", "icon": "NONE", "position": 0, "enabled": True,
+                 "command": "bpy.ops.object.location_clear(); bpy.ops.object.rotation_clear(); bpy.ops.object.scale_clear()"},
+                {"label": "Clear Location", "icon": "NONE", "position": 1, "enabled": True,
+                 "command": "bpy.ops.object.location_clear()"},
+                {"label": "Clear Rotation", "icon": "NONE", "position": 2, "enabled": True,
+                 "command": "bpy.ops.object.rotation_clear()"},
+                {"label": "Clear Scale", "icon": "NONE", "position": 3, "enabled": True,
+                 "command": "bpy.ops.object.scale_clear()"},
+                {"label": "Clear Origin", "icon": "NONE", "position": 4, "enabled": True,
+                 "command": "bpy.ops.object.origin_clear()"},
+            ],
+        },
+        {
             # Five slots, laid out as the 3D Viewport Pie Menus version is:
             # the two "set" actions on the right, the three "clear" ones on
             # the left, and the bottom kept empty so a mis-flick does nothing.

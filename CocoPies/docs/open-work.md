@@ -1,66 +1,84 @@
 # Open work
 
-State as of **2026-08-30**. Check the facts before acting on them — this file
+State as of **2026-09-03**. Check the facts before acting on them — this file
 is a starting point, not an authority.
 
-## 1. Finish the move to a single working copy
+## 1. Three pies left from the port
 
-**Decided 2026-08-30:** the standalone local repo and both hand-managed
-installs are retired in favour of one CocoTools clone registered as a Local
-extension repository in 4.5 and 5.2. The docs already describe that state.
+Fifteen pies were picked out of Blender's own **3D Viewport Pie Menus**
+extension and rebuilt inside CocoPies. Twelve are done and in the shipped
+starters. These three are not:
 
-Still to do on the user's machine. The steps are written out in
-[../../docs/dev-setup.md](../../docs/dev-setup.md) — it covers all three
-extensions, since one local repository serves the whole monorepo. The clone
-goes at `%USERPROFILE%\Documents\Claude\CocoTools`.
+| Pie | Shortcut | Editor | What it needs |
+| --- | --- | --- | --- |
+| **Apply Transforms** | `Ctrl+A` | Object Mode | Loc/Rot/Scale slots are stock `object.transform_apply`. Three convenience slots — apply-constraints, make-single-user, clear-all — are short wrappers around built-ins. |
+| **Mesh Flatten** | `Alt+R` | Mesh Edit | Three genuinely custom operators (`flatten_to_x/y/z`). Blender has no equivalent. |
+| **Object Relationships** | `Ctrl+X` | Object Mode | Messiest. Several custom operators, some of which open their own popups. |
 
-The part that matters for CocoPies: the module name changes, and
-`AddonPreferences` is keyed by it, so **every stored pie orphans**. Save Preset
-first, Load Preset after, and back up `icons/custom/` — it is gitignored and
-has no other copy.
+**The port-vs-call decision is closed: port.** It was open for a while —
+whether to reimplement the source addon's operators or just call them and leave
+that extension installed. Calling is no longer possible: as of 2026-09-03 the
+only pie-related addon enabled on this machine is CocoPies itself, and
+`bpy.ops.transform.flatten_to_x` does not exist. The keymap leftovers from that
+extension were swept in the same session.
 
-Until it is done, treat any file found in the old standalone repo as stale.
+Porting does not automatically mean a bundled script. Per the repo's own rule
+those are a last resort, and most of these "custom operators" are one to three
+built-in calls that fit in a slot command directly — `exec()` runs the command
+string, so several statements separated by newlines are fine.
+`scripts/delete/MeshDeleteNoMenu.py` is the precedent for the cases that really
+do need a file: branching on select mode, or anything needing a mode guard.
 
-## 2. 1.10.2 is published but unverified
+Suggested order: **Apply Transforms** first (most slots need no new code at
+all), then Mesh Flatten, then Object Relationships.
 
-The image-icon picker cells were scaled (`IMAGE_CELL_SCALE = 1.5`, columns
-16 → 11) and the manifest bumped to `1.10.2`. It is on `main` and on the feed.
-
-**Never verified.** That session had no Blender, so neither the headless run nor
-the screenshot harness was possible, and `1.5` is a guess rather than a
-measurement. It went to the feed only because there was no dev channel to look
-at it in — which is what item 1 fixes.
-
-Once the dev channel exists: measure it with the real-window harness in
-[verify-and-deploy.md](verify-and-deploy.md), adjust the constant, and publish
-the corrected value.
-
-## 3. 1.10.1 was published without a tag
+## 2. 1.10.1 was published without a tag
 
 It reached the feed on 2026-08-30 via `workflow_dispatch`, not a tag, because
 that session's git credentials rejected tag pushes with a 403. The workflow
-rebuilds every extension from current `main` either way, so the feed is
+rebuilds every extension from current `main` either way, so the feed was
 correct — but **no `CocoPies-v1.10.1` tag exists**, so there is no release
 marker in git for it.
 
-Tag it retroactively if that matters, from a session that can push tags:
+Tag it retroactively if that matters:
 
 ```bash
 git tag CocoPies-v1.10.1 07f5f13 && git push origin CocoPies-v1.10.1
 ```
 
+## 3. The feed is offline while the repo is private
+
+`MoonCoconutz/CocoTools` was made private on 2026-09-02. GitHub Pages does not
+serve a private repo on a Free or Pro plan, so
+`https://mooncoconutz.github.io/CocoTools/index.json` 404s and Blender's remote
+repository cannot update from it. This is deliberate, not a fault.
+
+Consequences worth knowing:
+
+- Development is unaffected — the Local Repository reads this working tree, so
+  every change is live without the feed.
+- `CocoPies-v1.10.6` is tagged and pushed. Making the repo public again and
+  re-running the workflow from the Actions tab (`workflow_dispatch`) publishes
+  it; no re-tagging needed.
+- Blender *does* support authenticated repositories (`use_access_token` /
+  `access_token`, sent as `Authorization: Bearer`), but that cannot rescue a
+  Pages URL that is not being served at all. A private feed would mean moving
+  the index and the zips to `raw.githubusercontent.com` and giving every user a
+  PAT — untested, and not worth it below a real audience. Sending a built zip
+  is one command: `blender --command extension build --source-dir <ext>`.
+
 ## Recently closed, for context
 
-- The four-copies setup was retired for a single CocoTools clone (item 1).
-  With it, the local ↔ CocoTools drift and the hand-bumped install versions
-  both stopped being things to track.
-- Bigger brush icons in the picker were asked for and implemented — see item 2
-  for the catch.
-- Sculpt brush icons converted from `bpy.app.icons` triangle geometry to PNGs
-  through the preview collection; the two workarounds built around the old
-  behaviour (the Icon column's second wider width, and dropping the button
-  frame for image icons) were removed with it.
-- The Icon button is square again, via `scale_x` — `ui_units_x` never could
-  size it.
-- Icon picker: gaps between icons on the Custom and Brush tabs; built-in tabs
-  deliberately untouched at the user's request.
+- **1.10.6** (2026-09-02): Quick Tap became a real `CLICK_DRAG`/`CLICK` pair
+  instead of a hand-timed modal, and gained the ability to switch off a
+  conflicting shortcut that would otherwise beat it. Three keymap findings from
+  it are in `../CLAUDE.md`; the one most likely to be re-broken is that writing
+  `kmi.active` during `register()` permanently stops Blender merging addon
+  items into that keymap.
+- The dev channel (item 1 of the old version of this file) is set up: one
+  CocoTools clone registered as a Local extension repository, module name
+  `bl_ext.CocoTools.CocoPies`.
+- The unverified `IMAGE_CELL_SCALE = 1.5` from 1.10.2 was measured and found to
+  do nothing — `template_icon` was the only call that actually resizes preview
+  artwork, and the picker and pies were rebuilt around it.
+- CocoDelete was retired into the two delete starter pies.

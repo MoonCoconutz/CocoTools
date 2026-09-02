@@ -133,11 +133,15 @@ def _label_for(label, icon_kw):
 # while the plain ones beside them kept theirs. A brush icon gets its size
 # from previews.pie_icon_args() instead, which is free of that trade-off.
 def create_pie_menu_class(pie_data):
-    """Dynamically create a pie menu class"""
-    
-    def draw(self, context):
-        layout = self.layout
-        pie = layout.menu_pie()
+    """Dynamically create a menu class -- a pie, or a flat dropdown list.
+
+    Both styles draw a slot identically; the only difference is the container
+    they draw into, which is why _draw_slots takes it as an argument rather
+    than the two being written out twice. A pie slot must stay a direct child
+    of menu_pie() to keep its number shortcut, so nothing here may wrap one.
+    """
+
+    def _draw_slots(container, slots):
 
         # A button drawn with layout.operator() defaults to INVOKE_DEFAULT --
         # the operator's own interactive path -- unless told otherwise. For an
@@ -149,18 +153,8 @@ def create_pie_menu_class(pie_data):
         # default, so this makes a clicked button behave the same way a
         # scripted call does: apply immediately, deterministically, with
         # whatever properties were set on it below.
-        pie.operator_context = 'EXEC_DEFAULT'
+        container.operator_context = 'EXEC_DEFAULT'
 
-        # Create 8 slots (positions 0-7)
-        slots = [None] * 8
-        
-        # Fill slots with enabled items. Every pie carries all eight directions
-        # now, so the empty ones have to be skipped or the pie draws blank
-        # buttons where a direction simply is not in use.
-        for item in pie_data.items:
-            if item.enabled and slot_is_used(item) and 0 <= item.position <= 7:
-                slots[item.position] = item
-        
         # Draw items in order
         for slot in slots:
             if slot:
@@ -174,7 +168,7 @@ def create_pie_menu_class(pie_data):
                     # A pie opening another pie. Checked before the plain
                     # submenu case below, because "wm.call_menu_pie" contains
                     # "wm.call_menu" and would otherwise be drawn with
-                    # pie.menu() -- which renders a flat dropdown list, not a
+                    # container.menu() -- which renders a flat dropdown list, not a
                     # pie. Drawn as a real wm.call_menu_pie button so the
                     # second pie opens where the mouse is, the way Blender's
                     # own chained pies do.
@@ -188,13 +182,13 @@ def create_pie_menu_class(pie_data):
                             # wm.call_menu_pie has to be *invoked* to know
                             # where the mouse is. Executed instead, the second
                             # pie has no anchor to open around.
-                            previous_context = pie.operator_context
-                            pie.operator_context = 'INVOKE_DEFAULT'
-                            op = pie.operator("wm.call_menu_pie", text=label, **icon_kw)
+                            previous_context = container.operator_context
+                            container.operator_context = 'INVOKE_DEFAULT'
+                            op = container.operator("wm.call_menu_pie", text=label, **icon_kw)
                             op.name = match.group(1)
-                            pie.operator_context = previous_context
+                            container.operator_context = previous_context
                         else:
-                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
 
                     # Check if this is a submenu call
@@ -203,9 +197,9 @@ def create_pie_menu_class(pie_data):
                         match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
                         if match:
                             menu_name = match.group(1)
-                            pie.menu(menu_name, text=label, **icon_kw)
+                            container.menu(menu_name, text=label, **icon_kw)
                         else:
-                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a property assignment (contains = but not ==, and not bpy.ops)
@@ -221,14 +215,14 @@ def create_pie_menu_class(pie_data):
                             try:
                                 current_val = getattr(data_obj, prop_name)
                                 if isinstance(current_val, bool):
-                                    pie.prop(data_obj, prop_name, text=label, toggle=True, **icon_kw)
+                                    container.prop(data_obj, prop_name, text=label, toggle=True, **icon_kw)
                                     bound = True
                             except Exception:
                                 bound = False
                         if not bound:
                             # Not a simple boolean property - fall back to
                             # running the raw command via a plain button
-                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     
                     # Check if this is a bpy.ops operator
@@ -246,31 +240,48 @@ def create_pie_menu_class(pie_data):
                         if parsed:
                             idname, kwargs = parsed
                             try:
-                                op = pie.operator(idname, text=label, **icon_kw)
+                                op = container.operator(idname, text=label, **icon_kw)
                                 for prop_name, value in kwargs.items():
                                     setattr(op, prop_name, value)
                             except Exception:
                                 # A property that does not exist or will not
                                 # accept this value -- fall back rather than
                                 # leave the button half-configured
-                                op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                                op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                                 op.command = command
                         else:
                             # Not parseable as literal keyword arguments (a
                             # positional arg, a **spread, a non-literal value)
                             # -- run the command as written instead of
                             # guessing at it
-                            op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                     else:
                         # Anything else - use execute_command
-                        op = pie.operator("cocopie.execute_command", text=label, **icon_kw)
+                        op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                         op.command = command
                 except Exception as e:
-                    pie.label(text=slot.label)
+                    container.label(text=slot.label)
             else:
-                pie.separator()
+                container.separator()
     
+    def _used_slots():
+        """The eight positions, filled where an item is actually in use."""
+        slots = [None] * 8
+        for item in pie_data.items:
+            if item.enabled and slot_is_used(item) and 0 <= item.position <= 7:
+                slots[item.position] = item
+        return slots
+
+    def draw_pie(self, context):
+        _draw_slots(self.layout.menu_pie(), _used_slots())
+
+    def draw_list(self, context):
+        # Empty positions are skipped rather than drawn as separators: a gap
+        # is meaningful in a pie, where it keeps a direction free, and is just
+        # a hole in a dropdown.
+        _draw_slots(self.layout.column(), [x for x in _used_slots() if x])
+
     # Create the class - use name for both label and idname
     menu_class = type(
         pie_data.idname,
@@ -278,7 +289,7 @@ def create_pie_menu_class(pie_data):
         {
             "bl_label": pie_data.name,
             "bl_idname": pie_data.idname,
-            "draw": draw,
+            "draw": draw_list if pie_data.menu_style == 'LIST' else draw_pie,
         }
     )
     

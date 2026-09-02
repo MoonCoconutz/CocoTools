@@ -95,6 +95,12 @@ def _apply_pie_dict(pie, pie_dict):
     # way round would let an inconsistent preset leave the pie claiming a
     # Trigger its own dispatch does not use.
     pie.event_value = pie_dict.get("event_value", "PRESS")
+    # Absent from presets written before list menus existed; a pie is the
+    # only thing those could have been.
+    try:
+        pie.menu_style = pie_dict.get("menu_style", "PIE")
+    except TypeError:
+        pie.menu_style = "PIE"
     pie.items.clear()
     for item_dict in pie_dict.get("items", []):
         item = pie.items.add()

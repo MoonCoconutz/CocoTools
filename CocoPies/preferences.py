@@ -262,6 +262,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         col.use_property_decorate = False
 
         col.prop(pie, "name", text="Name")
+        # Pie or dropdown. Right under Name because it changes what every other
+        # setting below means -- slot positions become list order under List,
+        # and the eight compass directions stop being directions.
+        col.prop(pie, "menu_style", text="Style", expand=True)
 
         col.separator(factor=0.5)
 

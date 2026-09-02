@@ -65,6 +65,7 @@ class COCOPIE_OT_save_preset(Operator):
                     "oskey": pie.oskey,
                     "enabled": pie.enabled,
                     "event_value": pie.event_value,
+                    "menu_style": pie.menu_style,
                     "tap_toggle": pie.tap_toggle,
                     "tap_toggle_a": pie.tap_toggle_a,
                     "tap_toggle_b": pie.tap_toggle_b,

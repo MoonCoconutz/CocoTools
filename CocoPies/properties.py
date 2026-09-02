@@ -216,6 +216,25 @@ class COCOPIE_PieMenuData(PropertyGroup):
         default=False, update=update_pie_menu,
     )
     
+    # Pie or flat dropdown. Blender's own pies use both -- 3D Viewport Pie
+    # Menus draws its Clear Transforms entry with `pie.menu()`, which renders a
+    # list, because five clears do not want eight compass directions. A slot
+    # pointing at this menu with wm.call_menu already drew it as a dropdown;
+    # this is what lets the menu on the other end actually be one.
+    #
+    # Explicit item numbers: Blender stores an enum as its number, so
+    # reordering or inserting later would silently repoint saved data.
+    menu_style: EnumProperty(
+        name="Style",
+        description="Draw this menu as a pie, or as an ordinary dropdown list",
+        items=[
+            ('PIE',  "Pie",  "Eight directions around the cursor", 'MESH_CIRCLE', 1),
+            ('LIST', "List", "A flat dropdown, in slot order", 'ALIGN_JUSTIFY', 2),
+        ],
+        default='PIE',
+        update=update_pie_menu,
+    )
+
     event_value: EnumProperty(
         name="Trigger",
         description="Which key event fires the pie -- the same set Blender's own "
