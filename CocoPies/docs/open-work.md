@@ -29,23 +29,32 @@ about a pivot. Reach for the built-in operator before writing a file;
 `scripts/delete/MeshDeleteNoMenu.py` is the only case that has genuinely
 earned one.
 
-## 1b. Suppression freezes a keymap against later merges
+## 1b. A pie registered mid-session may not reach the dispatch keyconfig
 
-Open defect, and it fails silently.
+**Believed fixed in 1.10.9; the original diagnosis was wrong.**
 
-Blender stops merging addon keymap items into a keymap once `kmi.active` has
-been written there. `register_pie_menus` defers its suppression pass to a
-timer so the first merge lands first, which fixed startup -- but only startup.
-Any pie added to that keymap *later in the same session* never merges, and the
-shortcut does nothing at all with no error anywhere. Hit on 2026-09-03: Mesh
-Flatten was invisible on `Alt+X` until Blender was restarted, while every
-other Mesh pie -- all merged before suppression ran -- worked.
+Symptom (2026-09-03): Mesh Flatten was invisible on `Alt+X` -- present in the
+addon keyconfig, absent from `keyconfigs.user`, which is what Blender actually
+dispatches from. Every other Mesh pie worked. A Blender restart fixed it.
 
-Restarting Blender fixes it. Candidate real fixes, none tested:
+The first diagnosis, written here confidently, was that writing `kmi.active`
+to suppress a conflicting shortcut freezes that keymap against later merges.
+**That does not reproduce.** With the default keyconfig and with MyPreset
+active, with a victim suppressed, newly added addon keymap items merge every
+time and the suppression survives. Do not repeat that theory without evidence.
 
-- restore, then re-suppress, after every `register_pie_menus`;
-- find a suppression mechanism that does not mark the keymap;
-- accept the limitation and say so in the UI instead of failing silently.
+What is actually established: `keymap_items.new()` populates only the *addon*
+keyconfig, and Blender merges it into the user keyconfig on its own schedule.
+Every headless test that saw the merge land had called
+`wm.keyconfigs.update()` explicitly; `register_pie_menus` never did. It does
+now, at the end, after its items exist.
+
+Verified live by adding a throwaway pie to the Mesh keymap mid-session: it
+reached the dispatch keyconfig immediately, no restart. That is consistent
+with the fix, but it is **not proof** -- the original failure was never
+reproduced on demand, so if a shortcut is ever silently dead again, start by
+comparing `keyconfigs.addon` against `keyconfigs.user` rather than trusting
+this section.
 
 ## 2. 1.10.1 was published without a tag
 

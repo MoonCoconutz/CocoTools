@@ -221,6 +221,21 @@ def register_pie_menus():
             import traceback
             traceback.print_exc()
 
+    # Push the items just created into the keyconfig Blender dispatches from.
+    #
+    # keymap_items.new() only populates the *addon* keyconfig. Blender merges
+    # that into the user keyconfig on its own schedule, and a pie registered
+    # part-way through a session can sit in the addon keyconfig with the
+    # dispatch keyconfig never learning about it -- the shortcut then does
+    # nothing at all, with no error anywhere. That is what made Mesh Flatten
+    # invisible on Alt+X until Blender was restarted, while every other Mesh
+    # pie worked. Asking for the update here makes the merge part of
+    # registering rather than something to wait for.
+    try:
+        wm.keyconfigs.update()
+    except Exception as e:
+        print(f"CocoPies: could not refresh the keyconfig: {e}")
+
     # Deferred, not called here. Blender merges addon keymaps into the
     # dispatch keyconfig on its own schedule, after register() returns; writing
     # `active = False` into one of those keymaps before that merge has happened
