@@ -3,31 +3,45 @@
 State as of **2026-09-03**. Check the facts before acting on them — this file
 is a starting point, not an authority.
 
-## 1. One pie left from the port
+## 1. The port is finished
 
 Fifteen pies were picked out of Blender's own **3D Viewport Pie Menus**
-extension and rebuilt inside CocoPies. Fourteen are done. This one is not:
+extension. Fourteen were rebuilt in CocoPies. The fifteenth, **Object
+Relationships** (`X` in Object Mode and Outliner -- not `Ctrl+X`, as an earlier
+version of this file claimed), was **dropped on 2026-09-03 at the user's
+request**: it is largely Outliner inspection tooling, and the Outliner's own
+Blender File and Orphan Data modes already cover most of it.
 
-| Pie | Shortcut | Editor | What it needs |
-| --- | --- | --- | --- |
-| **Object Relationships** | `Ctrl+X` | Object Mode | Several custom operators, some of which open their own popups. |
+Do not "finish" it without asking. It is not pending work.
 
-**Read the source before porting.** It is still on disk at
-`%APPDATA%\Blender Foundation\Blender.5\extensionslender_orgiewport_pie_menus\`,
-and reading `pie_apply_transform.py` and `pie_mesh_flatten.py` rather than
-inferring from a screenshot caught three real defects: Soft-Apply Constraints
-is `visual_transform_apply` *only* and deliberately leaves constraints in
-place; Make Single-User passes `obdata` alone; and Mesh Flatten's hotkey is
-`Alt+X`, not the `Alt+R` an earlier version of this file claimed.
+Worth keeping from the assessment, if it ever comes back: four of its eight
+slots are cheap (`object.delete`, `outliner.orphans_purge`, and two short
+scripts), but **List Datablock Users** and **List Dependencies** each need a
+registered operator that draws its own `invoke_props_dialog` and re-invokes
+itself to navigate deeper. CocoPies has no mechanism for that -- a slot runs a
+command or a script, it cannot register an operator with a dialog. That would
+be a new feature, not a pie.
 
-**"Needs custom operators" has meant "needs a bundled script" zero times so
-far.** Apply Transforms' three turned out to be wrappers adding a tooltip and
-a poll message around a built-in. Mesh Flatten's looked like they needed a
-vertex loop, and the whole thing collapsed to one `transform.resize` with
-`center_override` once the user pointed out that flatten *is* scale-to-zero
-about a pivot. Reach for the built-in operator before writing a file;
-`scripts/delete/MeshDeleteNoMenu.py` is the only case that has genuinely
-earned one.
+## Two lessons the port paid for
+
+**Read the source, do not infer it.** It is still on disk at
+`%APPDATA%\Blender Foundation\Blender.5\extensionslender_orgiewport_pie_menus\`.
+Reading it caught: Soft-Apply Constraints is `visual_transform_apply` *only*
+and deliberately leaves constraints in place (the inferred version cleared
+them -- destructive); Make Single-User passes `obdata` alone; Mesh Flatten is
+on `Alt+X`; Object Relationships is on plain `X`. Three of those four were
+already written down wrong.
+
+**"Needs a custom operator" was true once in fifteen.** Apply Transforms' three
+were wrappers adding a tooltip and a poll message around a built-in. Mesh
+Flatten's collapsed to a single `transform.resize` with `center_override` once
+the user pointed out that flatten *is* scale-to-zero about a pivot -- and the
+script it replaced was subtly wrong, flattening along the object's local axis
+instead of the global one. Reach for the built-in first.
+
+Also: `hasattr(bpy.ops.object, "anything")` is **always True** -- `bpy.ops` is
+lazy. It reported a non-existent operator as present during this port. Use
+`bpy.ops.<mod>.<name>.get_rna_type()` and treat a raise as "does not exist".
 
 ## 1b. A pie registered mid-session may not reach the dispatch keyconfig
 
