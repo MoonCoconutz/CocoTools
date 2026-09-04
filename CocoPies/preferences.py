@@ -400,7 +400,25 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                  toggle.value, toggle.menu_name, toggle.any_modifier,
                  toggle.shift, toggle.ctrl, toggle.alt,
                  toggle.oskey) = other['identity']
-                label = f"{other['label']}  ({other['source']}, {other['keymap']})"
+                # The detail is what the binding actually points at, and it is
+                # only carried when the label does not already say it (see
+                # _kmi_detail). Without it a tool shortcut read "Set Tool by
+                # Name", naming the operator every tool binding shares and
+                # leaving no way to tell which tool the checkbox would switch
+                # off.
+                name = other['label']
+                if other['detail']:
+                    name = f"{name}: {other['detail']}"
+                # Which addon, by name, whenever it can be worked out -- "some
+                # addon has this key" leaves the user hunting through their
+                # whole stack for it. The coarse source stays in front of it:
+                # "Custom: MACHIN3tools" is a MACHIN3tools operator the user
+                # bound by hand, which is a different thing to fix than one
+                # MACHIN3tools ships.
+                source = other['source']
+                if other['owner']:
+                    source = f"{source}: {other['owner']}"
+                label = f"{name}  ({source}, {other['keymap']})"
                 if other['suppressed']:
                     label += "  -- disabled by CocoPies"
                 row.label(text=label)

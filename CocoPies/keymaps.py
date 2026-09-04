@@ -28,6 +28,11 @@ from .menus import execute_script, create_pie_menu_class
 registered_pie_classes = []
 registered_keymaps = []
 
+# Items written straight into the *dispatch* keyconfig because Blender refused
+# to merge them there. See _mirror_missing_items for why that happens and
+# _sweep_user_keyconfig for the one order they may be cleaned up in.
+repaired_user_keymaps = []
+
 
 # A key like "0" is stored as-is, but Blender's key identifiers spell number
 # keys out ("ZERO".."NINE"); resolving it once here keeps register_pie_menus
@@ -104,8 +109,159 @@ def _add_keymap_item(km, key, pie_data, pie_index):
     return items
 
 
+# ---------------------------------------------------------------------------
+# Getting a binding into the keyconfig Blender actually dispatches from.
+#
+# keymap_items.new() writes into `keyconfigs.addon`; Blender merges that into
+# `keyconfigs.user`, and only the merged copy fires. That merge is normally
+# automatic, and wm.keyconfigs.update() below asks for it explicitly.
+#
+# It can also be refused, permanently, for one exact binding. Blender stores a
+# user keymap as a *diff* against default+addon, and an addon item that is
+# removed from the user keyconfig while its addon twin still exists is recorded
+# in that diff as "the user deleted this". The entry outlives the addon: from
+# then on the merge re-applies the deletion, so the binding never reaches the
+# dispatch keyconfig again. Reproduced from scratch on 2026-09-04 -- after such
+# a removal, re-adding the addon item and calling keyconfigs.update() brings it
+# back False, every time, and restarting Blender does not clear it either. It is
+# what left the user's Mesh Flatten pie on Shift+X doing nothing while every
+# other pie in the same keymap worked, and why the update() call alone was not
+# enough of a fix.
+#
+# Two conclusions, and both matter:
+#   - a binding that did not survive the merge has to be written into the user
+#     keyconfig directly (_mirror_missing_items). That is the only route left,
+#     and it works and survives later updates.
+#   - CocoPies must never remove one of its merged copies while the addon item
+#     is still there, or it creates exactly the ghost above -- against itself,
+#     next session. _sweep_user_keyconfig therefore runs only after the addon
+#     items are gone and the keyconfig has settled, which the same experiment
+#     confirms leaves no diff entry behind.
+
+
+def _binding_props(kmi):
+    """The operator properties that distinguish two otherwise identical items"""
+    if kmi.idname == 'wm.call_menu_pie':
+        return getattr(kmi.properties, 'name', '') or ''
+    if kmi.idname == 'cocopie.execute_command':
+        return getattr(kmi.properties, 'command', '') or ''
+    if kmi.idname == 'cocopie.tap_toggle_direction':
+        return getattr(kmi.properties, 'pie_index', -1)
+    return ''
+
+
+def _same_binding(a, b):
+    """Whether two keymap items are the same shortcut doing the same thing"""
+    return (a.idname == b.idname
+            and a.type == b.type
+            and a.value == b.value
+            and bool(a.any) == bool(b.any)
+            and bool(a.shift) == bool(b.shift)
+            and bool(a.ctrl) == bool(b.ctrl)
+            and bool(a.alt) == bool(b.alt)
+            and bool(a.oskey) == bool(b.oskey)
+            and _binding_props(a) == _binding_props(b))
+
+
+def _is_cocopie_item(kmi):
+    """Whether a keymap item is one of ours, by content rather than by record"""
+    if kmi.idname == 'wm.call_menu_pie':
+        try:
+            return (kmi.properties.name or '').startswith('COCOPIE_MT_')
+        except Exception:
+            return False
+    return kmi.idname in COCOPIE_KEYMAP_IDNAMES
+
+
+def _mirror_missing_items():
+    """Write into the user keyconfig whatever the merge would not carry there.
+
+    Called after wm.keyconfigs.update(), so anything still missing is missing
+    for good (see the note above). Returns how many items had to be repaired --
+    normally zero.
+    """
+    kc_user = getattr(bpy.context.window_manager.keyconfigs, 'user', None)
+    if kc_user is None:
+        return 0
+
+    repaired = 0
+    for km, kmi in registered_keymaps:
+        try:
+            km_user = kc_user.keymaps.find(
+                km.name, space_type=km.space_type, region_type=km.region_type)
+            if km_user is None:
+                continue
+            if any(_same_binding(kmi, other) for other in km_user.keymap_items):
+                continue
+
+            clone = km_user.keymap_items.new(
+                kmi.idname, kmi.type, kmi.value,
+                any=kmi.any, shift=kmi.shift, ctrl=kmi.ctrl,
+                alt=kmi.alt, oskey=kmi.oskey)
+            if kmi.idname == 'wm.call_menu_pie':
+                clone.properties.name = kmi.properties.name
+            elif kmi.idname == 'cocopie.execute_command':
+                clone.properties.command = kmi.properties.command
+            elif kmi.idname == 'cocopie.tap_toggle_direction':
+                clone.properties.pie_index = kmi.properties.pie_index
+            repaired_user_keymaps.append((km_user, clone))
+            repaired += 1
+        except Exception as e:
+            print(f"CocoPies: could not place {kmi.idname} in {km.name}: {e}")
+    return repaired
+
+
+def _sweep_user_keyconfig():
+    """Remove CocoPies items from the dispatch keyconfig.
+
+    ONLY safe once the addon-side items are gone and the keyconfig has settled
+    -- removing a merged copy whose addon twin still exists is what creates the
+    permanent "user deleted this" entry described above. Callers must sweep the
+    addon keyconfig and call wm.keyconfigs.update() first; unregister_pie_menus
+    is the only caller and does exactly that.
+
+    Sweeping by content rather than walking repaired_user_keymaps, for the same
+    reason the addon sweep does: that list is empty again after any re-import,
+    while real items from the previous one are still sitting in the keyconfig.
+    """
+    kc_user = getattr(bpy.context.window_manager.keyconfigs, 'user', None)
+    if kc_user is None:
+        return 0
+
+    target_names = {name for name, _space in KEYMAP_CONFIG.values()} | set(WINDOW_MODE_KEYMAPS)
+    removed = 0
+    for km in list(kc_user.keymaps):
+        if km.name not in target_names:
+            continue
+        for kmi in [item for item in km.keymap_items if _is_cocopie_item(item)]:
+            try:
+                km.keymap_items.remove(kmi)
+                removed += 1
+            except Exception:
+                pass
+    repaired_user_keymaps.clear()
+    return removed
+
+
 def _apply_suppressions_deferred():
-    """Timer callback: suppress once the keyconfig has settled. Never repeats."""
+    """Timer callback: finish the keymap work once the keyconfig has settled.
+
+    Both halves have to wait, and for the same reason -- Blender builds the
+    dispatch keyconfig on its own schedule, after register() returns.
+    Suppression waits because writing `active` too early stops a keymap
+    merging at all (see below). The mirror waits because at Blender's own
+    startup the user keyconfig has no keymaps yet when register() runs:
+    checking there found nothing to compare against, repaired nothing, and the
+    ghosted shortcut stayed dead for the whole session while the same code
+    repaired it perfectly on any later rebuild. Measured exactly that way
+    before this was moved here.
+    """
+    try:
+        repaired = _mirror_missing_items()
+        if repaired:
+            _debug(f"Placed {repaired} shortcut(s) the keyconfig merge skipped")
+    except Exception as e:
+        print(f"CocoPies: could not place skipped shortcuts: {e}")
     try:
         prefs = get_prefs()
         if prefs is not None:
@@ -120,7 +276,8 @@ def _apply_suppressions_deferred():
 def _schedule_suppressions():
     """Queue the suppression pass for after Blender's own keymap merge.
 
-    Re-scheduling is harmless -- apply_suppressions is idempotent -- but a
+    Re-scheduling is harmless -- both halves of that callback are idempotent,
+    the mirror because it checks for the binding before placing it -- but a
     pending timer is dropped on unregister so a disabled addon cannot switch
     something off a moment after being told to stop.
     """
@@ -236,6 +393,10 @@ def register_pie_menus():
     except Exception as e:
         print(f"CocoPies: could not refresh the keyconfig: {e}")
 
+    # Placing whatever the merge still refuses to carry over is the other half
+    # of this, and it cannot happen here -- see _apply_suppressions_deferred,
+    # which _schedule_suppressions queues at the end of this function.
+
     # Deferred, not called here. Blender merges addon keymaps into the
     # dispatch keyconfig on its own schedule, after register() returns; writing
     # `active = False` into one of those keymaps before that merge has happened
@@ -307,6 +468,21 @@ def unregister_pie_menus():
         except Exception:
             pass
     registered_keymaps.clear()
+
+    # Only now, with every addon-side item gone, may the dispatch keyconfig be
+    # touched: the update() settles the removals first, so what the sweep takes
+    # out is no longer shadowing an addon item and Blender records no "user
+    # deleted this" against it. Reversing these two steps is what would leave a
+    # ghost entry poisoning the same shortcut next session -- the exact failure
+    # this whole path exists to repair.
+    try:
+        wm.keyconfigs.update()
+        removed = _sweep_user_keyconfig()
+        if removed:
+            _debug(f"Cleared {removed} keymap item(s) from the dispatch keyconfig")
+        wm.keyconfigs.update()
+    except Exception as e:
+        print(f"CocoPies: could not clear the dispatch keyconfig: {e}")
 
     for cls in registered_pie_classes:
         try:

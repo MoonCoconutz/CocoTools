@@ -6,6 +6,7 @@ import bpy
 import sys
 import os
 import json
+import re
 from bpy.props import (
     StringProperty, IntProperty, BoolProperty, EnumProperty,
     CollectionProperty, PointerProperty, FloatProperty,
@@ -263,14 +264,32 @@ def set_group_collapsed(prefs, key, collapsed):
 
 
 def _keymaps_overlap(pie_a, pie_b):
-    """Two pie menus can only collide if they land in a keymap they share.
+    """Whether either pie's binding is live where the other one's is.
 
     Compared by the keymaps they actually register into rather than by scope
     name, so a global pie no longer reports a conflict against one scoped to an
-    editor it never reaches. Now a union across each pie's scopes, so two
+    editor it never reaches. A union across each pie's scopes, so two
     multi-scope pies collide as soon as any one of their editors overlaps.
+
+    Ancestors count on both sides, exactly as they do in find_external_conflicts
+    -- Blender evaluates a keymap's ancestors too, so a pie in "3D View" fires
+    inside Sculpt just as surely as one registered there. A plain name
+    intersection missed that, and the mismatch was visible in the panel: the
+    Sculpt Brush Select pie on W was warned about Blender's own W binding in
+    "3D View" while an identical CocoPies pie in "3D View" drew no warning at
+    all. Tested both directions.
+
+    Asymmetric on purpose, hence the two-sided test: a "3D View" binding is
+    live in Sculpt, a Sculpt one is not live elsewhere in the 3D View, and
+    either way round the two do fight while sculpting. The always-live keymaps
+    _ancestor_keymaps() adds ("Window", "Screen", "User Interface"...) cannot
+    make this fire spuriously, since keymap_names_for() never returns one of
+    them for a real scope -- only the ancestor sets contain them.
     """
-    return bool(keymap_names_for_pie(pie_a) & keymap_names_for_pie(pie_b))
+    names_a = keymap_names_for_pie(pie_a)
+    names_b = keymap_names_for_pie(pie_b)
+    return bool(names_a & _ancestor_keymaps(names_b)
+                or names_b & _ancestor_keymaps(names_a))
 
 
 def find_shortcut_conflicts(prefs, pie, index):
@@ -304,9 +323,15 @@ def find_shortcut_conflicts(prefs, pie, index):
                                and other.alt == pie.alt
                                and other.oskey == pie.oskey)
 
+        # _values_contend, not equality: PRESS and CLICK_DRAG are different
+        # values that compete for the same physical key-down, and Blender
+        # resolves PRESS first -- so one CocoPies pie silently swallows the
+        # other's key. The external check has always known this; comparing
+        # values exactly here meant the same collision was reported when the
+        # winner belonged to Blender and passed over when it was another pie.
         if (other.key.upper() == pie.key.upper()
                 and modifiers_match
-                and other.event_value == pie.event_value
+                and _values_contend(pie.event_value, other.event_value)
                 and _keymaps_overlap(other, pie)):
             conflicts.append(other.name)
     return conflicts
@@ -341,7 +366,8 @@ _KEYMAP_EXTRA_ANCESTORS = {
 # contend for it. Blender resolves PRESS first, so a PRESS binding elsewhere
 # swallows the key before a CLICK/CLICK_DRAG pie is ever considered -- they
 # genuinely conflict even though the values differ, which is why this is a
-# family rather than the exact-equality test used between two CocoPies pies.
+# family rather than an equality test. Used by both conflict checks -- see
+# find_shortcut_conflicts, which compared values exactly until it did.
 _PRESS_FAMILY = frozenset({'PRESS', 'CLICK', 'DOUBLE_CLICK', 'CLICK_DRAG', 'ANY'})
 _RELEASE_FAMILY = frozenset({'RELEASE', 'ANY'})
 
@@ -356,8 +382,11 @@ def invalidate_external_shortcut_index():
     Called whenever CocoPies re-registers, which is also when another addon is
     most likely to have been enabled or disabled behind us.
     """
-    global _external_index
+    global _external_index, _addon_names
     _external_index = None
+    # Rebuilt with it: re-registering is also when an addon is most likely to
+    # have been enabled or disabled, which is exactly what this map describes.
+    _addon_names = None
 
 
 def _ancestor_keymaps(keymap_names):
@@ -385,6 +414,148 @@ def _keymap_item_label(kmi):
     return name
 
 
+# The property that says which *thing* a generic operator was bound to. Half
+# the interesting bindings in a keyconfig run through a handful of operators
+# that do nothing on their own -- wm.tool_set_by_id is every tool shortcut,
+# wm.call_panel every popup -- so without this a row read "Set Tool by Name",
+# naming the operator and not the tool, and gave the user nothing to act on.
+_DETAIL_PROPS = {
+    'wm.call_menu': 'name',
+    'wm.call_menu_pie': 'name',
+    'wm.call_panel': 'name',
+    'wm.tool_set_by_id': 'name',
+    'wm.tool_set_by_name': 'name',
+    'wm.context_toggle': 'data_path',
+    'wm.context_toggle_enum': 'data_path',
+    'wm.context_set_enum': 'data_path',
+    'wm.context_cycle_enum': 'data_path',
+    'wm.context_menu_enum': 'data_path',
+    'wm.context_pie_enum': 'data_path',
+    'object.mode_set': 'mode',
+    'object.mode_set_with_submode': 'mode',
+    'mesh.select_mode': 'type',
+}
+
+# Menu and panel ids the detail is pulled from, minus the parts that carry no
+# information: every id is <SPACE>_MT_<what> or <SPACE>_PT_<what>, and a pie's
+# id ends in _pie. Stripped only to compare against the label, never to display.
+_ID_NOISE = re.compile(r'^[A-Z0-9]+_(MT|PT)_|_pie$')
+
+
+# {module name: the addon's display name}, rebuilt with the shortcut index.
+_addon_names = None
+
+
+def _addon_name_map():
+    """Every enabled addon's module name mapped to the name the user knows it by.
+
+    `preferences.addons` is keyed by module name, and module_bl_info() reads the
+    display name from either a legacy bl_info or an extension's manifest -- so
+    this covers extensions and old-style addons alike. A module missing from
+    sys.modules (its repository switched off, say) still gets an entry, falling
+    back to the last segment of its module path rather than dropping out.
+    """
+    global _addon_names
+    if _addon_names is None:
+        names = {}
+        for key in bpy.context.preferences.addons.keys():
+            module = sys.modules.get(key)
+            info = addon_utils.module_bl_info(module) if module else None
+            names[key] = (info or {}).get('name') or key.rpartition('.')[2]
+        _addon_names = names
+    return _addon_names
+
+
+def _owner_addon(module_name):
+    """The addon a class's __module__ belongs to, or "" for Blender's own.
+
+    Longest prefix wins, since a class lives in a submodule of its addon
+    ("bl_ext.user_default.hardops.ui.nodes_menu" belongs to
+    "bl_ext.user_default.hardops"). Blender's built-in operators report
+    "bpy.types" and its Python UI reports "bl_ui.*"; neither matches an addon
+    module, so both correctly come back empty.
+    """
+    if not module_name:
+        return ""
+    names = _addon_name_map()
+    parts = module_name.split('.')
+    for cut in range(len(parts), 0, -1):
+        candidate = '.'.join(parts[:cut])
+        if candidate in names:
+            return names[candidate]
+    return ""
+
+
+def _operator_rna_name(idname):
+    """"mesh.delete" -> "MESH_OT_delete", the name it is registered under"""
+    category, _dot, name = idname.partition('.')
+    return f"{category.upper()}_OT_{name}" if name else ""
+
+
+def _binding_owner(kmi, detail):
+    """Which addon a keymap item leads to -- "" for Blender's own, or unknown.
+
+    A keymap item records nothing about who created it: `keyconfigs.addon`
+    holds every addon's items in one undifferentiated list, so "some addon did
+    this" was as much as the panel could say. The owner is recoverable anyway,
+    because a registered Python class remembers the module it was defined in --
+    so the operator's class names the addon directly.
+
+    That fails for exactly the bindings worth naming, though: half an addon's
+    shortcuts run through Blender's own wm.call_menu / wm.call_menu_pie, whose
+    class is C code belonging to nobody. The menu they point at is the addon's,
+    so the detail property is tried second and catches those. Verified against
+    this machine's stack: Node Wrangler and HardOps are both found only by that
+    second route.
+    """
+    for name in (_operator_rna_name(kmi.idname), detail):
+        if not name:
+            continue
+        cls = getattr(bpy.types, name, None)
+        owner = _owner_addon(getattr(cls, '__module__', "") or "")
+        if owner:
+            return owner
+    return ""
+
+
+def _kmi_detail(kmi):
+    """Which tool/menu/panel/property this binding actually points at, or "".
+
+    Read for display only -- deliberately NOT part of binding_identity(), which
+    is what stored suppressions are matched by. Widening that tuple would make
+    every suppression the user has already ticked stop matching its binding,
+    and it would fail silently: the row would just come back unticked with the
+    setting gone.
+    """
+    prop = _DETAIL_PROPS.get(kmi.idname)
+    if not prop:
+        return ""
+    # An unregistered operator's properties carry nothing at all, and reading
+    # a missing one off an arbitrary operator raises rather than returning None
+    try:
+        value = getattr(kmi.properties, prop, "")
+    except Exception:
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _label_covers_detail(label, detail):
+    """Whether the label already says what the detail would say.
+
+    Blender names a menu binding after the menu ("Face Sets Edit" for
+    VIEW3D_MT_sculpt_face_sets_edit_pie), so appending the id there is noise;
+    it names a tool binding after the operator ("Set Tool by Name" for
+    builtin.select_box), where the id is the whole point. Told apart by asking
+    whether the label's words are a subset of the detail's -- true for a label
+    derived from the id, false for one that merely shares an operator with it.
+    """
+    def words(text):
+        return {w for w in re.split(r'[^a-z0-9]+', text.lower()) if w}
+
+    label_words = words(label)
+    return bool(label_words) and label_words <= words(_ID_NOISE.sub('', detail))
+
+
 def _build_external_index():
     """Index every non-CocoPies shortcut in the user keyconfig, keyed by key type.
 
@@ -396,12 +567,7 @@ def _build_external_index():
     """
     index = {}
     wm = bpy.context.window_manager
-    # The keyconfig actually in force -- see live_keyconfigs(). Reading `user`
-    # here described a keyconfig Blender was not dispatching from whenever a
-    # keymap preset was loaded, so the panel could report a shortcut as free
-    # while a live binding on it was busy swallowing the key.
-    live = live_keyconfigs()
-    kc = live[0] if live else None
+    kc = merged_keyconfig()
     if kc is None:
         return index
 
@@ -454,9 +620,13 @@ def _build_external_index():
             else:
                 source = "Custom"
 
+            label = _keymap_item_label(kmi)
+            detail = _kmi_detail(kmi)
             index.setdefault(kmi.type, []).append({
                 'idname': kmi.idname,
-                'label': _keymap_item_label(kmi),
+                'label': label,
+                'detail': "" if _label_covers_detail(label, detail) else detail,
+                'owner': _binding_owner(kmi, detail),
                 'keymap': km.name,
                 'value': kmi.value,
                 'menu': _kmi_menu_name(kmi),
@@ -616,10 +786,45 @@ def find_suppression(prefs, identity):
     return None
 
 
-def live_keyconfigs():
-    """The keyconfigs whose `active` flags decide what actually fires.
+def merged_keyconfig():
+    """The one keyconfig that holds every binding in play -- what to *read*.
 
-    `keyconfigs.user` is NOT reliably that one. Selecting a keymap preset makes
+    `keyconfigs.user` is the merged runtime config: Blender's defaults, every
+    addon's items and the user's own edits, all in one list, and it is what
+    Blender dispatches from.
+
+    NOT `keyconfigs.active`, which is what the conflict scan used to read.
+    `active` is the selected keymap *preset*, and a preset is a partial
+    keyconfig -- it holds only the keymaps it happened to save. Measured live
+    on this machine with the "MyPreset" preset loaded: `active` had 16 keymaps
+    and 936 items against `user`'s 293 and 3682. Scanning it went wrong three
+    ways at once. It missed live conflicts, because 277 keymaps were never
+    looked at -- Blender's own Delete in "User Interface" never showed against
+    the Mesh Delete pie. It invented dead ones, reporting a "Sticky UV Editor"
+    binding that exists only inside the saved preset file and nowhere in the
+    live config, complete with a checkbox offering to switch off something
+    that was not running. And it mislabelled what it did find, calling a stock
+    Object Mode binding a custom 3D View one, because the preset's copy is
+    what got compared against `default`.
+
+    The clinching evidence that `active` is not what fires: with a preset
+    loaded it contains no CocoPies keymap items at all, and the pies still
+    open.
+
+    Writing is the opposite case and still goes through live_keyconfigs() --
+    see there.
+    """
+    kcs = getattr(bpy.context.window_manager, 'keyconfigs', None)
+    if kcs is None:
+        return None
+    return getattr(kcs, 'user', None) or getattr(kcs, 'active', None)
+
+
+def live_keyconfigs():
+    """The keyconfigs a suppression has to be *written* into.
+
+    Reading is merged_keyconfig()'s job, and only writing needs this list.
+    `keyconfigs.user` is NOT reliably the one a write has to land in. Selecting a keymap preset makes
     it `keyconfigs.active` while "Blender user" stays in the list untouched --
     so on a machine running a preset (this one runs "MyPreset"), everything
     read from or written to `user` describes a keyconfig Blender is not

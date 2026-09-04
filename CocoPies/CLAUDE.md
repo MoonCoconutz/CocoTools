@@ -361,6 +361,83 @@ is what fires. On this machine `active` is "MyPreset" and has *zero* CocoPies
 items in it, while `user` has 38. Read and write `user`; reading `active` was a
 wrong turn that cost an hour.
 
+The conflict *scan* went on reading `active` anyway until 2026-09-04, and it
+failed three ways at once, all measured live under "MyPreset" (16 keymaps /
+936 items against `user`'s 293 / 3682). It **missed** live conflicts, since
+277 keymaps were never looked at — Blender's Delete in "User Interface" never
+showed against the Mesh Delete pie. It **invented** dead ones, reporting a
+"Sticky UV Editor" binding that exists only inside the saved preset file,
+with a checkbox offering to switch off something that was not running. And it
+**mislabelled** what it did find, calling a stock Object Mode binding a custom
+3D View one, because the preset's copy is what got compared against `default`.
+Reading now goes through `merged_keyconfig()` and writing still through
+`live_keyconfigs()` — those two are separate functions on purpose.
+
+**The two conflict checks must share their rules.** `find_external_conflicts`
+(pie vs everyone else) and `find_shortcut_conflicts` (pie vs pie) drifted
+apart, and the weaker one was the one covering the pies the user can actually
+fix: it compared keymap names without `_ancestor_keymaps` and event values by
+equality. So a CocoPies pie on W in "3D View" drew no warning against one on W
+in Sculpt, while *Blender's* W in "3D View" was reported against that same
+Sculpt pie; and a PRESS pie silently ate a CLICK_DRAG pie's key. Both now go
+through `_ancestor_keymaps()` and `_values_contend()`. The ancestor test is
+two-sided — a "3D View" binding is live in Sculpt, a Sculpt one is not live
+elsewhere in the 3D View, and either way round they fight while sculpting.
+
+**Which addon a binding belongs to is recoverable, but not from the keymap.**
+A `KeyMapItem` records nothing about who created it and `keyconfigs.addon` is
+one undifferentiated pile, so "Add-on" was as much as the panel could say. A
+registered Python class does remember its defining module, though, so
+`_binding_owner()` reads `bpy.types.<OP>.__module__` and maps it back through
+`preferences.addons` to the addon's display name. The operator alone is not
+enough — a large share of an addon's shortcuts run through Blender's own
+`wm.call_menu`/`call_menu_pie`, whose class is C code belonging to nobody, so
+the menu/panel id from `_kmi_detail()` is tried second and is what actually
+finds Node Wrangler and HardOps. Measured on this machine: 376 of 396 add-on
+bindings named. The remainder are `wm.context_set_enum`-style bindings (the
+detail is a data path, not a class) and operators whose addon is not currently
+registered; both fall back to the plain "Add-on".
+
+**`binding_identity()` is stored data.** It is what `suppressed_bindings`
+entries are matched by, so widening it makes every suppression the user has
+already ticked stop matching — silently, the row just returns unticked with
+the setting gone. That is why `_kmi_detail()` (which tool/panel/property a
+generic binding points at, so a row reads "Set Tool by Name:
+builtin.select_box" instead of naming the operator every tool shortcut
+shares) is display-only and deliberately not part of the identity.
+
+**A user keymap is a diff, and a removal in it is permanent.** Blender stores
+`keyconfigs.user` as a diff against default+addon. Remove an addon item from
+the *user* keyconfig while its addon twin still exists, and the diff records
+"the user deleted this" — after which the merge re-applies that deletion
+forever. Re-adding the addon item and calling `keyconfigs.update()` does not
+bring it back, and neither does restarting: the entry lives in
+`userpref.blend`. This is what left the user's Mesh Flatten pie on Shift+X
+doing nothing while every other pie in the same keymap worked, with the panel
+showing it as bound and no conflict to explain it — the `keyconfigs.update()`
+call in `register_pie_menus` was not enough on its own. Reproduced from
+scratch 2026-09-04 (`_mirror_missing_items`' comment block has the sequence).
+Two rules come out of it:
+
+- A binding that did not survive the merge must be written into
+  `keyconfigs.user` directly (`_mirror_missing_items`) — the only route left,
+  and it holds across later updates.
+- CocoPies must **never** remove one of its merged copies while the addon item
+  still exists, or it creates that ghost against itself next session.
+  `_sweep_user_keyconfig` therefore runs only after the addon sweep *and* a
+  `keyconfigs.update()`; the same experiment confirms that order leaves no diff
+  entry behind. Do not reorder those two steps.
+
+**The mirror has to be deferred, like suppression.** At Blender's own startup
+the user keyconfig has no keymaps yet when `register()` runs, so the check
+found nothing to compare against, repaired nothing, and the ghosted shortcut
+stayed dead for the whole session — while the identical code repaired it
+perfectly on any later rebuild. It now runs from
+`_apply_suppressions_deferred` alongside the suppression pass. Verified
+end-to-end against a real ghosted binding: repaired at startup, no duplicates
+across rebuilds, nothing left in the dispatch keyconfig after unregister, and
+a clean re-register afterwards.
+
 **Never write `kmi.active` during `register()`.** Blender merges addon keymaps
 into `user` on its own schedule, after `register()` returns. Setting `active`
 on a keymap before that merge lands makes Blender skip the merge for that
