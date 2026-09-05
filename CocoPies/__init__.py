@@ -6,7 +6,7 @@ from .preferences import COCOPIE_AddonPreferences
 from .defaults import (COCOPIE_OT_restore_defaults, ensure_default_pies,
                        sync_starter_pies, migrate_starter_suppressions)
 from .keymaps import register_pie_menus, unregister_pie_menus
-from .utils import get_prefs
+from .utils import get_prefs, clear_oskey
 from .ui import draw_pie_row
 from .previews import register_previews, unregister_previews
 from .operators import (
@@ -151,6 +151,16 @@ def register():
     global _seeded_this_session
     prefs = get_prefs()
     if prefs is not None:
+        # Before anything reads a shortcut: a pie stored while the Win/Cmd
+        # toggle still existed would otherwise stay bound to a combination the
+        # OS eats before Blender sees it, with no toggle left to clear it.
+        try:
+            cleared = clear_oskey(prefs)
+            if cleared:
+                print(f"CocoPies: cleared the Win/Cmd modifier from {cleared} pie menu(s)")
+        except Exception as e:
+            print(f"CocoPies: could not clear the Win/Cmd modifier: {e}")
+
         if not _seeded_this_session:
             try:
                 added = sync_starter_pies(prefs)

@@ -66,13 +66,28 @@ def get_pie_item(context, pie_index, item_index):
     return None
 
 
-def oskey_label():
-    """What Blender itself calls the OS-key modifier on this platform"""
-    if sys.platform == "darwin":
-        return "Cmd"
-    if sys.platform == "win32":
-        return "Win"
-    return "OS"
+# The OS key (Win / Cmd) is deliberately not offered as a pie modifier. It is
+# claimed by the operating system, not by Blender: on Windows the Start menu
+# takes Win+key combinations before Blender ever sees the event, so a pie bound
+# there is unreachable while looking perfectly configured in the panel. The
+# `oskey` property is kept on the data (removing a property orphans it in every
+# saved configuration and preset) but is never drawn, never registered with,
+# and cleared from anything that still carries it -- see clear_oskey().
+
+
+def clear_oskey(prefs):
+    """Turn off the OS-key modifier wherever a stored pie still has it.
+
+    A pie saved while the toggle existed keeps oskey=True, which would leave it
+    bound to a shortcut the panel no longer shows and the user cannot reach.
+    Idempotent, and cheap enough to run at every register.
+    """
+    cleared = 0
+    for pie in prefs.pie_menus:
+        if pie.oskey:
+            pie.oskey = False
+            cleared += 1
+    return cleared
 
 
 def format_shortcut(pie):
@@ -91,8 +106,8 @@ def format_shortcut(pie):
             parts.append("Ctrl")
         if pie.alt:
             parts.append("Alt")
-        if pie.oskey:
-            parts.append(oskey_label())
+        # No OS-key branch: it is not an offered modifier, and clear_oskey()
+        # makes sure no stored pie still claims one
     parts.append(pie.key or "?")
     return " + ".join(parts)
 
@@ -320,8 +335,7 @@ def find_shortcut_conflicts(prefs, pie, index):
         else:
             modifiers_match = (other.ctrl == pie.ctrl
                                and other.shift == pie.shift
-                               and other.alt == pie.alt
-                               and other.oskey == pie.oskey)
+                               and other.alt == pie.alt)
 
         # _values_contend, not equality: PRESS and CLICK_DRAG are different
         # values that compete for the same physical key-down, and Blender
@@ -703,7 +717,9 @@ def find_external_conflicts(pie, limit=6):
             modifiers_match = (other['shift'] == bool(pie.shift)
                                and other['ctrl'] == bool(pie.ctrl)
                                and other['alt'] == bool(pie.alt)
-                               and other['oskey'] == bool(pie.oskey))
+                               # A pie never holds the OS key, so a binding
+                               # that does is simply a different shortcut
+                               and not other['oskey'])
         if not modifiers_match:
             continue
 

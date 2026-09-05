@@ -103,7 +103,9 @@ def _apply_pie_dict(pie, pie_dict):
     pie.shift = pie_dict.get("shift", False)
     pie.ctrl = pie_dict.get("ctrl", False)
     pie.alt = pie_dict.get("alt", False)
-    pie.oskey = pie_dict.get("oskey", False)
+    # Not read back from the preset: a pie saved while the Win/Cmd toggle
+    # existed would otherwise come back bound to a shortcut the OS eats
+    pie.oskey = False
     pie.enabled = pie_dict.get("enabled", True)
     # Trigger before tap_toggle, never after: turning Tap to Toggle on forces
     # the Trigger to Drag (see _update_tap_toggle), so applying them the other

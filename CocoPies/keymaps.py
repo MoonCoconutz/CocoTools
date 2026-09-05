@@ -71,7 +71,8 @@ def _add_keymap_item(km, key, pie_data, pie_index):
         shift=pie_data.shift,
         ctrl=pie_data.ctrl,
         alt=pie_data.alt,
-        oskey=pie_data.oskey,
+        # Never the OS key -- it is not an offered modifier (utils.clear_oskey)
+        oskey=False,
     )
     items = []
 

@@ -17,7 +17,7 @@ from .items import (
     KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut, oskey_label,
+    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
     keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
     addon_version_string, find_external_conflicts, pie_menu_groups,
@@ -348,7 +348,8 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         row.prop(pie, "shift", text="Shift", toggle=True)
         row.prop(pie, "ctrl", text="Ctrl", toggle=True)
         row.prop(pie, "alt", text="Alt", toggle=True)
-        row.prop(pie, "oskey", text=oskey_label(), toggle=True)
+        # No Win/Cmd toggle: the OS takes those combinations before Blender
+        # sees them, so a pie bound there is unreachable. See utils.clear_oskey
         row.separator(factor=0.4)
         key = row.row(align=True)
         key.scale_x = 0.6

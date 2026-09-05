@@ -415,7 +415,7 @@ class COCOPIE_OT_duplicate_pie_menu(Operator):
                 new_pie.shift = source.shift
                 new_pie.ctrl = source.ctrl
                 new_pie.alt = source.alt
-                new_pie.oskey = source.oskey
+                new_pie.oskey = False
                 new_pie.enabled = False
                 
                 # Copy items
