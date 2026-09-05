@@ -371,7 +371,35 @@ COCOPIE_KEYMAP_IDNAMES = {
 # just as surely as one registered there directly -- which is exactly how a
 # third-party Shift+T in "Window" can beat a pie scoped to the mode keymaps
 # without either being visible to a same-name comparison.
-_ALWAYS_LIVE_KEYMAPS = frozenset({'Window', 'Screen', 'Screen Editing', 'User Interface'})
+_ALWAYS_LIVE_KEYMAPS = frozenset({'Window', 'Screen', 'Screen Editing'})
+
+# "User Interface" is deliberately not in that set. It is live over *widgets*,
+# not over a viewport: every operator in it targets whatever the cursor is on --
+# eyedropper the field under the mouse, keyframe the button under the mouse,
+# delete the list item under the mouse. In a viewport region there is nothing
+# under the cursor for them, so none of them can ever take a viewport pie's key.
+#
+# Counting it as always-live reported conflicts that cannot happen, and the keys
+# it claims are exactly the ones pies want: E, I, K, X, F2, Del, Backspace,
+# Ctrl+F and more. Every pie on one of those carried a permanent row it could do
+# nothing about -- and the checkbox beside it was worse than useless, offering to
+# disable X-to-delete in every list in Blender to fix a collision that does not
+# occur. Measured on this machine: it was the whole content of the Mesh Delete
+# and Curve Delete warnings.
+#
+# It stays an ancestor for pies scoped to the editors that are *made* of widgets,
+# where the collision is real -- hover a list in the Properties editor and X
+# genuinely is contested. Deciding this needs no poll evaluation, which is what
+# makes it implementable at draw time: "everything in this keymap targets the
+# thing under the cursor" is a static fact about the keymap.
+#
+# Known limit: an addon that put a non-cursor-targeted binding in the User
+# Interface keymap would be hidden from a spatial pie's warnings. No addon in
+# this stack does, and the noise it removes is worth that.
+_UI_WIDGET_KEYMAPS = frozenset({
+    'Property Editor', 'Preferences', 'File Browser', 'Outliner',
+})
+
 _KEYMAP_EXTRA_ANCESTORS = {
     'UV Editor': frozenset({'Image', 'Image Generic'}),
 }
@@ -406,6 +434,9 @@ def invalidate_external_shortcut_index():
 def _ancestor_keymaps(keymap_names):
     """Every keymap whose bindings are live in the given ones, ancestors included"""
     live = set(keymap_names) | set(_ALWAYS_LIVE_KEYMAPS)
+    # Only for pies that live among widgets -- see _UI_WIDGET_KEYMAPS
+    if live & _UI_WIDGET_KEYMAPS:
+        live.add('User Interface')
     for name in keymap_names:
         if name in WINDOW_MODE_KEYMAPS:
             live.add('3D View')
