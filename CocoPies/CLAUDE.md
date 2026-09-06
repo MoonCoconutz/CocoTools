@@ -346,30 +346,23 @@ arguments — to read.
 
 ## Keymap gotchas (learned the expensive way, 2026-09-02)
 
-**A `PRESS` binding beats `CLICK`/`CLICK_DRAG` at any keymap position.** They
-are different events at different times: on key-down Blender emits `PRESS` and
-walks the keymap, a `CLICK` item cannot match it, and the walk continues to
-whatever `PRESS` item exists further down. Measured: CocoPies at `Mesh[9]` and
-`Mesh[10]`, Blender's native X delete at `Mesh[112]`, and Blender still won.
-Position is irrelevant; the only fix is switching the other item off. This is
-why Quick Tap's `CLICK_DRAG`/`CLICK` pair needs `suppressed_bindings` at all.
+The **general Blender behaviour** this section rests on is written up once in
+the user's knowledge vault and is deliberately not restated here: the four
+keyconfigs and which one actually dispatches, why an exported keymap preset
+contains none of an addon's bindings, why a `PRESS` item beats
+`CLICK`/`CLICK_DRAG` at any position, and the permanent "the user deleted this"
+diff entry. See `C:\Users\Deso\Documents\Claude\3D Knowledge` (repo
+`MoonCoconutz/Obsidian`), note **Blender/Keymaps and keyconfigs** — read it
+before changing anything in `keymaps.py`. What follows is only what is
+specific to *this* codebase.
 
-**`keyconfigs.user` is the dispatch keyconfig, even when a preset is active.**
-Selecting a keymap preset makes it `keyconfigs.active`, but Blender builds
-`user` by merging that preset with `addon` and the user's own edits, and `user`
-is what fires. On this machine `active` is "MyPreset" and has *zero* CocoPies
-items in it, while `user` has 38. Read and write `user`; reading `active` was a
-wrong turn that cost an hour.
+**Quick Tap's `CLICK_DRAG`/`CLICK` pair needs `suppressed_bindings` at all**
+because of the `PRESS` rule above — measured here with CocoPies at `Mesh[9]`
+and `Mesh[10]` losing to Blender's native X delete at `Mesh[112]`. Switching
+the other item off is the only fix available.
 
-A consequence worth knowing, since it comes up as a user question: because
-`preferences.keyconfig_export` exports `wm.keyconfigs.active` (it collects
-user-modified keymaps but writes `km.active()`, the active keyconfig's copy of
-each), a keymap preset saved while CocoPies is enabled carries **none** of its
-bindings -- the addon never writes into `active`. Verified against the saved
-files: zero `cocopie`/`COCOPIE` occurrences in this machine's `MyPreset.py` on
-both 4.5 and 5.2, all saved with the addon installed. So there is no need to
-disable CocoPies before exporting a keymap preset; equally, a keymap preset is
-not a backup of the pies -- only Export under Presets is.
+**Read and write `keyconfigs.user`.** `merged_keyconfig()` (reading) and
+`live_keyconfigs()` (writing) are separate functions on purpose.
 
 The conflict *scan* went on reading `active` anyway until 2026-09-04, and it
 failed three ways at once, all measured live under "MyPreset" (16 keymaps /
@@ -416,22 +409,16 @@ generic binding points at, so a row reads "Set Tool by Name:
 builtin.select_box" instead of naming the operator every tool shortcut
 shares) is display-only and deliberately not part of the identity.
 
-**A user keymap is a diff, and a removal in it is permanent.** Blender stores
-`keyconfigs.user` as a diff against default+addon. Remove an addon item from
-the *user* keyconfig while its addon twin still exists, and the diff records
-"the user deleted this" — after which the merge re-applies that deletion
-forever. Re-adding the addon item and calling `keyconfigs.update()` does not
-bring it back, and neither does restarting: the entry lives in
-`userpref.blend`. This is what left the user's Mesh Flatten pie on Shift+X
-doing nothing while every other pie in the same keymap worked, with the panel
-showing it as bound and no conflict to explain it — the `keyconfigs.update()`
-call in `register_pie_menus` was not enough on its own. Reproduced from
-scratch 2026-09-04 (`_mirror_missing_items`' comment block has the sequence).
-Two rules come out of it:
+**Two rules follow from the permanent-removal diff entry** (vault note above):
 
 - A binding that did not survive the merge must be written into
   `keyconfigs.user` directly (`_mirror_missing_items`) — the only route left,
-  and it holds across later updates.
+  and it holds across later updates. This is what left the user's Mesh Flatten
+  pie on Shift+X doing nothing while every other pie in the same keymap
+  worked, with the panel showing it as bound and no conflict to explain it;
+  the `keyconfigs.update()` call in `register_pie_menus` was not enough on its
+  own. Reproduced from scratch 2026-09-04 — `_mirror_missing_items`' comment
+  block has the sequence.
 - CocoPies must **never** remove one of its merged copies while the addon item
   still exists, or it creates that ghost against itself next session.
   `_sweep_user_keyconfig` therefore runs only after the addon sweep *and* a

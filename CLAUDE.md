@@ -10,6 +10,23 @@ built and published together by a single shared release pipeline. Extension-
 specific development notes live in that extension's own `CLAUDE.md`
 (`<Extension>/CLAUDE.md`); this file covers what's shared across all of them.
 
+## Where general Blender knowledge lives
+
+Anything true of **Blender itself** rather than of this code — how the
+keyconfigs relate, what an extension is and how a repository is served, and
+3D knowledge generally — belongs in the user's Obsidian vault at
+`C:\Users\Deso\Documents\Claude\3D Knowledge` (repo `MoonCoconutz/Obsidian`),
+not in a `CLAUDE.md` here. `Blender/Keymaps and keyconfigs` and
+`Blender/Extensions vs legacy add-ons` are the two notes that already exist,
+and `CocoPies/CLAUDE.md` now points at the first of them rather than
+restating it.
+
+When a session establishes a durable, measured fact about Blender, offer to
+write it there. Record how it was verified and on which version. The rule for
+what stays here: if it names a function, a file or an ordering constraint in
+this repo, it is a `CLAUDE.md` fact; if it would still be true with CocoTools
+deleted, it is a vault note.
+
 ## Extensions in this repo
 
 | Folder | What it is |
