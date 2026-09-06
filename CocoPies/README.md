@@ -223,6 +223,11 @@ Loading never wipes what you already have. If an incoming menu's name matches
 one of yours, CocoPies asks whether to **replace** the matching menus or
 **skip** them; menus with new names are always added.
 
+This is the only backup of your menus. Blender's own **Keymap ▸ Preset** is a
+separate thing and does not include CocoPies' shortcuts — saving one while
+CocoPies is enabled produces a clean keymap preset (no need to disable the
+add-on first), but it will not bring your pies back.
+
 ## Troubleshooting
 
 **A shortcut does nothing.** Check the menu is enabled, and look for a conflict

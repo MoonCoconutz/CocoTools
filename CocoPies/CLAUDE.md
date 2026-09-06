@@ -361,6 +361,16 @@ is what fires. On this machine `active` is "MyPreset" and has *zero* CocoPies
 items in it, while `user` has 38. Read and write `user`; reading `active` was a
 wrong turn that cost an hour.
 
+A consequence worth knowing, since it comes up as a user question: because
+`preferences.keyconfig_export` exports `wm.keyconfigs.active` (it collects
+user-modified keymaps but writes `km.active()`, the active keyconfig's copy of
+each), a keymap preset saved while CocoPies is enabled carries **none** of its
+bindings -- the addon never writes into `active`. Verified against the saved
+files: zero `cocopie`/`COCOPIE` occurrences in this machine's `MyPreset.py` on
+both 4.5 and 5.2, all saved with the addon installed. So there is no need to
+disable CocoPies before exporting a keymap preset; equally, a keymap preset is
+not a backup of the pies -- only Export under Presets is.
+
 The conflict *scan* went on reading `active` anyway until 2026-09-04, and it
 failed three ways at once, all measured live under "MyPreset" (16 keymaps /
 936 items against `user`'s 293 / 3682). It **missed** live conflicts, since
