@@ -102,6 +102,28 @@ def _capture_button(context):
     }
 
 
+def _unused_pie_name(prefs):
+    """A "Pie Menu N" that nothing is called yet.
+
+    Counting the pies is not enough: deleting one frees its number, so a plain
+    count can collide with a name that is still in use.
+    """
+    taken = {p.name for p in prefs.pie_menus} if prefs else set()
+    n = len(taken) + 1
+    while f"Pie Menu {n}" in taken:
+        n += 1
+    return f"Pie Menu {n}"
+
+
+def _unused_pie_idname(prefs):
+    """Likewise for the idname, which has to be unique to register at all"""
+    taken = {p.idname for p in prefs.pie_menus} if prefs else set()
+    n = len(taken) + 1
+    while f"COCOPIE_MT_custom_pie_{n}" in taken:
+        n += 1
+    return f"COCOPIE_MT_custom_pie_{n}"
+
+
 def _items_by_position(pie):
     """Map slot -> item without mutating the pie.
 
@@ -115,6 +137,39 @@ def _items_by_position(pie):
     return by_pos
 
 
+def _write_capture(item, operator_string, prop_label, is_property):
+    """Turn a captured button into a slot's command and label.
+
+    Shared by both entry points -- assigning to an existing pie's direction,
+    and creating a new pie around the button -- so the two cannot disagree
+    about what a given button becomes. Returns the label it settled on.
+    """
+    item.icon = "NONE"
+    item.enabled = True
+
+    if is_property:
+        item.command = operator_string
+        item.label = prop_label or operator_string.split('.')[-1].split(' ')[0].replace('_', ' ').title()
+
+    elif 'MT_' in operator_string or '_MT_' in operator_string:
+        menu_class = operator_string
+        item.label = menu_class.replace('VIEW3D_MT_', '').replace('_MT_', ' ').replace('_', ' ').title()
+        item.command = f"bpy.ops.wm.call_menu(name='{menu_class}')"
+
+    else:
+        op_name = operator_string
+        if '_OT_' in op_name:
+            parts = op_name.split('_OT_')
+            if len(parts) == 2:
+                op_name = f"{parts[0].lower()}.{parts[1].lower()}"
+        else:
+            op_name = op_name.lower()
+        item.label = op_name.split('.')[-1].replace('_', ' ').title()
+        item.command = f"bpy.ops.{op_name}()"
+
+    return item.label
+
+
 class COCOPIE_MT_add_to_cocopie(Menu):
     """The pie list: one submenu per configured pie menu"""
     bl_idname = "COCOPIE_MT_add_to_cocopie"
@@ -124,8 +179,19 @@ class COCOPIE_MT_add_to_cocopie(Menu):
         layout = self.layout
         prefs = get_prefs(context)
 
+        # Offered first, and offered even when no pie exists yet -- it is the
+        # only entry that is useful in that state.
+        op = layout.operator(
+            "cocopie.add_to_new_pie", text="Add a New Pie...", icon='ADD')
+        op.operator_string = _CAPTURED.get('operator_string', "")
+        op.prop_label = _CAPTURED.get('prop_label', "")
+        op.is_property = _CAPTURED.get('is_property', False)
+        layout.separator()
+
         if prefs is None or len(prefs.pie_menus) == 0:
-            layout.label(text="No pie menus created yet", icon='INFO')
+            row = layout.row()
+            row.enabled = False
+            row.label(text="No pie menus created yet", icon='INFO')
             return
 
         for i, pie in enumerate(prefs.pie_menus):
@@ -231,31 +297,62 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
             self.report({'WARNING'}, f"{pie.name} has no free direction (8 of 8 used)")
             return {'CANCELLED'}
 
-        item.icon = "NONE"
-        item.enabled = True
-
-        if self.is_property:
-            item.command = self.operator_string
-            item.label = self.prop_label or self.operator_string.split('.')[-1].split(' ')[0].replace('_', ' ').title()
-
-        elif 'MT_' in self.operator_string or '_MT_' in self.operator_string:
-            menu_class = self.operator_string
-            item.label = menu_class.replace('VIEW3D_MT_', '').replace('_MT_', ' ').replace('_', ' ').title()
-            item.command = f"bpy.ops.wm.call_menu(name='{menu_class}')"
-
-        else:
-            op_name = self.operator_string
-            if '_OT_' in op_name:
-                parts = op_name.split('_OT_')
-                if len(parts) == 2:
-                    op_name = f"{parts[0].lower()}.{parts[1].lower()}"
-            else:
-                op_name = op_name.lower()
-            item.label = op_name.split('.')[-1].replace('_', ' ').title()
-            item.command = f"bpy.ops.{op_name}()"
+        _write_capture(item, self.operator_string, self.prop_label, self.is_property)
 
         register_pie_menus()
         self.report({'INFO'}, f"Added '{item.label}' to {pie.name} ({POSITION_NAMES[self.position]})")
+        return {'FINISHED'}
+
+
+class COCOPIE_OT_add_to_new_pie(Operator):
+    """Create a new pie menu with the captured button on its first direction"""
+    bl_idname = "cocopie.add_to_new_pie"
+    bl_label = "Add to a New Pie"
+    bl_options = {'INTERNAL'}
+
+    name: StringProperty(
+        name="Name",
+        description="Name for the new pie menu",
+        default="",
+    )
+    operator_string: StringProperty()
+    prop_label: StringProperty(default="")
+    is_property: BoolProperty(default=False)
+
+    def invoke(self, context, event):
+        # The name is asked for up front rather than assigned and renamed
+        # afterwards: renaming is only possible in the Preferences pie list,
+        # and not having to go there is the point of this entry.
+        self.name = _unused_pie_name(get_prefs(context))
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        self.layout.prop(self, "name")
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs is None:
+            return {'CANCELLED'}
+        if not self.operator_string:
+            self.report({'WARNING'}, "Nothing was captured from that button")
+            return {'CANCELLED'}
+
+        pie = prefs.pie_menus.add()
+        pie.name = self.name.strip() or _unused_pie_name(prefs)
+        pie.idname = _unused_pie_idname(prefs)
+
+        ensure_slot_items(pie)
+        label = _write_capture(pie.items[0], self.operator_string,
+                               self.prop_label, self.is_property)
+
+        prefs.active_pie_index = len(prefs.pie_menus) - 1
+        register_pie_menus()
+
+        # The new pie has no shortcut yet, so say so rather than leaving a pie
+        # that exists but cannot be opened.
+        self.report({'INFO'},
+                    f"Created '{pie.name}' with '{label}' on "
+                    f"{POSITION_NAMES[0]} -- set its shortcut in Preferences")
         return {'FINISHED'}
 
 

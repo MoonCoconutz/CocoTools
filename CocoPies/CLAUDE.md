@@ -344,6 +344,30 @@ captured once, at the *top-level* context menu's draw time (where
 stashed module-level (`_CAPTURED`) for the submenus — which get no draw
 arguments — to read.
 
+There are **two** ways out of that menu and they must not diverge:
+`cocopie.add_operator_to_pie` (a direction of an existing pie) and
+`cocopie.add_to_new_pie` (a pie created around the button, offered first and
+drawn even when no pie exists yet, since it is the only entry useful in that
+state). Both turn the capture into a command through `_write_capture()` — keep
+it that way rather than inlining either copy; the two conflict checks in
+`keymaps.py` are the cautionary tale of what drifting apart costs. The new-pie
+path names itself through `_unused_pie_name()` / `_unused_pie_idname()`, which
+scan what is taken instead of counting the collection: deleting a pie frees its
+number, so `cocopie.add_pie_menu`'s `len(pie_menus)` naming does collide.
+
+**An operator that can run from the viewport must not carry `REGISTER`.**
+`REGISTER` is what puts an operator in the redo stack, which draws the
+collapsible panel in the viewport's bottom-left corner — with its properties
+exposed as editable fields. For `add_operator_to_pie` that was a live footgun,
+not just clutter: re-tweaking `position` in that panel re-ran the assignment
+against a different slot, skipping the overwrite confirmation `invoke()` gives.
+`UNDO` is a separate question and cuts the other way — an operator writing
+`AddonPreferences` should not have it (preferences are not on the undo stack,
+so the step it pushes rolls back the previous *scene* edit instead), while both
+operators that `exec()` a slot's command should, since a slot editing data
+directly rather than calling a `bpy.ops` operator pushes no undo step of its
+own.
+
 ## Keymap gotchas (learned the expensive way, 2026-09-02)
 
 The **general Blender behaviour** this section rests on is written up once in

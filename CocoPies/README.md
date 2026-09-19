@@ -175,9 +175,18 @@ Anything else is executed as plain Python.
 ## Adding items by right-clicking
 
 You don't have to type commands by hand. **Right-click almost any button in
-Blender → Add to Pie Menu**. This works on operator buttons and on property
+Blender → Add to CocoPies**. This works on operator buttons and on property
 toggles (overlay switches and the like), and fills in the command, a label,
 and a sensible icon.
+
+The submenu lists every pie you have, each opening onto its eight directions
+so you can see which are free before picking one. Choosing a direction that is
+already taken asks before replacing it.
+
+**Add a New Pie...**, at the top of that list, skips the Preferences window
+entirely: name the pie, and it is created with the button you right-clicked on
+its Left direction. It has no keyboard shortcut yet — give it one in
+Preferences when you are ready to use it.
 
 ## Icons
 

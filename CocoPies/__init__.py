@@ -36,6 +36,7 @@ from .operators import (
     COCOPIE_MT_add_to_cocopie,
     DIRECTION_MENUS,
     COCOPIE_OT_add_operator_to_pie,
+    COCOPIE_OT_add_to_new_pie,
     menu_func_context,
 )
 
@@ -73,6 +74,7 @@ classes = (
     COCOPIE_OT_set_icon_choice,
     COCOPIE_MT_add_to_cocopie,
     COCOPIE_OT_add_operator_to_pie,
+    COCOPIE_OT_add_to_new_pie,
     COCOPIE_AddonPreferences,
 ) + DIRECTION_MENUS
 

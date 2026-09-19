@@ -33,6 +33,7 @@ from .context_menu import (
     COCOPIE_MT_add_to_cocopie,
     DIRECTION_MENUS,
     COCOPIE_OT_add_operator_to_pie,
+    COCOPIE_OT_add_to_new_pie,
     menu_func_context,
 )
 
@@ -63,5 +64,6 @@ __all__ = [
     "COCOPIE_MT_add_to_cocopie",
     "DIRECTION_MENUS",
     "COCOPIE_OT_add_operator_to_pie",
+    "COCOPIE_OT_add_to_new_pie",
     "menu_func_context",
 ]
