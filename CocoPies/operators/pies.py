@@ -57,7 +57,7 @@ class COCOPIE_OT_tap_toggle_direction(Operator):
     directly, alternating between them, without opening the pie at all"""
     bl_idname = "cocopie.tap_toggle_direction"
     bl_label = "Toggle Pie Direction"
-    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    bl_options = {'UNDO', 'INTERNAL'}
 
     pie_index: IntProperty()
 
