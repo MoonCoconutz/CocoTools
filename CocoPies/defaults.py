@@ -1073,7 +1073,7 @@ class COCOPIE_OT_restore_defaults(Operator):
     Pie menus you already have are left untouched"""
     bl_idname = "cocopie.restore_defaults"
     bl_label = "Restore Starter Pies"
-    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    bl_options = {'REGISTER', 'INTERNAL'}
 
     def execute(self, context):
         prefs = get_prefs(context)

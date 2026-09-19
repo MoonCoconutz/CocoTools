@@ -36,7 +36,7 @@ class COCOPIE_OT_execute_command(Operator):
     """Execute a Python command"""
     bl_idname = "cocopie.execute_command"
     bl_label = "Execute Command"
-    bl_options = {'INTERNAL'}
+    bl_options = {'UNDO', 'INTERNAL'}
     
     command: StringProperty()
     

@@ -184,7 +184,7 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
     """Add the captured button to this direction of the pie menu"""
     bl_idname = "cocopie.add_operator_to_pie"
     bl_label = "Add to Pie Direction"
-    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    bl_options = {'INTERNAL'}
 
     pie_index: IntProperty()
     position: IntProperty(default=-1)
