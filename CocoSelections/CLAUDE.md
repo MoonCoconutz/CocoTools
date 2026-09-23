@@ -6,8 +6,8 @@ root `CLAUDE.md`.
 
 ## What it is
 
-Named object selection sets on the Scene, listed in `3D Viewport > N > Coco >
-Selections`. Sets store **object pointers, not names**, so renaming an object
+Named object selection sets on the Scene, listed in a **Selections** popover in the 3D Viewport tool
+header, right of Options. Sets store **object pointers, not names**, so renaming an object
 does not break a set and a deleted object drops out on next use.
 
 ## Layout
@@ -19,7 +19,7 @@ does not break a set and a deleted object drops out on next use.
 - `operators.py` — add / remove / move / select / update / check_all,
   `select_only()`, `apply_object_selection()`, and the
   `depsgraph_update_post` handler.
-- `ui.py` — the N-panel and the list rows.
+- `ui.py` — the popover panel, its tool-header button, and the list rows.
 
 ## The row is three different widgets, deliberately
 

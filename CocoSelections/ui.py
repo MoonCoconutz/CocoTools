@@ -1,4 +1,4 @@
-"""UI layer. Everything view-facing lives here so the N-panel can be swapped
+"""UI layer. Everything view-facing lives here so the popover can be swapped
 for another host (popup, pie, dedicated editor) without touching the data or
 the operators."""
 
@@ -55,13 +55,14 @@ class COCOSEL_UL_selections(UIList):
 
 
 class COCOSEL_PT_selections(Panel):
-    """Sidebar (N) panel hosting the selection set list."""
+    """Popover hosting the selection set list, opened from the viewport's tool
+    header next to Options (see draw_tool_header)."""
 
     bl_idname = "COCOSEL_PT_selections"
     bl_label = "Selections"
     bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = "Coco"
+    bl_region_type = 'HEADER'
+    bl_ui_units_x = 12
 
     def draw(self, context):
         layout = self.layout
@@ -108,6 +109,12 @@ class COCOSEL_PT_selections(Panel):
             layout.label(text="Select objects, then press +", icon='INFO')
 
 
+def draw_tool_header(self, context):
+    # Appended to VIEW3D_HT_tool_header, whose draw() ends with the mode's
+    # settings (Options), so this lands immediately to its right.
+    self.layout.popover(panel=COCOSEL_PT_selections.bl_idname, text="Selections")
+
+
 classes = (
     COCOSEL_UL_selections,
     COCOSEL_PT_selections,
@@ -117,8 +124,10 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.types.VIEW3D_HT_tool_header.append(draw_tool_header)
 
 
 def unregister():
+    bpy.types.VIEW3D_HT_tool_header.remove(draw_tool_header)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

@@ -30,7 +30,7 @@ over the same module name.
 
 ## Use
 
-`3D Viewport > N > Coco > Selections`
+3D Viewport tool header: the **Selections** dropdown right of **Options** (enable View > Tool Settings if the tool header is hidden).
 
 | Control | Action |
 | --- | --- |
@@ -136,11 +136,11 @@ only when nothing is selected.
 - `operators.py` — add / remove / move / select / update / check_all, plus
   `select_only()`,
   plus `apply_object_selection()` shared by everything that touches the viewport
-- `ui.py` — the N-panel and the list rows; **replace this file alone** when the
-  UI moves off the sidebar
+- `ui.py` — the tool-header popover and the list rows; **replace this file alone** to
+  move the UI to another host
 - `__init__.py` — `bl_info` and registration
 
-The N-panel is a temporary host. `properties.py` and `operators.py` are kept
+The popover is just one host. `properties.py` and `operators.py` are kept
 host-agnostic — operators take an explicit `index` and never read UI state — so
 the UI can be swapped for a popup, pie menu, or dedicated editor without
 touching them.
