@@ -295,6 +295,76 @@ def _cancel_scheduled_suppressions():
             pass
 
 
+# ---------------------------------------------------------------------------
+# Re-applying after a keymap preset switch.
+#
+# Picking another preset in Preferences > Keymap rebuilds `keyconfigs.user`
+# from scratch: addon items come back through the merge, but every
+# `active = False` a suppression wrote is gone, and so is anything
+# _mirror_missing_items placed there by hand. The native binding is live again
+# and steals the pie's key, while the panel still shows the suppression ticked
+# (it draws from prefs, not from the keymap). Measured headless 2026-09-24:
+# Mesh's X delete read True again after Industry Compatible -> Blender.
+#
+# Blender has no handler for a preset switch, and polling on a timer for
+# something only the Keymap section can do was not wanted. So the check rides
+# on that section's own draw: it redraws right after a switch, and it costs a
+# string compare only while it is on screen. draw() may not write data, so it
+# only queues the usual deferred pass, which then runs outside the draw.
+
+_last_keyconfig_name = None
+
+
+def _watch_keyconfig_preset(self, context):
+    global _last_keyconfig_name
+    try:
+        active = context.window_manager.keyconfigs.active
+        name = active.name if active is not None else None
+    except Exception:
+        return
+    if name == _last_keyconfig_name:
+        return
+    first_look = _last_keyconfig_name is None
+    _last_keyconfig_name = name
+    if first_look:
+        return
+    invalidate_external_shortcut_index()
+    _schedule_suppressions()
+
+
+def _scrub_keyconfig_watchers():
+    """Remove every copy of the watcher, by name, for the same reload reason
+    as __init__._scrub_context_menu_entries."""
+    panel = getattr(bpy.types, 'USERPREF_PT_keymap', None)
+    if panel is None:
+        return None
+    draw_funcs = panel._dyn_ui_initialize()
+    draw_funcs[:] = [
+        fn for fn in draw_funcs
+        if not (getattr(fn, '__name__', None) == '_watch_keyconfig_preset'
+                and getattr(fn, '__module__', '') == __name__)
+    ]
+    return panel
+
+
+def register_keyconfig_watcher():
+    global _last_keyconfig_name
+    try:
+        _last_keyconfig_name = bpy.context.window_manager.keyconfigs.active.name
+    except Exception:
+        _last_keyconfig_name = None
+    panel = _scrub_keyconfig_watchers()
+    if panel is not None:
+        panel.append(_watch_keyconfig_preset)
+
+
+def unregister_keyconfig_watcher():
+    try:
+        _scrub_keyconfig_watchers()
+    except Exception:
+        pass
+
+
 def register_pie_menus():
     """Register all pie menus and their keymaps"""
     global registered_pie_classes, registered_keymaps

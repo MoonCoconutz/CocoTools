@@ -469,6 +469,16 @@ keymap stays stuck until Blender restarts. `keymaps.py` defers the suppression
 pass to a `bpy.app.timers` callback for exactly this reason -- do not "simplify"
 it back into `register_pie_menus`.
 
+**Switching keymap preset wipes suppressions and mirrors.** It rebuilds
+`keyconfigs.user`, so every `active = False` and every mirrored item is gone
+while the panel still shows the suppression ticked. `_watch_keyconfig_preset`
+is appended to `USERPREF_PT_keymap`'s draw and re-queues the deferred pass
+when `keyconfigs.active.name` changes. No polling timer, on purpose (the user
+did not want one): the check costs nothing unless the Keymap section is on
+screen, which is the only place a preset can be picked. Verified GUI on 4.5
+and 5.2 (2026-09-24), including that nothing is re-applied without that panel
+open.
+
 **"Was it on before we touched it" can only be asked once.** Suppression turns
 an item off, Save Preferences writes that into `userpref.blend`, and from the
 next launch every check sees an already-off item. Recomputing the restore flag

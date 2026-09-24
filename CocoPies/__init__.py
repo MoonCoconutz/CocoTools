@@ -5,7 +5,10 @@ from .properties import (COCOPIE_KeymapScope, COCOPIE_PieMenuItem,
 from .preferences import COCOPIE_AddonPreferences
 from .defaults import (COCOPIE_OT_restore_defaults, ensure_default_pies,
                        sync_starter_pies, migrate_starter_suppressions)
-from .keymaps import register_pie_menus, unregister_pie_menus
+from .keymaps import (
+    register_pie_menus, unregister_pie_menus,
+    register_keyconfig_watcher, unregister_keyconfig_watcher,
+)
 from .utils import get_prefs, clear_oskey
 from .ui import draw_pie_row
 from .previews import register_previews, unregister_previews
@@ -186,6 +189,7 @@ def register():
         _seeded_this_session = True
 
     register_pie_menus()
+    register_keyconfig_watcher()
 
 
 def unregister():
@@ -196,6 +200,7 @@ def unregister():
         except Exception:
             pass  # Silently ignore if not registered
 
+    unregister_keyconfig_watcher()
     unregister_pie_menus()
 
     # Keep going if one class will not unregister. A class can already be gone
