@@ -9,7 +9,7 @@ two disagree, `CLAUDE.md` is right.
 | File | What lives there |
 |---|---|
 | `menus.py` | `create_pie_menu_class(pie_data)` (note: *create_*, not build_), `execute_script()`, `_parse_bpy_ops_call()` |
-| `keymaps.py` | `register_pie_menus()` / `unregister_pie_menus()` |
+| `keymaps.py` | `register_pie_menus()` / `unregister_pie_menus()`; `_watch_keyconfig_preset` (draw hook on `USERPREF_PT_keymap`, re-applies suppressions after a keymap preset switch) |
 | `defaults.py` | `default_pie_definitions(script_paths)`, `bundled_script_paths()`, `sync_starter_pies()`, `ensure_default_pies()` |
 | `presets.py` | `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer used by starters, presets and imports alike |
 | `utils.py` | `get_prefs()`, `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`, `ensure_slot_items()`, `slot_is_used()`, `normalized_scope()` |

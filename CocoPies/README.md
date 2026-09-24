@@ -237,6 +237,10 @@ separate thing and does not include CocoPies' shortcuts — saving one while
 CocoPies is enabled produces a clean keymap preset (no need to disable the
 add-on first), but it will not bring your pies back.
 
+Switching between keymap presets is safe: as soon as the Keymap section
+redraws, CocoPies switches off again any Blender shortcut you told it to
+override.
+
 ## Troubleshooting
 
 **A shortcut does nothing.** Check the menu is enabled, and look for a conflict
