@@ -372,11 +372,12 @@ own.
 
 The **general Blender behaviour** this section rests on is written up once in
 the user's knowledge vault and is deliberately not restated here: the four
-keyconfigs and which one actually dispatches, why an exported keymap preset
-contains none of an addon's bindings, why a `PRESS` item beats
-`CLICK`/`CLICK_DRAG` at any position, and the permanent "the user deleted this"
-diff entry. See `C:\Users\Deso\Documents\Claude\3D Knowledge` (repo
-`MoonCoconutz/Obsidian`), note **Blender/Keymaps and keyconfigs** — read it
+keyconfigs and which one actually dispatches, which addon bindings an exported
+keymap preset does and does not contain, why a `PRESS` item beats
+`CLICK`/`CLICK_DRAG` at any position, the permanent "the user deleted this"
+diff entry, and why a preset switch undoes suppressions. See the vault repo
+`MoonCoconutz/Obsidian` (local clone `C:\Users\d_desogus\Documents\Claude\Obsidian`,
+pull first), note **Blender/Keymaps and keyconfigs** — read it
 before changing anything in `keymaps.py`. What follows is only what is
 specific to *this* codebase.
 

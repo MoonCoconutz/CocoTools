@@ -14,12 +14,17 @@ specific development notes live in that extension's own `CLAUDE.md`
 
 Anything true of **Blender itself** rather than of this code — how the
 keyconfigs relate, what an extension is and how a repository is served, and
-3D knowledge generally — belongs in the user's Obsidian vault at
-`C:\Users\Deso\Documents\Claude\3D Knowledge` (repo `MoonCoconutz/Obsidian`),
-not in a `CLAUDE.md` here. `Blender/Keymaps and keyconfigs` and
-`Blender/Extensions vs legacy add-ons` are the two notes that already exist,
-and `CocoPies/CLAUDE.md` now points at the first of them rather than
-restating it.
+3D knowledge generally — belongs in the user's Obsidian vault, GitHub repo
+`MoonCoconutz/Obsidian` (the source of truth), cloned locally at
+`C:\Users\d_desogus\Documents\Claude\Obsidian`, not in a `CLAUDE.md` here.
+`git pull` the clone before reading or editing a note — it can be well behind
+GitHub — and push after committing. `CocoPies/CLAUDE.md` points at
+`Blender/Keymaps and keyconfigs` rather than restating it.
+
+`Blender/MyPreset changes` is the source of truth for the user's own keymap
+preset, and it also says how `MyPreset.py` is kept (edited by hand, one line
+per change, previous copy kept; never re-exported over). Read it before
+touching any keymap preset file, and record any change made there.
 
 When a session establishes a durable, measured fact about Blender, offer to
 write it there. Record how it was verified and on which version. The rule for
