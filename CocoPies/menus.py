@@ -248,11 +248,18 @@ def create_pie_menu_class(pie_data):
                             try:
                                 op = container.operator(idname, text=label, **icon_kw)
                                 for prop_name, value in kwargs.items():
+                                    # An option this install of the operator
+                                    # does not define is skipped, not fatal:
+                                    # the exec fallback below loses the redo
+                                    # panel. Lets one slot pass Mio3 UV 2.x
+                                    # options the 1.5.x on Blender 4.5 lacks.
+                                    if prop_name not in op.bl_rna.properties:
+                                        continue
                                     setattr(op, prop_name, value)
                             except Exception:
-                                # A property that does not exist or will not
-                                # accept this value -- fall back rather than
-                                # leave the button half-configured
+                                # A value the property will not accept --
+                                # fall back rather than leave the button
+                                # half-configured
                                 op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                                 op.command = command
                         else:

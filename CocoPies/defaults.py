@@ -349,11 +349,11 @@ def default_pie_definitions(script_paths):
                 {"label": "Rectify", "icon": 'MESH_PLANE', "position": 4, "enabled": True,
                  "command": "bpy.ops.uv.mio3_rectify()"},
                 # Geometry Ratio 0 rather than Mio3's 0.5. ratio_influence only
-                # exists from Mio3 UV 2.x (Blender 5.0+); 1.5.x on 4.5 has none.
+                # exists from Mio3 UV 2.x (Blender 5.0+); on 4.5's 1.5.x the pie
+                # button skips it (menus.py). Keep this a plain bpy.ops call:
+                # anything else runs through exec and loses the redo panel.
                 {"label": "Gridify", "icon": 'MESH_GRID', "position": 5, "enabled": True,
-                 "command": "bpy.ops.uv.mio3_gridify(ratio_influence=0.0) "
-                            "if 'ratio_influence' in bpy.ops.uv.mio3_gridify.get_rna_type().properties "
-                            "else bpy.ops.uv.mio3_gridify()"},
+                 "command": "bpy.ops.uv.mio3_gridify(ratio_influence=0.0)"},
                 {"label": "UV Unwrap X", "icon": 'AXIS_SIDE', "position": 6, "enabled": True,
                  "command": "bpy.ops.uv.mio3_unwrap(axis='X')"},
                 {"label": "UV Unwrap Y", "icon": 'AXIS_FRONT', "position": 7, "enabled": True,

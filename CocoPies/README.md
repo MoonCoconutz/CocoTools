@@ -143,11 +143,17 @@ The **Command** field accepts four forms, and CocoPies picks how to draw the
 button based on which one it sees:
 
 **Operator** — drawn as a native Blender operator button, so it inherits the
-real tooltip and enabled/disabled state:
+real tooltip, enabled/disabled state and redo panel (the operator's options in
+the editor's bottom-left corner):
 
 ```python
 bpy.ops.mesh.subdivide()
 ```
+
+This needs a plain call with literal keyword arguments. Anything more (an
+`if`/`else`, a variable, two statements) still runs, but as a script, with no
+redo panel. An option the installed operator doesn't have is skipped instead
+of failing, so one command can use options a newer version of an add-on added.
 
 **Property assignment** — if the left side resolves to a boolean, the slot is
 bound directly to that property and draws as a **live toggle**, lit when the

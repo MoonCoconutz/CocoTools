@@ -318,7 +318,19 @@ whatever class attributes the method reads.
 
 **Commands are `exec()`'d Python**, not a restricted DSL
 (`operators/context_menu.py`, `operators/pies.py`). A pie item is exactly as
-trusted as any script the user would run in Blender. `execute_script(path)`
+trusted as any script the user would run in Blender.
+
+**Only a plain `bpy.ops` call gets the redo panel.** `create_pie_menu_class`
+draws a slot as a real `layout.operator()` button only when
+`_parse_bpy_ops_call()` accepts it; anything else (an `if`/`else`, a name, a
+second statement) goes through `cocopie.execute_command`, whose nested call
+never reaches the redo panel. 1.12.4's Gridify slot lost its panel that way,
+from an `'x' in get_rna_type().properties` version check. So a keyword the
+installed operator does not define is **skipped** on the native button
+(`prop_name not in op.bl_rna.properties`), not treated as a reason to fall
+back — that is what lets one starter command pass Mio3 UV 2.x options that
+the 1.5.x on 4.5 lacks. Write version differences as extra keywords, never
+as a conditional expression. `execute_script(path)`
 resolves relative to nothing in particular — bundled scripts resolve their
 own path from the addon's install location at creation time, since an
 absolute path baked into a starter pie does not survive moving between
