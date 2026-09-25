@@ -272,8 +272,13 @@ def default_pie_definitions(script_paths):
                 # point. Verified against real UV coordinates, not assumed.
                 {"label": "Flip X", "icon": 'MOD_MIRROR', "position": 0, "enabled": True,
                  "command": "bpy.ops.transform.resize(value=(-1, 1, 1), constraint_axis=(True, False, False))"},
+                # Mio3 Align > Center on islands, pivot UV Area. align_to only
+                # exists from Mio3 UV 2.x (Blender 5.0+); the 1.5.x on 4.5 has
+                # no pivot, so there it centres on the islands' bounding box.
                 {"label": "Stack Islands", "icon": 'DUPLICATE', "position": 1, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_simple_stack()"},
+                 "command": "bpy.ops.uv.mio3_align(type='CENTER', island=True, align_to='UV_AREA') "
+                            "if 'align_to' in bpy.ops.uv.mio3_align.get_rna_type().properties "
+                            "else bpy.ops.uv.mio3_align(type='CENTER', island=True)"},
                 # Stock Blender: transform.rotate is what R 90 Enter runs in the
                 # UV editor -- negative because the user wants this slot to spin
                 # clockwise; positive is counter-clockwise, confirmed against
