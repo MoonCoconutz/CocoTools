@@ -290,7 +290,7 @@ def default_pie_definitions(script_paths):
                 {"label": "Sort", "icon": 'SORTSIZE', "position": 4, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_distribute_islands()"},
                 {"label": "Stack Similar", "icon": 'STICKY_UVS_LOC', "position": 5, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_stack_similar()"},
+                 "command": "bpy.ops.uv.mio3_stack(selected=True)"},
                 {"label": "Orient World", "icon": 'WORLD', "position": 6, "enabled": True,
                  "command": "bpy.ops.uv.zenuv_world_orient()"},
                 # Explicit rather than defaults: Zen UV's own default for

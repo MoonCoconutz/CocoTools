@@ -76,7 +76,8 @@ configure anything:
 
 UV Transform is mostly [Zen UV](https://zenuv.rocks) — Flip X/Y and Rotate 90
 are stock Blender (`transform.resize` / `transform.rotate`, the same as
-`S X -1` and `R -90`) so those three work regardless. UV Select mixes Zen UV
+`S X -1` and `R -90`) so those three work regardless, and Stack Similar is
+Mio3's Stack (selected only). UV Select mixes Zen UV
 with [Mio3 UV](https://github.com/mio3io/mio3-uv), except **Boundary**, which
 runs a bundled script — Blender has no operator that selects island borders,
 so CocoPies ships one (see below). UV Unwrap is all Mio3. Without the addon a
