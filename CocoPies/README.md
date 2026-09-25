@@ -53,10 +53,10 @@ The ▲/▼ buttons beside **New Pie Menu** reorder the list. That ordering is
 purely cosmetic — it changes nothing about shortcuts or registration, it is
 only how the menus are listed in the editor.
 
-> *Window (Global)* is not literally global. It registers the shortcut into the
-> nine 3D viewport mode keymaps — Object Mode, Mesh, Curve, Armature, Pose,
-> Sculpt and the three paint modes — and **nowhere else**. A global pie
-> therefore never fires in the UV editor, the node editor, or any other editor.
+> *Window (Global)* registers the shortcut in Blender's own *Window* keymap, so
+> it fires in every editor: the 3D viewport, UV editor, node editors, text
+> editor and the rest. Any editor or mode that has its own binding on the same
+> key still takes the key first. The editor shows such bindings as conflicts.
 > Scope a menu to a **mode** when you want one key to mean different things in
 > different contexts: two pies can share a key freely as long as the modes they
 > are scoped to don't overlap.

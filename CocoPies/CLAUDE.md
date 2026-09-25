@@ -239,7 +239,8 @@ from a *previous* load can still be sitting in Blender's keyconfig.
 `keymap_items.new()` always appends, never replaces, so orphans compound
 silently across reloads. `unregister_pie_menus()` therefore sweeps every
 keymap CocoPies could have touched (`KEYMAP_CONFIG` scopes ∪
-`WINDOW_MODE_KEYMAPS`) for any `wm.call_menu_pie` item whose `properties.name`
+`WINDOW_MODE_KEYMAPS`; the latter is where "Window (Global)" registered before
+it moved to the real `Window` keymap, kept only so old items still get swept) for any `wm.call_menu_pie` item whose `properties.name`
 starts with `COCOPIE_MT_`, or any `cocopie.hold_or_tap` item, and removes
 them directly — regardless of what `registered_keymaps` says. Any *new*
 CocoPies-owned keymap idname added in the future must be added to this sweep,

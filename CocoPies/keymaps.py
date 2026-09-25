@@ -414,8 +414,7 @@ def register_pie_menus():
             # A pie can be scoped to several editors at once, so this walks
             # every scope and collects the (keymap name, space type) pairs
             # first. Deduplicated before anything is created: scopes overlap
-            # freely -- "Window (Global)" already covers Mesh, so picking both
-            # names the same keymap twice -- and keymap_items.new() appends
+            # freely -- two scopes can name the same keymap -- and keymap_items.new() appends
             # rather than replacing, which would leave the pie bound twice on
             # one key and firing twice per press.
             targets = []
@@ -424,13 +423,7 @@ def register_pie_menus():
                 # conflict check so the three cannot disagree
                 keymap_name, space_type = KEYMAP_CONFIG.get(
                     scope_type, ('Window', 'EMPTY'))
-                if scope_type == 'WINDOW':
-                    # "Window (Global)" is not one keymap -- it is every 3D
-                    # viewport mode keymap
-                    for km_name in WINDOW_MODE_KEYMAPS:
-                        if (km_name, 'EMPTY') not in targets:
-                            targets.append((km_name, 'EMPTY'))
-                elif (keymap_name, space_type) not in targets:
+                if (keymap_name, space_type) not in targets:
                     targets.append((keymap_name, space_type))
 
             for km_name, space_type in targets:

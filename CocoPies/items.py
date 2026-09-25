@@ -131,9 +131,9 @@ KEYMAP_CONFIG = {
     'PREFERENCES': ('Preferences', 'PREFERENCES'),
 }
 
-# "Window (Global)" is not really global -- it registers the shortcut into each
-# of these mode keymaps, which is why it collides with any pie scoped to one of
-# them and with none of the editor-scoped ones.
+# Where "Window (Global)" used to register before it bound the real "Window"
+# keymap. Nothing registers here any more; kept only so unregister still sweeps
+# pie items an older version left in these keymaps.
 WINDOW_MODE_KEYMAPS = (
     'Object Mode', 'Mesh', 'Curve', 'Armature', 'Pose',
     'Sculpt', 'Vertex Paint', 'Weight Paint', 'Image Paint',
@@ -164,7 +164,7 @@ WINDOW_MODE_KEYMAPS = (
 # so it cannot be handed to something else later.
 KEYMAP_TYPE_ITEMS = [
     ('WINDOW', "Window (Global)",
-     "Every 3D viewport mode - object, edit, sculpt and the paint modes", 0),
+     "Every editor - Blender's own Window keymap", 0),
 
     ("", "Modes", ""),  # consumes 1
     ('OBJECT_MODE', "Object Mode", "3D viewport, object mode only", 2),

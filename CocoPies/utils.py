@@ -113,8 +113,6 @@ def format_shortcut(pie):
 
 def keymap_names_for(keymap_type):
     """The keymap names a pie with this scope actually ends up registered in"""
-    if keymap_type == 'WINDOW':
-        return set(WINDOW_MODE_KEYMAPS)
     name, _space = KEYMAP_CONFIG.get(keymap_type, ('Window', 'EMPTY'))
     return {name}
 
@@ -296,10 +294,9 @@ def _keymaps_overlap(pie_a, pie_b):
 
     Asymmetric on purpose, hence the two-sided test: a "3D View" binding is
     live in Sculpt, a Sculpt one is not live elsewhere in the 3D View, and
-    either way round the two do fight while sculpting. The always-live keymaps
-    _ancestor_keymaps() adds ("Window", "Screen", "User Interface"...) cannot
-    make this fire spuriously, since keymap_names_for() never returns one of
-    them for a real scope -- only the ancestor sets contain them.
+    either way round the two do fight while sculpting. A "Window (Global)" pie
+    registers into "Window" itself, which is in every ancestor set, so it
+    collides with any pie on the same key -- as it really does.
     """
     names_a = keymap_names_for_pie(pie_a)
     names_b = keymap_names_for_pie(pie_b)
@@ -719,7 +716,11 @@ def find_external_conflicts(pie, limit=6):
     if not candidates:
         return []
 
-    live_keymaps = _ancestor_keymaps(keymap_names_for_pie(pie))
+    pie_keymaps = keymap_names_for_pie(pie)
+    live_keymaps = _ancestor_keymaps(pie_keymaps)
+    # A pie in "Window" is live in every editor, and every editor's own keymap
+    # is evaluated before "Window" -- so any binding on the key can shadow it
+    everywhere = 'Window' in pie_keymaps
 
     prefs = get_prefs()
     suppressed = set()
@@ -729,7 +730,7 @@ def find_external_conflicts(pie, limit=6):
     hits = []
     seen = set()
     for other in candidates:
-        if other['keymap'] not in live_keymaps:
+        if not everywhere and other['keymap'] not in live_keymaps:
             continue
 
         identity = (other['keymap'], other['idname'], pie.key.upper(),
