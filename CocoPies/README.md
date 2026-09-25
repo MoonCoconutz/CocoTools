@@ -78,7 +78,9 @@ UV Transform is mostly [Zen UV](https://zenuv.rocks) — Flip X/Y and Rotate 90
 are stock Blender (`transform.resize` / `transform.rotate`, the same as
 `S X -1` and `R -90`) so those three work regardless, and Stack Similar is
 Mio3's Stack (selected only), and Stack Islands is Mio3 Align ▸ Center in
-island mode (Bounding Box pivot: islands stack in place, not at the UV centre). UV Select mixes Zen UV
+island mode (Bounding Box pivot: islands stack in place, not at the UV centre).
+UV Unwrap's Gridify runs with Geometry Ratio 0 (Mio3 UV 2.x / Blender 5.x only;
+Mio3 1.5 on 4.5 has no such option). UV Select mixes Zen UV
 with [Mio3 UV](https://github.com/mio3io/mio3-uv), except **Boundary**, which
 runs a bundled script — Blender has no operator that selects island borders,
 so CocoPies ships one (see below). UV Unwrap is all Mio3. Without the addon a
