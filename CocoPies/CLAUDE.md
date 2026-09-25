@@ -330,7 +330,17 @@ installed operator does not define is **skipped** on the native button
 (`prop_name not in op.bl_rna.properties`), not treated as a reason to fall
 back — that is what lets one starter command pass Mio3 UV 2.x options that
 the 1.5.x on 4.5 lacks. Write version differences as extra keywords, never
-as a conditional expression. `execute_script(path)`
+as a conditional expression.
+
+**Decide native vs fallback before drawing.** A layout cannot take a button
+back, so the old "draw the native button, setattr, add the fallback on
+error" drew *two* buttons for a rejected value (the native one running with
+defaults) and pushed the pie one slot over. `_ops_kwargs_accepted()` now
+trial-sets every value on `window_manager.operator_properties_last(idname)`
+— the same RNA rules, dynamic enums included — and restores the originals
+(array values copied first: they read back as live views). Verified in a GUI
+window on 4.5.7 and 5.2.2 (1.12.6): all 24 starter pies draw identically to
+before, one button per slot, and no operator's remembered properties change. `execute_script(path)`
 resolves relative to nothing in particular — bundled scripts resolve their
 own path from the addon's install location at creation time, since an
 absolute path baked into a starter pie does not survive moving between

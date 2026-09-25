@@ -108,6 +108,48 @@ def _parse_bpy_ops_call(command):
     return f"{names[1]}.{names[2]}", kwargs
 
 
+def _ops_kwargs_accepted(idname, kwargs):
+    """Whether every value in kwargs is one the operator will take.
+
+    Decided before a pie slot draws anything, because a layout cannot take a
+    button back: checking by setattr on the drawn button, then adding the
+    exec fallback on failure, left both in the pie -- the native one running
+    with defaults, and one slot too many. The trial runs on the operator's
+    remembered properties (operator_properties_last), the same RNA rules the
+    button would apply, dynamic enums included, and every value is put back
+    afterwards. Options the operator does not define are ignored here, as
+    they are when the button is filled in. If the check itself cannot run,
+    the values are assumed fine -- the slot draws as it did before this.
+    """
+    try:
+        props = bpy.context.window_manager.operator_properties_last(idname)
+    except Exception:
+        props = None
+    if props is None:
+        return True
+    names = [n for n in kwargs if n in props.bl_rna.properties]
+    saved = {}
+    try:
+        for name in names:
+            value = getattr(props, name)
+            # An array property reads back as a live view onto props; copy
+            # it, or the restore would write back the trial value
+            if not isinstance(value, (str, set)) and hasattr(value, "__len__"):
+                value = tuple(value)
+            saved[name] = value
+        for name in names:
+            setattr(props, name, kwargs[name])
+        return True
+    except Exception:
+        return False
+    finally:
+        for name, value in saved.items():
+            try:
+                setattr(props, name, value)
+            except Exception:
+                pass
+
+
 # Spaces put in front of a label drawn beside an icon_value icon.
 #
 # A button drawn with icon= reserves a gap between the icon and its text; one
@@ -243,8 +285,14 @@ def create_pie_menu_class(pie_data):
                         # method, both align and axis unwraps -- silently ran
                         # with the operator's bare defaults instead.
                         parsed = _parse_bpy_ops_call(command)
-                        if parsed:
+                        if parsed and not _ops_kwargs_accepted(*parsed):
+                            # A value the operator will not take -- run the
+                            # command as written, so the error names it
+                            op = container.operator("cocopie.execute_command", text=label, **icon_kw)
+                            op.command = command
+                        elif parsed:
                             idname, kwargs = parsed
+                            op = None
                             try:
                                 op = container.operator(idname, text=label, **icon_kw)
                                 for prop_name, value in kwargs.items():
@@ -257,11 +305,15 @@ def create_pie_menu_class(pie_data):
                                         continue
                                     setattr(op, prop_name, value)
                             except Exception:
-                                # A value the property will not accept --
-                                # fall back rather than leave the button
-                                # half-configured
-                                op = container.operator("cocopie.execute_command", text=label, **icon_kw)
-                                op.command = command
+                                # No button drawn yet: fall back as before.
+                                # Once the native button is in the layout it
+                                # cannot be removed, and a fallback would be a
+                                # second button in the pie -- that is only
+                                # reachable if the check above could not run,
+                                # so leave that one half-configured instead.
+                                if op is None:
+                                    op = container.operator("cocopie.execute_command", text=label, **icon_kw)
+                                    op.command = command
                         else:
                             # Not parseable as literal keyword arguments (a
                             # positional arg, a **spread, a non-literal value)
