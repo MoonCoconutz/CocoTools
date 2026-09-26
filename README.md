@@ -7,6 +7,7 @@ one repository.
 | --- | --- |
 | [CocoPies](CocoPies/README.md) | Build custom pie menus entirely from the addon's own Preferences panel — no code required. |
 | [CocoSelections](CocoSelections/README.md) | Store named object selections and restore them later, from the 3D viewport sidebar. |
+| [CocoBackup](CocoBackup/README.md) | Move your shortcuts, preferences and add-on settings to another machine, without the duplicated add-on shortcuts a keymap preset brings. |
 
 ## Install
 

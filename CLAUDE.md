@@ -38,6 +38,7 @@ deleted, it is a vault note.
 | --- | --- |
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
+| `CocoBackup/` | Move shortcuts (as a diff), preferences and add-on settings to another machine. See `CocoBackup/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
 them. "Development" means editing the Python under an extension's folder,

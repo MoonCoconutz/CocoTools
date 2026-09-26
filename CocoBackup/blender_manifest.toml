@@ -1,0 +1,28 @@
+schema_version = "1.0.0"
+
+id = "CocoBackup"
+name = "CocoBackup"
+version = "1.0.0"
+tagline = "Move shortcuts, preferences and add-on settings to another PC"
+maintainer = "MoonCoconutz"
+type = "add-on"
+website = "https://github.com/MoonCoconutz/CocoTools"
+
+blender_version_min = "4.5.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+copyright = [
+  "2026 MoonCoconutz",
+]
+
+[permissions]
+files = "Read and write the backup file you choose"
+
+[build]
+paths_exclude_pattern = [
+  "/.git/",
+  "__pycache__/",
+  ".*",
+]
