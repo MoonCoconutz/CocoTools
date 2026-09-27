@@ -4,6 +4,9 @@ Extension-specific notes. Shared conventions (target versions, headless
 verification, the Local Repository dev install, releases) live in the repo
 root `CLAUDE.md`.
 
+**Blender 5.2+ only** (`blender_version_min = "5.2.0"`), the user's decision
+of 2026-09-28, same as CocoBackup. Use 5.2 APIs directly; do not test on 4.5.
+
 ## What it is
 
 Named object selection sets on the Scene, listed in a **Selections** popover in the 3D Viewport tool
@@ -17,7 +20,7 @@ does not break a set and a deleted object drops out on next use.
   sync when a checkbox is toggled or dragged over) and `_ui_index_set` (a click
   on a row's name field).
 - `operators.py` — add / remove / move / select / update / check_all,
-  `select_only()`, `apply_object_selection()`, and the
+  `selected_rows()`, `select_only()`, `apply_object_selection()`, and the
   `depsgraph_update_post` handler.
 - `ui.py` — the popover panel, its tool-header button, and the list rows.
 
@@ -69,6 +72,19 @@ Shift-range and a plain click used to.
 `_use_updated` fires per `use` flag. Any operator setting several at once wraps
 them in `suspend_use_sync(True/False)` and syncs once at the end — otherwise a
 bulk change is quadratic and fires part-way through an unfinished selection.
+Write a flag only when it changes: every RNA write of a custom property tags
+the scene for a depsgraph update, changed or not.
+
+## `apply_object_selection()` is the one viewport sync
+
+It deselects only what is selected (`view_layer.objects.selected`), not every
+object in the view layer, then calls `select_set(True)` per object. That call
+raises for an object outside the view layer (excluded collection) but silently
+does nothing for a hidden or unselectable one, so success is read back with
+`select_get()`; the last object that really got selected becomes active.
+`view_layer.objects.selected` yields `None` for an object deleted a moment ago,
+until the view layer syncs again, hence the `None` guard. No redraw tagging:
+`select_set` sends the selection notifier itself.
 
 ## The depsgraph handler cannot use an "in progress" flag
 
@@ -79,21 +95,44 @@ instead leans on a fact: a set holding objects can only reach an empty viewport
 because something else cleared it, so when the selected rows hold nothing the
 empty viewport is this add-on's own doing and the rows are left alone.
 
-**Status: this handler passes headless tests but is reported as not working in
-a live session, and is unresolved.** Prime suspect: a real viewport click may
-tag only a redraw rather than a depsgraph update, so the handler never runs —
-the headless test forces it with an explicit `view_layer.update()`, which
-proves less than it appears to. If confirmed, use a different signal
-(`msgbus`, or a check on panel redraw).
+It must be `@bpy.app.handlers.persistent`. Up to 1.3.0 it was not, so Blender
+dropped it at the first File > Open or File > New and the rows stopped
+following the viewport: the "passes headless, fails live" report. Confirmed on
+5.2 by running the same event-simulated scenario on 1.3.0 and on 1.4.0.
+
+It runs on every depsgraph update (each step of a drag, each frame of
+playback). The order of its tests is the cost: no ticked row on the handler's
+scene returns at once; then the scene must be the one on screen, Object Mode,
+and `view_layer.objects.selected` empty (its truth test stops at the first
+selected object, unlike `context.selected_objects`, which builds the full
+list). Measured with 3000 of 5000 objects selected and a row ticked: 85 µs per
+call in 1.3.0, 5 µs now.
 
 ## Verifying
 
-Selection rules, the add/remove/move commands and both callbacks are covered by
-a headless script driving the real paths — name clicks through
-`coco_selections_ui_index`, checkbox toggles through `use` (a drag is just a run
-of those). Run it on **both** 4.5 and 5.2.
+Two scripts, both run in an isolated 5.2 profile (see the root `CLAUDE.md`)
+with CocoSelections enabled from this working tree:
 
-What headless testing cannot reach, and has produced wrong conclusions before:
-anything needing real mouse or keyboard input — the drag itself, the
-double-click rename gesture, and whether a widget is actually clickable. Verify
-those in a live session.
+- **Headless**: selection rules, add/remove/move/update/check_all, both
+  callbacks (name clicks through `coco_selections_ui_index`, checkbox toggles
+  through `use`), the handler, hidden / excluded / deleted objects, another
+  scene, disable and enable, save and reopen, and the handler still present
+  after `open_mainfile` and `read_homefile`.
+- **Real window** (`--enable-event-simulate`): open the popover from its header
+  button, click a name, click a checkbox, drag down the checkboxes both ways,
+  rename, close the popover, click empty viewport, click an object, Ctrl+Z,
+  then File > Open and the empty click again. Also run once with the user's own
+  preferences (the installed copy disabled in memory, the working tree loaded
+  under another module name, `use_preferences_save = False` first): passes
+  with their add-ons and MyPreset.
+
+What the window test taught:
+
+- Simulated events accept only PRESS / RELEASE / NOTHING, so a double-click
+  cannot be sent. Ctrl-click on the name opens the same text field.
+- Once something inside the popover was clicked it stays open until a click
+  outside it, and that click is swallowed. The first viewport click after
+  using the popover only closes it; that is Blender, not the add-on.
+- The handler can run one event loop later than the click that emptied the
+  viewport. A check on a fixed delay can see "viewport empty, row ticked";
+  send another event (a mouse move) before checking.

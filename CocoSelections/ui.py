@@ -14,7 +14,8 @@ class COCOSEL_UL_selections(UIList):
 
     - the **checkbox** is a real BoolProperty, which is what makes dragging down
       the column toggle a run of rows - native behaviour that operator buttons
-      do not get;
+      do not get. The viewport is kept in step by the property's update
+      callback;
     - the **name** is a real text field, the only widget Blender starts editing
       on a double-click, so renaming happens in place;
     - the **count** is just a label.
@@ -26,32 +27,18 @@ class COCOSEL_UL_selections(UIList):
     """
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            row = layout.row(align=True)
+        row = layout.row(align=True)
 
-            # Left: a real BoolProperty checkbox, not an operator button. That
-            # is what makes click-and-drag down the column work - Blender
-            # toggles boolean checkboxes as the mouse drags across them, and
-            # gives operator buttons no such behaviour. The viewport is kept in
-            # step by the property's update callback.
-            toggle = row.row(align=True)
-            toggle.ui_units_x = 1.3
-            toggle.prop(item, "use", text="")
+        toggle = row.row(align=True)
+        toggle.ui_units_x = 1.3
+        toggle.prop(item, "use", text="")
 
-            # Middle: a real text field, the only widget Blender will start
-            # editing on a double-click.
-            row.prop(item, "name", text="", emboss=False)
+        row.prop(item, "name", text="", emboss=False)
 
-            # Right: how many objects the set still holds. A plain label - it
-            # is not a click target, so dimming it cannot break anything.
-            count = row.row(align=True)
-            count.alignment = 'RIGHT'
-            count.active = False
-            count.label(text=str(len(item.valid_objects())))
-
-        elif self.layout_type == 'GRID':
-            layout.alignment = 'CENTER'
-            layout.label(text="", icon='RESTRICT_SELECT_OFF')
+        count = row.row(align=True)
+        count.alignment = 'RIGHT'
+        count.active = False
+        count.label(text=str(len(item.valid_objects())))
 
 
 class COCOSEL_PT_selections(Panel):

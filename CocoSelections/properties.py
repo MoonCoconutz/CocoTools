@@ -28,18 +28,12 @@ def _use_updated(self, context):
     where the drag-to-select behaviour comes from - it is native, and only works
     because this is a real BoolProperty rather than an operator button.
     """
-    if _suspend_use_sync:
-        return
-
-    scene = getattr(context, "scene", None)
-    if scene is None or getattr(context, "mode", None) != 'OBJECT':
+    if _suspend_use_sync or context.mode != 'OBJECT':
         return
 
     from . import operators
 
-    operators.apply_object_selection(
-        context, [s for s in scene.coco_selections if s.use]
-    )
+    operators.apply_object_selection(context, operators.selected_rows(context.scene))
 
 
 def _ui_index_set(self, value):
@@ -47,21 +41,17 @@ def _ui_index_set(self, value):
 
     The name has to be a real text field for Blender's native double-click
     rename to work, and a click on a text field inside a UIList is routed to the
-    list rather than to our row operator - so it arrives here instead. No
-    modifier state reaches a property setter, so this is always a plain click;
-    Ctrl and Shift only work on the count cell, which is a real button.
+    list rather than to an operator - so it arrives here instead. No modifier
+    state reaches a property setter, so this is always a plain click.
     """
     from . import operators
 
-    if not (0 <= value < len(self.coco_selections)):
+    if not operators.select_only(self, value):
         return
 
-    operators.select_only(self, value)
-
     context = bpy.context
-    if getattr(context, "mode", None) == 'OBJECT':
-        rows = [s for s in self.coco_selections if s.use]
-        operators.apply_object_selection(context, rows)
+    if context.mode == 'OBJECT':
+        operators.apply_object_selection(context, operators.selected_rows(self))
 
 
 class COCOSEL_ObjectRef(PropertyGroup):
@@ -104,24 +94,22 @@ class COCOSEL_Selection(PropertyGroup):
 
     def add_objects(self, objects):
         """Add objects the set does not already hold. Returns how many landed."""
-        held = {ref.obj.as_pointer() for ref in self.objects if ref.obj is not None}
+        held = set(self.valid_objects())
         added = 0
         for obj in objects:
-            key = obj.as_pointer()
-            if key in held:
-                continue
-            self.objects.add().obj = obj
-            held.add(key)
-            added += 1
+            if obj not in held:
+                self.objects.add().obj = obj
+                held.add(obj)
+                added += 1
         return added
 
     def remove_objects(self, objects):
         """Drop the given objects from the set. Returns how many went."""
-        drop = {obj.as_pointer() for obj in objects}
+        drop = set(objects)
         removed = 0
         for i in range(len(self.objects) - 1, -1, -1):
-            ref = self.objects[i]
-            if ref.obj is not None and ref.obj.as_pointer() in drop:
+            obj = self.objects[i].obj
+            if obj is not None and obj in drop:
                 self.objects.remove(i)
                 removed += 1
         return removed

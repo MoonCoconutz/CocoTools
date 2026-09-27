@@ -2,13 +2,13 @@ schema_version = "1.0.0"
 
 id = "CocoSelections"
 name = "CocoSelections"
-version = "1.3.0"
+version = "1.4.0"
 tagline = "Store named object selections and restore them later"
 maintainer = "MoonCoconutz"
 type = "add-on"
 website = "https://github.com/MoonCoconutz/CocoTools"
 
-blender_version_min = "4.5.0"
+blender_version_min = "5.2.0"
 
 license = [
   "SPDX:GPL-3.0-or-later",

@@ -12,24 +12,9 @@ from bpy.types import Operator
 from .properties import suspend_use_sync
 
 
-def _resolve(context, index):
-    """Return the set at `index`, or the focused one when index < 0."""
-    sets = context.scene.coco_selections
-    if index < 0:
-        index = context.scene.coco_selections_index
-    if 0 <= index < len(sets):
-        return sets[index]
-    return None
-
-
-def _selected_rows(context):
+def selected_rows(scene):
     """Rows in the current selection, in list order."""
-    return [s for s in context.scene.coco_selections if s.use]
-
-
-def _selected_indices(scene):
-    """Indices of the rows in the current selection, ascending."""
-    return [i for i, sel_set in enumerate(scene.coco_selections) if sel_set.use]
+    return [s for s in scene.coco_selections if s.use]
 
 
 def _acting_indices(scene):
@@ -38,7 +23,7 @@ def _acting_indices(scene):
     Explorer applies Delete to everything selected, so the selection wins. The
     focused row is a fallback for when nothing is selected at all.
     """
-    indices = _selected_indices(scene)
+    indices = [i for i, sel_set in enumerate(scene.coco_selections) if sel_set.use]
     if indices:
         return indices
 
@@ -56,66 +41,48 @@ def _unique_name(sets, base="Selection"):
     return "%s %d" % (base, i)
 
 
-def _redraw_viewports(context):
-    screen = getattr(context, "screen", None)
-    if screen is None:
-        return
-    for area in screen.areas:
-        if area.type == 'VIEW_3D':
-            area.tag_redraw()
-
-
 def apply_object_selection(context, targets, extend=False):
     """Select the union of `targets` in the viewport, list order preserved.
 
-    An empty `targets` with extend off clears the selection - which is what a
-    Ctrl-click that unselects the last row should do.
+    An empty `targets` with extend off clears the selection - which is what
+    unticking the last row should do. The last object selected becomes active.
 
-    Returns (found, unreachable).
+    Returns (found, unreachable): unreachable objects are hidden, unselectable,
+    or not in this view layer (excluded collection, another scene).
     """
     objects = []
-    seen = set()
     for sel_set in targets:
         sel_set.purge()
-        for obj in sel_set.valid_objects():
-            key = obj.as_pointer()
-            if key not in seen:
-                seen.add(key)
-                objects.append(obj)
+        objects.extend(sel_set.valid_objects())
+    objects = list(dict.fromkeys(objects))
 
     view_objects = context.view_layer.objects
 
     if not extend:
-        for obj in view_objects:
-            # A stale view layer can hand back empty bases.
-            if obj is None:
-                continue
-            try:
+        keep = set(objects)
+        for obj in list(view_objects.selected):
+            # An object deleted a moment ago reads None until the view layer
+            # is synced again.
+            if obj is not None and obj not in keep:
                 obj.select_set(False)
-            except RuntimeError:
-                pass
 
     found = 0
-    unreachable = 0
     last = None
     for obj in objects:
-        if obj.name not in view_objects:
-            # Excluded collection, other scene, or linked out of this view layer.
-            unreachable += 1
-            continue
         try:
             obj.select_set(True)
         except RuntimeError:
-            unreachable += 1
+            # Not in this view layer.
             continue
-        found += 1
-        last = obj
+        # Hidden or unselectable objects are refused without an error.
+        if obj.select_get():
+            found += 1
+            last = obj
 
     if last is not None:
         view_objects.active = last
 
-    _redraw_viewports(context)
-    return found, unreachable
+    return found, len(objects) - found
 
 
 def _clamp_focus(scene):
@@ -124,24 +91,12 @@ def _clamp_focus(scene):
     scene.coco_selections_index = max(0, min(scene.coco_selections_index, high))
 
 
-def _focus_only(scene, index):
-    """Collapse the selection onto one row, with focus on it."""
-    suspend_use_sync(True)
-    try:
-        for sel_set in scene.coco_selections:
-            sel_set.use = False
-    finally:
-        suspend_use_sync(False)
-    if 0 <= index < len(scene.coco_selections):
-        scene.coco_selections[index].use = True
-        scene.coco_selections_index = index
-
-
 def select_only(scene, index):
     """Make `index` the whole selection, and the focused row.
 
     The only selection rule left that needs code: a checkbox toggles its own row
-    and a drag toggles a run, both handled by Blender itself.
+    and a drag toggles a run, both handled by Blender itself. The viewport is
+    left to the caller, so it is synced once.
     """
     sets = scene.coco_selections
     if not (0 <= index < len(sets)):
@@ -149,9 +104,9 @@ def select_only(scene, index):
 
     suspend_use_sync(True)
     try:
-        for sel_set in sets:
-            sel_set.use = False
-        sets[index].use = True
+        for i, sel_set in enumerate(sets):
+            if sel_set.use != (i == index):
+                sel_set.use = i == index
     finally:
         suspend_use_sync(False)
 
@@ -203,8 +158,9 @@ class COCOSEL_OT_add(Operator):
         item.store(context.selected_objects)
 
         # The new row becomes the selection, the way a new folder does in a file
-        # browser - and it honestly reflects what is selected right now.
-        _focus_only(scene, len(scene.coco_selections) - 1)
+        # browser - and it honestly reflects what is selected right now, so the
+        # viewport needs no sync.
+        select_only(scene, len(scene.coco_selections) - 1)
 
         self.report({'INFO'}, "'%s' stores %d object(s)" % (name, len(item.objects)))
         return {'FINISHED'}
@@ -233,12 +189,12 @@ class COCOSEL_OT_remove(Operator):
         count = len(scene.coco_selections)
         if count:
             # Explorer lands on whatever slid into the gap.
-            _focus_only(scene, min(indices[0], count - 1))
+            select_only(scene, min(indices[0], count - 1))
         else:
             scene.coco_selections_index = 0
 
         if context.mode == 'OBJECT':
-            apply_object_selection(context, _selected_rows(context))
+            apply_object_selection(context, selected_rows(scene))
 
         self.report({'INFO'}, "Removed %d set(s)" % len(indices))
         return {'FINISHED'}
@@ -308,7 +264,7 @@ class COCOSEL_OT_select(Operator):
         return self.execute(context)
 
     def execute(self, context):
-        targets = self.targets(context)
+        targets = self.targets(context.scene)
         if not targets:
             return {'CANCELLED'}
 
@@ -320,26 +276,20 @@ class COCOSEL_OT_select(Operator):
         elif unreachable:
             self.report(
                 {'WARNING'},
-                "Selected %d object(s) from %s, %d not reachable in this view layer"
+                "Selected %d object(s) from %s, %d hidden or not in this view layer"
                 % (found, label, unreachable),
             )
         elif len(targets) > 1:
             self.report({'INFO'}, "Selected %d object(s) from %s" % (found, label))
         return {'FINISHED'}
 
-    def targets(self, context):
+    def targets(self, scene):
         """An explicit index acts on that row alone, otherwise every selected
         row, falling back to the focused one when nothing is selected."""
+        sets = scene.coco_selections
         if self.index >= 0:
-            sets = context.scene.coco_selections
-            return [sets[self.index]] if 0 <= self.index < len(sets) else []
-
-        rows = _selected_rows(context)
-        if rows:
-            return rows
-
-        active = _resolve(context, -1)
-        return [active] if active is not None else []
+            return [sets[self.index]] if self.index < len(sets) else []
+        return [sets[i] for i in _acting_indices(scene)]
 
 
 class COCOSEL_OT_update(Operator):
@@ -363,23 +313,21 @@ class COCOSEL_OT_update(Operator):
 
     @classmethod
     def poll(cls, context):
-        if len(context.scene.coco_selections) == 0:
-            return False
-        if len(_acting_indices(context.scene)) > 1:
+        indices = _acting_indices(context.scene)
+        if len(indices) > 1:
             cls.poll_message_set("Select a single set to edit")
-            return False
-        return True
+        return len(indices) == 1
 
     def execute(self, context):
-        scene = context.scene
+        sets = context.scene.coco_selections
         if self.index >= 0:
-            sel_set = _resolve(context, self.index)
+            index = self.index
         else:
-            indices = _acting_indices(scene)
-            sel_set = scene.coco_selections[indices[0]] if len(indices) == 1 else None
-
-        if sel_set is None:
+            indices = _acting_indices(context.scene)
+            index = indices[0] if len(indices) == 1 else -1
+        if not (0 <= index < len(sets)):
             return {'CANCELLED'}
+        sel_set = sets[index]
 
         objects = context.selected_objects
         if not objects and self.mode != 'REPLACE':
@@ -443,22 +391,23 @@ class COCOSEL_OT_check_all(Operator):
         try:
             for sel_set in scene.coco_selections:
                 if self.action == 'ALL':
-                    sel_set.use = True
+                    use = True
                 elif self.action == 'NONE':
-                    sel_set.use = False
+                    use = False
                 else:
-                    sel_set.use = not sel_set.use
+                    use = not sel_set.use
+                if sel_set.use != use:
+                    sel_set.use = use
         finally:
             suspend_use_sync(False)
 
-        _clamp_focus(scene)
-
         # Keep the viewport in step with the rows, the way a row click does.
         if context.mode == 'OBJECT':
-            apply_object_selection(context, _selected_rows(context))
+            apply_object_selection(context, selected_rows(scene))
         return {'FINISHED'}
 
 
+@bpy.app.handlers.persistent
 def _viewport_cleared(scene, depsgraph):
     """Untick every row once the viewport selection is emptied.
 
@@ -474,36 +423,33 @@ def _viewport_cleared(scene, depsgraph):
     own doing and the rows are left alone - which matters because the handler
     runs after the operator has finished, so a simple in-progress flag would
     always have been reset by the time we got here.
-    """
-    sets = getattr(scene, "coco_selections", None)
-    if not sets:
-        return
 
-    rows = [s for s in sets if s.use]
+    Runs on every depsgraph update (each step of a drag, each frame of
+    playback), so the cheap tests come first, and only the scene on screen is
+    compared with the viewport's own view layer. Persistent, or opening any
+    file would drop it.
+    """
+    rows = selected_rows(scene)
     if not rows:
         return
 
     context = bpy.context
-    if getattr(context, "mode", None) != 'OBJECT':
+    if (
+        scene != context.scene
+        or context.mode != 'OBJECT'
+        or context.view_layer.objects.selected
+    ):
         return
 
-    try:
-        if context.selected_objects:
-            return
-    except AttributeError:
-        return
-
-    if not any(s.valid_objects() for s in rows):
+    if not any(ref.obj is not None for s in rows for ref in s.objects):
         return
 
     suspend_use_sync(True)
     try:
-        for sel_set in sets:
+        for sel_set in rows:
             sel_set.use = False
     finally:
         suspend_use_sync(False)
-
-    _redraw_viewports(context)
 
 
 classes = (
@@ -520,13 +466,11 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    if _viewport_cleared not in bpy.app.handlers.depsgraph_update_post:
-        bpy.app.handlers.depsgraph_update_post.append(_viewport_cleared)
+    bpy.app.handlers.depsgraph_update_post.append(_viewport_cleared)
 
 
 def unregister():
-    if _viewport_cleared in bpy.app.handlers.depsgraph_update_post:
-        bpy.app.handlers.depsgraph_update_post.remove(_viewport_cleared)
+    bpy.app.handlers.depsgraph_update_post.remove(_viewport_cleared)
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

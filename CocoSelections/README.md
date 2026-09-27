@@ -3,7 +3,7 @@
 Blender add-on for storing named object selections and restoring them later,
 with Windows-Explorer-style multi-row selection.
 
-Tested on Blender **4.5 LTS** and **5.2 LTS**.
+Requires **Blender 5.2** or later.
 
 ## Install
 
@@ -66,7 +66,9 @@ Unticking the last row clears the viewport selection.
 It also works the other way: clicking empty space in the viewport deselects the
 objects, and a `depsgraph_update_post` handler unticks the rows to match, so the
 panel never claims a set is active after its objects have been clicked away.
-There is no **None** button because that handler replaced it.
+There is no **None** button because that handler replaced it. It keeps working
+after File > Open and File > New (before 1.4.0 it stopped at the first file
+opened).
 
 The equivalent click *inside the list* is not available - `template_list` draws
 the padding below its rows in C and exposes no click event to Python at all.
@@ -100,9 +102,7 @@ serves the newer grid/tree views, not `UIList`). A click on a text field inside 
 of `coco_selections_ui_index` - which treats it as a plain click and selects that
 row alone.
 
-**The count is an operator button drawn flat**, so it looks like a label but is
-the row's one modifier-aware click surface. Neither a checkbox nor a text field
-reports Ctrl or Shift state to Python, so range selection lives here.
+**The count is a plain label**: how many objects the set still holds.
 
 Nothing paints a row background: a `UIList` cannot, and it highlights only its
 one active row. The list is handed `coco_selections_ui_index`, whose getter is
@@ -125,9 +125,9 @@ only when nothing is selected.
   its own list.
 - Objects are stored as real pointers, not names, so **renaming an object does
   not break a set**. Deleted objects drop out of the set on the next use.
-- Selecting is Object Mode only; the buttons grey out elsewhere.
-- Objects in excluded or unlinked collections cannot be selected — the operator
-  reports how many were skipped.
+- Rows can be ticked in any mode, but the viewport only follows in Object Mode.
+- Hidden objects and objects in excluded collections cannot be selected and are
+  skipped; `cocosel.select` reports how many.
 
 ## Layout
 
@@ -138,7 +138,7 @@ only when nothing is selected.
   plus `apply_object_selection()` shared by everything that touches the viewport
 - `ui.py` — the tool-header popover and the list rows; **replace this file alone** to
   move the UI to another host
-- `__init__.py` — `bl_info` and registration
+- `__init__.py` — registration
 
 The popover is just one host. `properties.py` and `operators.py` are kept
 host-agnostic — operators take an explicit `index` and never read UI state — so

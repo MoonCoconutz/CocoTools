@@ -38,7 +38,7 @@ deleted, it is a vault note.
 | Folder | What it is |
 | --- | --- |
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
-| `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
+| `CocoSelections/` | Named object selection sets, in a Selections popover in the 3D Viewport tool header. **5.2+ only.** See `CocoSelections/CLAUDE.md`. |
 | `CocoBackup/` | Move shortcuts (as a diff), preferences, themes and add-on settings to another machine, plus an autosave. **5.2+ only.** See `CocoBackup/CLAUDE.md`. |
 | `CocoUVs/` | UV map list, texel density (with a heatmap), checker map, trim sheet areas and UV debug overlays in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
 
@@ -123,8 +123,15 @@ source='USER')`), enable `bl_ext.<module>.<Extension>` with
 `addon_utils.enable(..., default_set=True)` and save preferences *in that
 profile*. The extension then registers the real way, `preferences.addons` has
 it, and a scenario can save preferences and restart. Keep a clean copy of the
-profile folder and copy it back before each scenario. Used for CocoBackup on
-5.2 (see `CocoBackup/CLAUDE.md`).
+profile folder and copy it back before each scenario. Create the folder first
+and build the profile with `--factory-startup`: a first run without either
+came out holding a copy of the user's own add-on list. Set
+`preferences.view.show_splash = False` in it too, or the splash covers the
+viewport in window tests. To test the working tree inside the user's own
+setup instead, run with their config, set `use_preferences_save = False`
+first, `addon_utils.disable(<installed module>, default_set=False)`, and load
+the working tree under another module name. Used for CocoBackup and
+CocoSelections on 5.2 (see their `CLAUDE.md`).
 
 `Operator.__subclasses__()` under `--background` under-reports registered
 operators; treat an empty result as inconclusive, not proof of absence.
