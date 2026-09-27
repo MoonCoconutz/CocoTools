@@ -11,20 +11,82 @@ this a tap in the wrong mode raises a context error at the user instead.
 """
 
 import bpy
+import bmesh
 
 if bpy.context.mode != 'EDIT_MESH':
     raise RuntimeError("CocoPies: this needs Mesh Edit Mode")
+
+
+def selected_verts():
+    """[(bmesh, its selected vertices)] for every mesh in Edit Mode.
+
+    The BMesh is kept with its vertices on purpose: once Python frees the
+    wrapper, every vertex taken from it reads as invalid, and with two objects
+    in Edit Mode the first one's survivors were skipped.
+    """
+    found = []
+    for ob in bpy.context.objects_in_mode_unique_data:
+        bm = bmesh.from_edit_mesh(ob.data)
+        found.append((bm, [v for v in bm.verts if v.select]))
+    return found
+
+
+def select_only_survivors(found):
+    """Select exactly those of `found` still in the mesh; False if none are.
+
+    Only the survivors may be selected, or the next operator also takes
+    whatever the last one left selected around them.
+    """
+    left = [(bm, [v for v in verts if v.is_valid]) for bm, verts in found]
+    if not any(verts for _bm, verts in left):
+        return False
+    for bm, verts in left:
+        for seq in (bm.faces, bm.edges, bm.verts):
+            for elem in seq:
+                elem.select = False
+        for v in verts:
+            v.select = True
+    return True
+
+
+def delete_survivors(found):
+    """Delete outright whichever of `found` a dissolve could not remove.
+
+    Dissolving only ever removes a vertex it can merge away. A loose vertex, or
+    the last vertex of a chain of loose edges, has nothing to merge, so it used
+    to stay put; and dissolving a whole selected chain left one edge running
+    from where the chain started to its last vertex. X is expected to take the
+    vertex either way, so what is left over goes the hard way.
+    """
+    if select_only_survivors(found):
+        bpy.ops.mesh.delete(type='VERT')
+
 
 use_vert, use_edge, use_face = bpy.context.tool_settings.mesh_select_mode
 
 if use_vert or not (use_edge or use_face):
     # delete(type='VERT') also takes the vertex's edges and faces, punching a
     # hole; dissolving merges the surrounding faces instead.
+    found = selected_verts()
     bpy.ops.mesh.dissolve_verts()
+    delete_survivors(found)
 elif use_edge:
     # delete(type='EDGE') takes the faces on both sides with it; dissolving
-    # merges them and clears the redundant vertices.
+    # merges them instead.
+    #
+    # Dissolving the edges alone does not remove their vertices, though: it
+    # clears a vertex only when that leaves it with two edges. A single edge
+    # at a cube's corner lost one end and an interior edge lost neither --
+    # while X is expected to take both. So whatever of the selected edges'
+    # vertices survives is dissolved as well. Dissolving vertices from the
+    # start is not the same thing: an edge loop running out to a border comes
+    # out as one large n-gon instead of cleanly removed, which is why the
+    # edges still go first.
+    found = selected_verts()
     bpy.ops.mesh.dissolve_edges(use_verts=True, use_face_split=False)
+    if select_only_survivors(found):
+        bpy.ops.mesh.dissolve_verts()
+    delete_survivors(found)
 else:
     # A lone face has no dissolve equivalent - removing it leaves a hole.
     bpy.ops.mesh.delete(type='FACE')

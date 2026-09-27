@@ -448,7 +448,7 @@ def default_pie_definitions(script_paths):
             "items": [
                 {"label": "Limited Dissolve", "icon": "STICKY_UVS_LOC", "position": 0, "enabled": True,
                  "command": "bpy.ops.mesh.dissolve_limited()"},
-                {"label": "Merge By Distance", "icon": "NONE", "position": 1, "enabled": True,
+                {"label": "Merge By Distance", "icon": "SNAP_MIDPOINT", "position": 1, "enabled": True,
                  "command": "bpy.ops.mesh.remove_doubles()"},
                 {"label": "Dissolve Edges", "icon": "SNAP_EDGE", "position": 2, "enabled": True,
                  "command": "bpy.ops.mesh.dissolve_edges()"},
@@ -672,9 +672,10 @@ def default_pie_definitions(script_paths):
             ],
         },
         {
-            # Ported from 3D Viewport Pie Menus (pie_mesh_flatten.py). Alt+X in
-            # Mesh Edit -- the source's own hotkey; do not "correct" it to
-            # Alt+R, which an earlier note in open-work.md had wrong.
+            # Ported from 3D Viewport Pie Menus (pie_mesh_flatten.py). Shift+M
+            # in Mesh Edit, the user's own key (2026-09-27), beside Mesh Merge
+            # on M. The source's hotkey is Alt+X, which MACHIN3tools'
+            # Symmetrize also takes in Mesh Edit.
             #
             # Slot order is the user's, not the source's: Z is on the
             # straight up/down flicks because it is the axis reached for most.
@@ -693,8 +694,8 @@ def default_pie_definitions(script_paths):
             "name": "Mesh Flatten",
             "idname": "COCOPIE_MT_mesh_flatten",
             "keymap_type": "MESH", "keymap_scopes": ["MESH"],
-            "key": "X",
-            "ctrl": False, "shift": False, "alt": True,
+            "key": "M",
+            "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
             "items": [
                 {"label": "Cursor Z", "icon": "PIVOT_CURSOR", "position": 2, "enabled": True,
