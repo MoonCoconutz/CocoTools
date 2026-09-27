@@ -33,9 +33,8 @@ def _preset_dir(create=False):
 
 
 def _theme_label(theme):
-    path = getattr(theme, "filepath", "") or ""
-    if path:
-        return os.path.splitext(os.path.basename(path))[0].replace("_", " ")
+    if theme.filepath:
+        return os.path.splitext(os.path.basename(theme.filepath))[0].replace("_", " ")
     return theme.name
 
 

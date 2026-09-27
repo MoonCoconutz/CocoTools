@@ -120,21 +120,12 @@ def _scrub(menu):
                              and getattr(fn, "__module__", "") == __name__)]
 
 
-def _unwrap_old_tool_header():
-    """1.0.0 wrapped the tool header's draw_tool_settings; put it back."""
-    header = bpy.types.VIEW3D_HT_tool_header
-    original = getattr(header.draw_tool_settings, "_cocobackup_original", None)
-    if original is not None:
-        header.draw_tool_settings = original
-
-
 def register():
     global _previews
     _previews = bpy.utils.previews.new()
     for name in _STATE_ICONS.values():
         _previews.load(name, os.path.join(os.path.dirname(__file__), "icons", name + ".png"), 'IMAGE')
     bpy.utils.register_class(COCOBACKUP_PT_menu)
-    _unwrap_old_tool_header()
     _scrub(bpy.types.VIEW3D_MT_editor_menus)
     bpy.types.VIEW3D_MT_editor_menus.append(draw_header_button)
     for name in _HANDLERS:

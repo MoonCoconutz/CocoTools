@@ -1,7 +1,9 @@
 # CocoBackup
 
 Move your Blender setup to another machine in one file: your **shortcuts**,
-your **preferences** and your **add-on settings**.
+your **preferences**, your **themes** and your **add-on settings**.
+
+Requires **Blender 5.2** or later.
 
 ## Why not a keymap preset?
 
@@ -13,8 +15,9 @@ stays on.
 
 CocoBackup stores only **what you changed** compared to stock Blender and your
 add-ons: "this shortcut, moved to Alt+F", "this one, switched off", "this one,
-added". On import it finds the same shortcut on the new machine and edits it,
-so nothing gets duplicated, and your changes to add-on shortcuts travel too.
+added", "Delete on X, without asking first". On import it finds the same
+shortcut on the new machine and edits it, so nothing gets duplicated, and your
+changes to add-on shortcuts travel too.
 
 ## Use
 
@@ -33,8 +36,8 @@ so nothing gets duplicated, and your changes to add-on shortcuts travel too.
 - In the popup, tick shortcuts and press **Revert Selected Shortcuts** to undo
   just those.
 
-Both sides let you choose what to include: **Keymaps**, **Preferences**,
-**Add-on Settings**.
+Both sides let you choose what to include: **Shortcuts**, **Preferences**,
+**Themes**, **Add-on Settings**.
 
 Importing the same file twice changes nothing the second time.
 
@@ -47,19 +50,22 @@ only add the backup's.
 
 | Section | Included | Left out |
 | --- | --- | --- |
-| Keymaps | Every shortcut you moved, switched off, removed or added. The keymap settings too (select with left/right, Spacebar action) | Switched-off copies a keymap preset carried, since they do nothing |
-| Preferences | Interface, Editing, Input, Navigation, Keymap, File Paths options | Every file and folder path, System (GPU, memory), Extensions repositories, Asset Libraries, Experimental: these belong to the machine |
+| Shortcuts | Every shortcut you moved, switched off, removed or added, and the options you changed on one (Delete without confirmation). The keymap settings too (select with left/right, Spacebar action) | Switched-off copies a keymap preset carried, since they do nothing |
+| Preferences | Interface, Editing, Input, Navigation, Keymap, File Paths options | Every file and folder path, the asset libraries and script folders, the external animation player and text editor, System (GPU, memory), Extensions repositories, Experimental: these belong to the machine. Also the keymap preset in use: the shortcut changes already carry what it changes |
 | Themes | Your theme presets and the theme in use. Missing presets are installed; different ones are only replaced if you tick them | Nothing |
 | Add-on Settings | The preferences of every enabled add-on, CocoPies menus included | Nothing |
 
 ## Autosave to a Backup folder
 
-Optional (off by default): every N minutes, if something changed since the
-last save or autosave, a copy is saved in a `Backup` folder next to the file
-(created the first time) as `<name>_autosave_26-09-2026_18.25.blend`, keeping
-only the newest few. If nothing changed, nothing is written. Set it in the
-header panel or in the add-on's preferences. The open file itself is not
-touched. A file that was never saved is skipped.
+Optional (off by default): every N minutes, if the file has unsaved changes
+and something changed since the last save or autosave, a copy is saved in a
+`Backup` folder next to the file (created the first time) as
+`<name>_autosave_26-09-2026_18.25.blend`, keeping only the newest few. If
+nothing changed, nothing is written. Set it in the header panel or in the
+add-on's preferences. The open file itself is not touched. A file that was
+never saved is skipped. A drag or brush stroke in progress is waited for, like
+Blender's own autosave does; a tool mode that stays on (CocoUVs' Draw mode) is
+not.
 
 ## Good to know
 
@@ -71,9 +77,11 @@ touched. A file that was never saved is skipped.
   until then their settings and shortcuts are skipped, not half-applied.
 - **Themes that differ** from this machine's are listed unticked; tick them
   and press **Replace Selected Themes** to take the backup's.
-- A shortcut is found on the new machine by its command and its original key.
-  Across Blender versions some commands change their options; CocoBackup then
-  falls back to "same command on the same key", but only when that is
-  unambiguous. Anything it cannot place is listed as skipped.
+- A shortcut is found on the new machine by what it runs and its stock key,
+  wherever that machine has moved it since; the popup shows the key it had
+  there before the import, and Revert puts that back. Anything it cannot
+  place is listed as skipped, with the reason.
+- Backups made with CocoBackup 1.0 import fine, but did not record options
+  changed on a shortcut (Delete's confirmation, say). Export a new one.
 - Some add-ons read their settings only at startup. If one does not look right
   after importing, Save Preferences and restart Blender.

@@ -10,7 +10,9 @@ from . import addons_resolve, autosave, keymap_diff, prefs_io, themes_io, ui
 
 
 FORMAT = "CocoBackup"
-FORMAT_VERSION = 2
+# 3: a shortcut's own settings edits ("new_props") and nested operator
+# settings travel too. Format 2 backups import unchanged.
+FORMAT_VERSION = 3
 
 
 # ---------------------------------------------------------------------------
@@ -46,33 +48,31 @@ class COCOBACKUP_Preferences(AddonPreferences):
 # ---------------------------------------------------------------------------
 # Export / import
 
-def _section_props(cls):
-    cls.__annotations__["use_keymaps"] = BoolProperty(
+class _Sections:
+    """What a backup includes: the same four choices on export and import."""
+    use_keymaps: BoolProperty(
         name="Shortcuts", default=True,
         description="Shortcut changes against stock Blender and add-ons, keymap preferences included")
-    cls.__annotations__["use_preferences"] = BoolProperty(
+    use_preferences: BoolProperty(
         name="Preferences", default=True,
         description="Interface, editing, input, navigation and keymap settings. "
                     "Machine-specific paths and system settings are left out")
-    cls.__annotations__["use_themes"] = BoolProperty(
+    use_themes: BoolProperty(
         name="Themes", default=True,
         description="Your theme presets and the theme in use")
-    cls.__annotations__["use_addons"] = BoolProperty(
+    use_addons: BoolProperty(
         name="Add-on Settings", default=True,
         description="The preferences of every add-on")
-    return cls
+
+    def draw_sections(self, layout):
+        col = layout.column(heading="Include")
+        col.prop(self, "use_keymaps")
+        col.prop(self, "use_preferences")
+        col.prop(self, "use_themes")
+        col.prop(self, "use_addons")
 
 
-def _draw_sections(self, layout):
-    col = layout.column(heading="Include")
-    col.prop(self, "use_keymaps")
-    col.prop(self, "use_preferences")
-    col.prop(self, "use_themes")
-    col.prop(self, "use_addons")
-
-
-@_section_props
-class COCOBACKUP_OT_export(Operator, ExportHelper):
+class COCOBACKUP_OT_export(Operator, ExportHelper, _Sections):
     """Save shortcuts, preferences, themes and add-on settings to a file for another machine"""
     bl_idname = "cocobackup.export_backup"
     bl_label = "Export CocoBackup"
@@ -86,7 +86,7 @@ class COCOBACKUP_OT_export(Operator, ExportHelper):
         return ExportHelper.invoke(self, context, event)
 
     def draw(self, context):
-        _draw_sections(self, self.layout)
+        self.draw_sections(self.layout)
 
     def execute(self, context):
         if not self.filepath:
@@ -107,22 +107,17 @@ class COCOBACKUP_OT_export(Operator, ExportHelper):
         if self.use_addons:
             data["addons"] = prefs_io.export_addons()
 
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=1, ensure_ascii=False)
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=1, ensure_ascii=False)
+        except OSError as e:
+            self.report({'ERROR'}, f"Could not write the file: {e}")
+            return {'CANCELLED'}
         self.report({'INFO'}, f"CocoBackup saved to {self.filepath}")
         return {'FINISHED'}
 
 
-def _upgrade(data):
-    """Format 1 kept the active theme as values inside preferences."""
-    old = data.get("preferences", {}).pop("themes", None)
-    if old and "themes" not in data:
-        data["themes"] = {"presets": {}, "active": {"label": "theme", "values": old[0]}}
-    return data
-
-
-@_section_props
-class COCOBACKUP_OT_import(Operator, ImportHelper):
+class COCOBACKUP_OT_import(Operator, ImportHelper, _Sections):
     """Apply a CocoBackup file to this machine. Save Preferences afterwards to keep it"""
     bl_idname = "cocobackup.import_backup"
     bl_label = "Import CocoBackup"
@@ -137,7 +132,7 @@ class COCOBACKUP_OT_import(Operator, ImportHelper):
     filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
 
     def draw(self, context):
-        _draw_sections(self, self.layout)
+        self.draw_sections(self.layout)
         sub = self.layout.column()
         sub.active = self.use_keymaps
         sub.prop(self, "use_reset_shortcuts")
@@ -152,10 +147,9 @@ class COCOBACKUP_OT_import(Operator, ImportHelper):
         except Exception as e:
             self.report({'ERROR'}, f"Could not read the file: {e}")
             return {'CANCELLED'}
-        if data.get("format") != FORMAT:
+        if not isinstance(data, dict) or data.get("format") != FORMAT:
             self.report({'ERROR'}, "Not a CocoBackup file")
             return {'CANCELLED'}
-        data = _upgrade(data)
 
         job = {
             "data": data,
@@ -262,17 +256,19 @@ def _run(job):
             groups[TITLES[4]] = [(None, theme_lines)]
 
     if job["use_keymaps"] and "keymaps" in data:
-        r = keymap_diff.import_keymaps(data["keymaps"], reset_extra=job["use_reset_shortcuts"])
+        entries = keymap_diff.import_keymaps(data["keymaps"], reset_extra=job["use_reset_shortcuts"])
         blender_rows, addon_rows = [], {}
-        for entry in r["entries"]:
+        for entry in entries:
             if entry["word"] == "ALREADY":
                 continue
             if entry["owner"]:
                 addon_rows.setdefault(entry["owner"], []).append(entry)
             else:
                 blender_rows.append(entry)
+        changed = sum(1 for e in blender_rows if e["word"] not in {"SKIPPED", "FAILED"})
+        if changed:
+            summary.append(f"Shortcuts changed: {changed}")
         if blender_rows:
-            summary.append(f"Shortcuts changed: {len(blender_rows)}")
             # Two different stories, kept apart so each row reads on its own.
             parts = []
             applied = [e for e in blender_rows if e["word"] != "RESET"]
@@ -282,7 +278,7 @@ def _run(job):
             if reset:
                 parts.append((PUT_BACK, reset))
             groups[TITLES[1]] = parts
-        counted = {k: sum(1 for e in v if e["word"] != "SKIPPED") for k, v in addon_rows.items()}
+        counted = {k: sum(1 for e in v if e["word"] not in {"SKIPPED", "FAILED"}) for k, v in addon_rows.items()}
         counted = {k: n for k, n in counted.items() if n}
         if counted:
             summary.append("Add-on shortcuts changed: " + ", ".join(
@@ -295,8 +291,9 @@ def _run(job):
                         row["event"] = "Put back: " + row["event"][0].lower() + row["event"][1:]
                 parts.append((owner, rows))
             groups[TITLES[2]] = parts
-        if r["skipped"]:
-            summary.append(f"Shortcuts skipped: {len(r['skipped'])} (their add-on is not enabled here)")
+        skipped = sum(1 for e in entries if e["word"] == "SKIPPED")
+        if skipped:
+            summary.append(f"Shortcuts skipped: {skipped} (the list says why)")
 
     bpy.context.preferences.is_dirty = True
     return groups, summary

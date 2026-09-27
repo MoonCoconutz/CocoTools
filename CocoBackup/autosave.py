@@ -8,25 +8,34 @@ N minutes, and keeps only the newest M of them.
 It saves a *copy* (save_as_mainfile(copy=True)): the open file keeps its own
 path and its unsaved state, exactly as if nothing had happened.
 
-Only when something changed since the last autosave or save: an idle file is
-not written again and again. A file that was never saved has no folder, so it
-is skipped.
+Only when the file has unsaved changes and something changed since the last
+autosave or save: an idle file is not written again and again. A file that
+was never saved has no folder, so it is skipped.
 """
 
 import glob
 import os
+import time
 from datetime import datetime
 
 import bpy
 from bpy.app.handlers import persistent
 
 
-_changed = False
-
-
 # Autosaves go in a "Backup" folder beside the .blend, created on first save,
 # so they do not crowd the folder the user works in.
 BACKUP_FOLDER = "Backup"
+
+# A modal operator in progress (a drag, a brush stroke, a render) can leave
+# the file mid-change, so Blender's own autosave waits for it, and so does
+# this one, looking again every RETRY seconds. A modal that has been running
+# for LONG_MODAL seconds is a mode rather than a drag -- CocoUVs' Draw mode
+# stays on while you work -- and waiting for it would stop autosave for good.
+RETRY = 2.0
+LONG_MODAL = 60.0
+
+_changed = False
+_modal_since = {}   # (pointer, bl_idname) -> when it was first seen running
 
 
 def _prefs():
@@ -52,16 +61,13 @@ def save_now():
     """Write one autosave of the open file. Returns its path, or None."""
     global _changed
     filepath = bpy.data.filepath
-    if not filepath:
+    windows = bpy.context.window_manager.windows
+    if not filepath or not windows:
         return None
     folder, stem, _pattern_ = _pattern(filepath)
     os.makedirs(folder, exist_ok=True)
     target = os.path.join(folder, f"{stem}_autosave_{datetime.now():%d-%m-%Y_%H.%M}.blend")
-
-    window = bpy.context.window_manager.windows[0] if bpy.context.window_manager.windows else None
-    if window is None:
-        return None
-    with bpy.context.temp_override(window=window):
+    with bpy.context.temp_override(window=windows[0]):
         bpy.ops.wm.save_as_mainfile(filepath=target, copy=True, check_existing=False)
     _changed = False
     _prune(filepath)
@@ -79,16 +85,30 @@ def _prune(filepath):
             print(f"CocoBackup: could not remove old autosave {old}: {e}")
 
 
+def _busy():
+    """True while a render or a recent modal operator is running."""
+    now = time.monotonic()
+    running = {}
+    for window in bpy.context.window_manager.windows:
+        for op in window.modal_operators:
+            key = (op.as_pointer(), op.bl_idname)
+            running[key] = _modal_since.get(key, now)
+    _modal_since.clear()
+    _modal_since.update(running)
+    return bpy.app.is_job_running('RENDER') or any(now - t < LONG_MODAL for t in running.values())
+
+
 def _tick():
     prefs = _prefs()
     if prefs is None:
         return 60.0
     interval = max(1, prefs.autosave_interval) * 60.0
-    if not prefs.use_autosave:
+    if not (prefs.use_autosave and _changed and bpy.data.is_dirty and bpy.data.filepath):
         return interval
+    if _busy():
+        return RETRY
     try:
-        if _changed and bpy.data.filepath and not bpy.app.is_job_running('RENDER'):
-            save_now()
+        save_now()
     except Exception as e:
         print(f"CocoBackup: autosave failed: {e}")
     return interval

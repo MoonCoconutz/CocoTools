@@ -5,13 +5,14 @@ exposes and writes the same ones back, so a Blender release that adds a
 preference is covered without a code change. What it leaves out is on
 purpose:
 
-- `system`, `apps`, `experimental`, `extensions`, `asset_libraries`: GPU,
-  memory, repositories and library locations belong to the machine, not the
-  person.
+- `system`, `apps`, `experimental`, `extensions`: GPU, memory and
+  repositories belong to the machine, not the person.
 - any file or directory path, anywhere in core preferences, for the same
-  reason.
+  reason, plus the few settings in MACHINE.
 - pointers to datablocks (objects, images...), which cannot travel in a
   preferences file at all.
+- `bl_idname` and the other `bl_*` registration properties: they are not
+  settings, and reading one back gives garbage ("\x06" on 5.2).
 """
 
 import bpy
@@ -20,9 +21,23 @@ import bpy
 CORE_SECTIONS = ("view", "edit", "inputs", "keymap", "filepaths")
 PATH_SUBTYPES = {"FILE_PATH", "DIR_PATH", "FILE_NAME"}
 
+# Settings in the core sections that belong to the machine. The asset
+# libraries and script folders are collections of paths: written by position
+# onto another machine's list they renamed its libraries. The player preset
+# and editor arguments go with their (skipped) paths, the online-access flag
+# records a question this machine answered, and the keymap preset in use
+# would, on top of the shortcut diff that already carries what the preset
+# changes, apply it twice.
+MACHINE = {
+    "filepaths": {"asset_libraries", "active_asset_library", "script_directories",
+                  "animation_player_preset", "text_editor_args",
+                  "use_extension_online_access_handled"},
+    "keymap": {"active_keyconfig"},
+}
+
 
 def _is_id_pointer(prop):
-    fixed = getattr(prop, "fixed_type", None)
+    fixed = prop.fixed_type
     cls = getattr(bpy.types, fixed.identifier, None) if fixed is not None else None
     return isinstance(cls, type) and issubclass(cls, bpy.types.ID)
 
@@ -51,7 +66,7 @@ def dump(struct, skip_paths, _depth=0):
     out = {}
     for prop in struct.bl_rna.properties:
         ident = prop.identifier
-        if ident == "rna_type":
+        if ident == "rna_type" or ident.startswith("bl_"):
             continue
         try:
             if prop.type == "POINTER":
@@ -77,13 +92,14 @@ def load(struct, data, report, path="", quiet=False):
     """Write a dict from dump() back onto an RNA struct.
 
     Every value that actually changes is logged as `path: old -> new` in
-    report["log"], which is what the import report file shows. `quiet` is for
+    report["log"], which is what the import report shows. `quiet` is for
     the items of a rebuilt collection, logged once as a whole instead.
     """
     props = struct.bl_rna.properties
     for ident, value in data.items():
         prop = props.get(ident)
-        if prop is None:
+        # 1.0 backups carry bl_idname (garbage): never write it back.
+        if prop is None or ident.startswith("bl_"):
             continue
         try:
             if prop.type == "POINTER":
@@ -98,7 +114,7 @@ def load(struct, data, report, path="", quiet=False):
                 current = _plain(getattr(struct, ident))
                 if current == value:
                     continue
-                if prop.type == "ENUM" and getattr(prop, "is_enum_flag", False):
+                if prop.type == "ENUM" and prop.is_enum_flag:
                     value = set(value)
                 setattr(struct, ident, value)
                 report["set"] += 1
@@ -145,9 +161,10 @@ def export_preferences():
     prefs = bpy.context.preferences
     core = {}
     for section in CORE_SECTIONS:
-        struct = getattr(prefs, section, None)
-        if struct is not None:
-            core[section] = dump(struct, skip_paths=True)
+        values = dump(getattr(prefs, section), skip_paths=True)
+        for name in MACHINE.get(section, ()):
+            values.pop(name, None)
+        core[section] = values
     # Themes are exported by themes_io as whole themes, not as values here.
     return {"core": core}
 
@@ -156,9 +173,8 @@ def export_addons():
     out = {}
     for addon in bpy.context.preferences.addons:
         entry = {"module": addon.module}
-        ap = getattr(addon, "preferences", None)
-        if ap is not None:
-            entry["preferences"] = dump(ap, skip_paths=False)
+        if addon.preferences is not None:
+            entry["preferences"] = dump(addon.preferences, skip_paths=False)
         out[_addon_id(addon.module)] = entry
     return out
 
@@ -169,18 +185,17 @@ def import_preferences(data):
     for section, values in data.get("core", {}).items():
         if section not in CORE_SECTIONS:
             continue
-        struct = getattr(prefs, section, None)
-        if struct is not None:
-            load(struct, values, report, f"Preferences.{section}")
+        skip = MACHINE.get(section, set())
+        load(getattr(prefs, section), {k: v for k, v in values.items() if k not in skip},
+             report, f"Preferences.{section}")
     return report
 
 
 def import_addons(data):
     """Apply stored add-on settings to the add-ons enabled here.
 
-    Add-ons that are not enabled are only reported. Enabling or installing one
-    is decided by the user in the import dialog (addons_resolve), before this
-    runs; it is never done from here.
+    Add-ons that are not enabled are only reported. Switching one on or
+    installing it happens before this runs (addons_resolve), never from here.
     """
     report = {"set": 0, "failed": [], "applied": [], "missing": [], "log": []}
     here = {_addon_id(a.module): a for a in bpy.context.preferences.addons}
@@ -189,10 +204,9 @@ def import_addons(data):
         if addon is None:
             report["missing"].append(addon_id)
             continue
-        ap = getattr(addon, "preferences", None)
         values = entry.get("preferences")
-        if ap is None or not values:
+        if addon.preferences is None or not values:
             continue
-        load(ap, values, report, f"{addon_id}")
+        load(addon.preferences, values, report, f"{addon_id}")
         report["applied"].append(addon_id)
     return report
