@@ -1,0 +1,292 @@
+# CLAUDE.md — CocoUVs
+
+Extension-specific notes. Shared conventions (headless verification, the
+Local Repository dev install, releases) live in the repo root `CLAUDE.md`.
+
+**Target: Blender 5.2 and later only** (`blender_version_min = "5.2.0"`), at
+the user's request. The 4.5 run from the root `CLAUDE.md` does not apply.
+
+## What it is
+
+A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
+`space.mode == 'UV'`): a UV map list, and texel density tools with a heatmap.
+
+## Layout
+
+- `common.py`: no classes. Which objects and meshes a command acts on
+  (`target_objects`, `target_meshes`, `edit_objects`), UV visibility and
+  selection rules, the island finder, the area and density maths,
+  `scale_island`, `scale_islands_together`.
+- `properties.py`: `Scene.cocouvs` settings, and `WindowManager.cocouvs_heatmap`
+  (on the WM so it is never saved into a .blend).
+- `uv_sets.py`: the name list (`WindowManager.cocouvs_uv_list`), highlighted
+  row, counts, add/remove/move operators and the `UIList`.
+- `texel.py`: `selected_islands()`, Calculate and Assign.
+- `heatmap.py`: cache, GPU batches and the two draw handlers.
+- `debug.py`: the Debug overlays (analysis, draw handlers), the select
+  operator and Add/Remove Done.
+- `checker.py`: the Checker Map toggle, material swap, image and Alt+T keymap.
+- `prefs.py`: add-on preferences (sidebar tab name).
+- `ui.py`: the four panels (UV Maps, Texel Density, Debug, Checker Map) and
+  their registration under the tab name.
+
+## UV maps act on every selected mesh, by name
+
+`target_objects()` = active + selected + anything in Edit Mode, each once,
+active first; `target_meshes()` = their meshes, one per data block. Every
+command works on a UV map **name**, on every target that has it.
+
+- **The list is the union of names, not the active mesh's `uv_layers`.** The
+  user wants every UV map on any selected object listed, whichever object is
+  active. A `UIList` can only draw a real collection, so the names live in
+  `WindowManager.cocouvs_uv_list` (`COCOUVS_UVMapItem`, never saved). A draw
+  call may not write ID data, so the panel draw compares the names
+  (`union_names`) with the collection and, if they differ, `request_sync`
+  schedules a one-shot `bpy.app.timers` timer that rewrites it
+  (`sync_list`) and tags a redraw. Operators call `sync_list` directly.
+  Headless tests must call `sync_list(context)` themselves: in background
+  there is no window for the timer path.
+- **Which row is highlighted** (`chosen_name`): the last clicked or added name
+  (`_chosen`, Python-only) while any target still has it active, otherwise
+  the name active on the most targets (the active object's map wins a tie).
+  `Scene.cocouvs.uv_index` is a get/set with no storage: the getter returns
+  that row, and the setter (a row click) makes the name active on every mesh
+  that has it (`make_active`). Remove and Move act on this name.
+- **Red rows:** a row whose map is still active on some target but is not the
+  highlighted one marks objects that lack the clicked map and stayed where
+  they were. Its N/total is drawn as a **solid red box**: an embossed button
+  (`cocouvs.uv_map_mismatch`, a no-op whose tooltip explains the mismatch)
+  inside an `alert` row. Do not rely on `alert` alone on emboss-less text: in
+  the user's theme that is only a faint tint (measured RGB (0.89, 0.80, 0.84)
+  against (0.91, 0.93, 0.95)), and the user reported "no red". The factory
+  theme shows it clearly red, which is why a `--factory-startup` probe missed
+  it. The camera is never red.
+- **Row counts (N/total)** are per *object*, not per mesh, so instances each
+  count, as the user counts. The panel computes counts and the highlighted
+  name once and hands them over through `set_row_state` right before
+  `template_list()`, which draws every row during that call. Counts show
+  only with more than one object, and only for maps active somewhere.
+- **Rename** is the item's `name` update callback: `stored_name` holds the
+  old name and every mesh's layer with it is renamed (unless that mesh
+  already has the new name). `_syncing` stops `sync_list`'s own writes from
+  firing it. No msgbus: renames made in Blender's own UV Maps panel are no
+  longer copied to other objects; the list simply resyncs.
+- **Camera** is the item's `render` get/set: on when every target that has
+  the name renders with it; setting it sets `active_render` on each of them.
+- **Reordering has no API.** `_swap_uv_maps` swaps two layers' UV and pin data
+  through BMesh, then swaps their names. Nothing is deleted, and anything that
+  refers to a UV map by name (modifiers, UV Map nodes) still points at the
+  same UVs.
+- **`uv_layers.new()` returns `None` in Edit Mode** on 5.2, even though it
+  adds the layer (verified headless). Look the new layer up by name afterwards.
+- **The camera icon sets the render map only, never the active map.** The
+  user wants it to swap what the 3D Viewport shows without changing the map
+  being edited. One version also made it the active map, and the user
+  rejected that. Which map the viewport shows (screenshot-verified on 5.2):
+  - **Material Preview / Rendered** show the **render** map (Image Texture
+    nodes with no UV Map node use it). The camera alone swaps the tiling,
+    and the active map is untouched.
+  - **Solid mode, Texture colour** always shows the **active** map and
+    ignores the render one, in Object and Edit Mode. There is no setting for
+    this. Supporting it in Solid mode would take an overlay of our own.
+
+## Texel density
+
+- `density_ppm = texture_size * sqrt(uv_area / world_area_m2)`. World area
+  uses `matrix_world` (real-world size, object scale included) and
+  `scene.unit_settings.scale_length`. The value is always stored in **px/m**
+  (`density_ppm`). `density` is a get/set view in the chosen unit, so
+  switching units converts the value.
+- "Average" everywhere means **area-weighted**: total UV area over total world
+  area, not the mean of the per-island values.
+- **Assign Average scales the selection as one block** about the centre of
+  the combined UV bounding box of every selected island, across all objects
+  in Edit Mode (`common.scale_islands_together`), like pressing S. The first
+  version scaled each island about its own centre by the shared factor. That
+  kept the density ratios, but on islands of near-equal density it looked
+  identical to Per Island, and the user rejected it. Per Island still scales
+  each island about its own centre.
+- Islands are vertex-connected with matching UVs (Blender's own definition,
+  `UV_CONNECT_LIMIT` 1e-4), grown only through faces the UV Editor shows.
+  `bpy_extras.bmesh_utils.bmesh_linked_uv_islands` was not used because it
+  ignores hidden and unselected faces.
+- **UV selection since 5.0 is `BMFace.uv_select`.** With sync selection on it
+  only counts while `bm.uv_select_sync_valid`; otherwise `face.select` is used.
+  See `common.uv_face_selected`.
+- **Selecting islands (`select_by_density`) must not flush from vertices.**
+  In vertex select mode, `select_flush_mode()` after selecting some faces also
+  selects any face whose corners are all selected. Across a seam, that is a
+  face of another island. So the operator sets face flags directly:
+  `select_set` plus `uv_select_set`, which flushes down to that face's own UV
+  corners only (corners are never shared between faces). In sync mode it then
+  sets `bm.uv_select_sync_valid = True`, since the UV-level selection now
+  matches the mesh one face for face. `bm.uv_select_foreach_set()` raises
+  unless `uv_select_sync_valid` is already true, even with sync off, so it is
+  not used. Tolerance is relative (default 1%, in the redo panel);
+  Shift-click extends the selection.
+
+## Heatmap
+
+- Colour per **island**, not per face (per face is noisy). The hue runs from
+  red (0°) to green (120°) instead of blending RGB, so the midpoint is yellow
+  and not olive. The range is the min..max of what is shown. When the spread
+  is within `UNIFORM_SPREAD` (1%) of the highest value, everything is green
+  and the legend says "Uniform". Without that, float noise after Per Island
+  stretched near-equal islands across the full red-to-green range.
+- Sources: objects in Edit Mode, otherwise the selected meshes (Object Mode).
+  It uses the base mesh, not the evaluated one, so with a Subdivision modifier
+  the 3D overlay follows the cage.
+- **Never recompute from a draw callback, and never per depsgraph update.**
+  The first version rebuilt in the draw callback whenever dirty. During a drag
+  the depsgraph updates on every mouse move, so it rebuilt every frame
+  (0.6 s per frame on a 31k-face mesh), and Blender stopped responding. That
+  writes no crash log. Now `depsgraph_update_post` only marks it dirty and
+  (re)starts a `bpy.app.timers` timer (`DEBOUNCE`, 0.25 s). While dirty the
+  draw callbacks draw nothing, because the data would be in the wrong place.
+  The timer recomputes plain numpy arrays, and the next draw turns them into
+  GPU batches (that needs a draw callback's GPU context).
+- **The recompute only reads the mesh.** It may run while a transform is
+  still in progress. Vertices are identified by `hash(BMVert)` (their
+  address), never `BMVert.index` or `index_update()`. Faces are fan-split in
+  numpy, not with `calc_loop_triangles()`. A headless test checks that
+  vert/face/loop indices are untouched.
+- **Speed:** one Python pass reads each corner's UV and `hash(loop.vert)`.
+  Everything else is numpy: vertex lookup by `searchsorted`, the corner key
+  packed into one int64, islands by min-label propagation with pointer
+  jumping (`_components`), areas via `bincount`. A 31k-face mesh takes about
+  0.25 s, down from 0.6 s. Most of what is left is Blender's Python access to
+  BMesh UVs (about 70 ms just to read 125k UVs); there is no bulk accessor on
+  an edit BMesh. `BMesh.to_mesh()` into a temporary mesh would be C speed, but
+  it writes indices on the edit BMesh.
+- **Real-input test:** `--enable-event-simulate` plus `Window.event_simulate`
+  drives real G/S/R drags, confirm, cancel, Ctrl+Z / Ctrl+Shift+Z and Tab in a
+  real window. That is the only way to exercise modal transforms. It passed
+  with the heatmap on and recomputing after every action.
+- **UV Editor**: `POST_PIXEL`. The batch holds UV coordinates, and one
+  translate + scale from `view2d.view_to_region` of (0,0) and (1,1) maps them
+  to the region. A screenshot confirms it lines up with the UVs.
+- **3D Viewport**: `POST_VIEW` with depth test, and the projection nudged
+  towards the camera (`proj[2][3] *= 1 + 1e-4` in perspective) to avoid
+  z-fighting. A screenshot shows no z-fighting at normal zoom.
+
+## Debug section (`debug.py`)
+
+- Kinds: Done, Flipped, Overlapping, Self-Intersecting (faces; drawn in the
+  UV Editor and the 3D Viewport) and one combined edge-marks row
+  (seam/crease/sharp/bevel; UV Editor only, since the 3D Viewport already shows
+  them). The user chose each of these, and the arrow sits on the left of each
+  row, as on the Density row. Toggles are `WindowManager.cocouvs_debug_*`.
+- Same overlay rules as the heatmap: debounced timer recompute, hidden while
+  dirty, read-only mesh access in `_read` (vertex and edge identity by
+  `hash()`, never `.index`). `_read` + `analyze` are also what the select
+  operator runs, so what is drawn and what is selected cannot drift apart.
+- **Flipped** = island with negative total signed UV area (mirrored).
+  **Overlapping** = island with a triangle overlapping a triangle of *another*
+  island, across all objects in Edit Mode (shared UV space); the whole island
+  is flagged, as the user asked. **Self-Intersecting** = faces overlapping
+  another face of the *same* island.
+- **Overlap detection** (`overlapping_pairs`): grid broad phase (cell ~2x the
+  median triangle size) + exact separating-axis test in numpy. Overlap must
+  exceed `OVERLAP_EPS` (1e-6 UV), so triangles sharing an edge, and islands
+  only touching, do not count. A pair spanning several cells is kept only in
+  the lowest shared cell. The earlier `np.unique` over all pairs was half the
+  run time. **Checked against Blender's own `uv.select_overlap`:** the same
+  218 faces on a smart-projected 31k-face mesh; with islands pushed onto
+  each other, every face Blender finds is found here too, except 16 that
+  overlap by <= 1e-6 UV (touching), which Blender counts and this
+  deliberately does not. Timing on 31k faces: read ~0.22 s + analyze ~0.38 s.
+- **Done** = hidden bool face attribute `.cocouvs_done.<UV map name>`
+  (`common.done_layer_name`), so it is per UV map and saved in the .blend.
+  Renames via the list and Rename-by-index carry it (`common.rename_uv_map`),
+  Remove deletes it, and Move keeps it (names swap with the data). Renaming a
+  map in Blender's own panel orphans it.
+- **Adding a BMesh layer invalidates the Python BMFace references you already
+  hold** (`ReferenceError: BMesh data of type BMFace has been removed`, seen on
+  5.2). `done_mark` therefore creates the layer before collecting islands.
+- Edge selection sets the edge's UV corners directly (`uv_select_edge_set`
+  plus both vertices), with no flush. It switches face select mode to edge
+  mode, otherwise nothing would show.
+- Colours: face kinds use the theme's strip colours
+  (`themes[0].strip_color[slot]`), which are the colours of the legend icons
+  (`STRIP_COLOR_0x`) on the toggles, so icon and overlay always match. Edges
+  use `themes[0].view_3d.seam/sharp/crease/bevel`.
+
+## Rename
+
+`cocouvs.uv_rename`, a pen icon (`GREASEPENCIL`) drawn with
+`draw_header_preset` (right-hand end of the UV Maps header), opens a dialog:
+mode **By Index** (the typed name plus 1, 2, 3; empty gives `map1, map2, ...`,
+`RENAME_BASE`, the user's choice) or **Find/Replace** (`_find_replace`: Blender batch-rename semantics, with
+optional regex and case sensitivity), and scope **Selected** (only the
+highlighted map) or **All**. Every target mesh goes through temporary names,
+so "map2" -> "map1" cannot collide with an existing "map1". A result that
+would be empty keeps the old name. The highlighted row follows the rename.
+
+## Update Seams
+
+`Scene.cocouvs.update_seams`, a bare checkbox under the move arrows (the
+user's placement). When on, `make_active` (a row click) calls
+`common.seams_from_uv_map` on every target mesh that has the map: an edge is
+a seam where the faces on either side do not share UVs at both ends, and
+mesh boundaries stay unmarked. That gives the default cube's 7 seams.
+Existing seams are replaced.
+
+## Checker Map (`checker.py`)
+
+- Alt+T (addon keymaps "3D View" and "Image") or the panel button toggles
+  it. It is a **temporary material swap** (the user's choice over an
+  overlay): every slot of each target object gets the "CocoUVs Checker"
+  material, and objects with no slots get one. The originals are stored as a
+  JSON string in the object ID property `cocouvs_checker_orig` (slot link,
+  material name, whether a slot was added), so they survive saving the file
+  with the checker on. "On" means any object carries that property.
+- While on, Solid 3D views in Material colour switch to Texture colour (the
+  material's image node is kept active for that), and UV Editors show the
+  image. Both are restored when it goes off; the view state is Python-only.
+- **Removing the added slot must use `mesh.materials.clear()`, not
+  `pop()`**: on 5.2, `pop()` leaves the object's `material_slots` count
+  stale (an empty slot stays in the Material tab), even after
+  `view_layer.update()`. Measured in a headless run.
+- Maps: Blender's generated UV Grid and Color Grid in the chosen size
+  (256-8192), or imported images (tagged `cocouvs_checker_import`, listed by
+  the dynamic enum `_map_items`). Changing either while on updates the image
+  in place.
+
+## Sidebar tab name
+
+`prefs.py` holds `COCOUVS_Preferences.tab_name`. Its update calls
+`ui.update_tab()`, which unregisters the panels and registers them again
+with `bl_category` set to the new name, or leaves them unregistered when the
+name is empty. `ui.tab_name()` falls back to "CocoUVs" when the add-on has no
+preferences entry, which is the case for the verification loader.
+
+## Gotchas found on 5.2
+
+- The `SEQUENCE_COLOR_*` icons are now `STRIP_COLOR_*`.
+- `Region.active_panel_category` is read-only, so a probe cannot switch the
+  sidebar tab. Draw the panel's `draw()` into an `invoke_props_dialog` instead
+  (see the root `CLAUDE.md`).
+
+## Verifying
+
+The headless script covers:
+
+- add, remove and move, in Object and Edit Mode;
+- row clicks, renames and the camera through the list's own properties;
+- the name list and red rows with five objects where the active one lacks a
+  map, including a map on a single non-active object;
+- measure and assign values, against planes of known size;
+- Average keeping both the density ratios and the layout;
+- the heatmap finding the same islands and densities as the operators, not
+  touching indices, reporting "uniform" after Per Island, and its speed on a
+  31k-face mesh;
+- each Debug kind on hand-built meshes with a known answer, including the
+  negative cases (islands apart, touching exactly, a clean grid), a
+  cross-object overlap, Done marks per UV map through rename, rename-by-index
+  and remove, and edge selection.
+
+It cannot reach the timer that fills the list, a real double-click rename, or
+the draw handlers. Use a real window for those: screenshots for the drawing
+(a probe can register a copy of a panel under the sidebar's default "Image"
+tab, since it cannot switch tabs), and `--enable-event-simulate` for modal
+tools (see Heatmap above).

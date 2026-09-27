@@ -1,0 +1,112 @@
+# CocoUVs
+
+Blender add-on for managing UV maps and texel density from the UV Editor.
+
+Requires Blender **5.2 LTS** or newer.
+
+## Install
+
+CocoUVs is a Blender **Extension**, published from the
+[CocoTools](https://github.com/MoonCoconutz/CocoTools) repository.
+
+`Edit > Preferences > Get Extensions > repositories ▾ > + > Add Remote
+Repository`, URL:
+
+```
+https://mooncoconutz.github.io/CocoTools/index.json
+```
+
+Then find **CocoUVs** in Get Extensions and install it.
+
+## Use
+
+UV Editor sidebar (`N`), **CocoUVs** tab.
+
+### UV Maps
+
+The list shows every UV map found on **any** selected object, each name once,
+whichever object is active. Every command applies to every selected object
+that has that UV map:
+
+| Control | Action |
+| --- | --- |
+| **Pen icon** (panel header) | Rename UV maps on every selected object, either by position (the name you type plus 1, 2, 3 ...; empty gives map1, map2, ...) or with Find/Replace (regular expressions and case sensitivity, like Blender's batch rename). **Selected** renames only the highlighted map, **All** every map |
+| **Checkbox** (under the arrows) | Update Seams: when you pick a UV map, the seams are replaced with that map's island borders |
+| **Click a row** | Make that UV map active on every selected object that has it |
+| **N/total** next to a name | With several objects selected: how many of them have that UV map active |
+| **Red N/total box** | That many objects are still on this UV map because they do not have the one you clicked. Hover it for details |
+| **Double-click a name** | Rename it on every selected object that has it |
+| **Camera icon** | Use that UV map for rendering and for the textured model in Material Preview and Rendered view. It does not change the UV map you are editing. Solid mode always shows the active (highlighted) UV map; that is Blender's behaviour |
+| `+` | Add a UV map (copied from the active one) to every selected object |
+| `-` | Remove the highlighted UV map from every selected object that has it |
+| `▲` / `▼` | Move the highlighted UV map up or down |
+
+Moving a UV map only changes its position in the list. Its name and its UVs
+travel together, so modifiers and material nodes that refer to it by name
+keep working.
+
+### Texel Density
+
+Texel density is measured in real-world size, so object scale counts.
+
+| Control | Action |
+| --- | --- |
+| **Texture** | Resolution of the (square) texture the density is measured against |
+| **Density** + unit | The density to assign, in px/m, px/cm or px/mm |
+| **Arrow icon** (next to the unit) | Select every island whose density matches the field, within 1% (changeable in the redo panel). Shift-click adds to the current selection |
+| **Pick Texel Density** | Measure the average density of the selected islands and put it in the field |
+| **Apply: Islands** | Scale each selected island on its own, about its own centre, so each one gets the density |
+| **Apply: Average** | Scale the selected islands together as one block, so their average gets the density. Their sizes relative to each other and their layout are kept, the same as pressing S on the selection |
+| **Show Heatmap** | Colour every island by its density, from red (lowest) to green (highest) |
+
+A partly selected island is treated as the whole island.
+
+The heatmap is drawn over the UVs in the UV Editor and over the model in the
+3D Viewport. It does not change the mesh. It shows the objects in Edit Mode,
+or the selected meshes in Object Mode, and the panel lists the lowest and
+highest density being shown. When every island is within 1% of the same
+density, they are all shown green and the panel says **Uniform**.
+
+While you move, scale or otherwise edit, the heatmap hides. It comes back,
+updated, a quarter of a second after you stop.
+
+### Debug
+
+Each row has a toggle that shows the problem in its own colour (the icon on
+the toggle is the colour), and an arrow on its left that selects it
+(Shift-click adds to the selection). With a toggle on, the number of islands
+found (faces, for Self-Intersecting) is shown next to its name.
+
+| Row | Shows |
+| --- | --- |
+| **Add Done** / **Remove Done** | Mark the selected UV islands as done, or not done. Marks are kept per UV map and saved in the .blend |
+| **Done** | Islands marked as done |
+| **Flipped** | Islands whose UVs are mirrored compared with the 3D surface |
+| **Overlapping** | Islands that overlap a different island (also across objects in Edit Mode) |
+| **Self-Intersecting** | Faces that fold over another face of their own island |
+| **Seams / Crease / Sharp / Bevel** | Edges with a seam, crease, sharp mark or bevel weight, in the UV Editor, in the colours the 3D Viewport uses for them. Its arrow selects those edges and switches to edge select mode if needed |
+
+The face checks are drawn in the UV Editor and on the model in the 3D
+Viewport; the edge marks only in the UV Editor (the 3D Viewport already shows
+them in Edit Mode). Islands that only touch along an edge do not count as
+overlapping. Like the heatmap, the overlays hide while you edit and come back
+updated a moment after you stop.
+
+### Checker Map
+
+**Alt+T** (in the 3D Viewport and the UV Editor), or the checker button,
+shows a checker map on the selected objects; press again to put their
+materials back. It works in Object and Edit Mode: the objects' materials are
+swapped for a checker material while it is on (the originals are stored on
+the objects, so they come back even after saving and reopening the file),
+Solid viewports switch to Texture colour, and the UV Editor shows the checker
+behind the UVs.
+
+Next to the button: the size, 256 to 8192 px, and the folder button to import
+an image. Below them: the map (Blender's UV Grid or Color Grid, or any image
+you imported). Size and map can be changed while the checker is on.
+
+## Preferences
+
+**Sidebar Tab** sets the name of the sidebar tab the panels are in. Clear it
+to remove the panels from the sidebar (Alt+T keeps working).

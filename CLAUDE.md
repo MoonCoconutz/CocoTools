@@ -16,7 +16,8 @@ Anything true of **Blender itself** rather than of this code — how the
 keyconfigs relate, what an extension is and how a repository is served, and
 3D knowledge generally — belongs in the user's Obsidian vault, GitHub repo
 `MoonCoconutz/Obsidian` (the source of truth), cloned locally at
-`C:\Users\d_desogus\Documents\Claude\Obsidian`, not in a `CLAUDE.md` here.
+`C:\Users\d_desogus\Documents\Claude\Obsidian` (on the `Deso` machine:
+`C:\Users\Deso\Documents\Claude\3D Knowledge`), not in a `CLAUDE.md` here.
 `git pull` the clone before reading or editing a note — it can be well behind
 GitHub — and push after committing. `CocoPies/CLAUDE.md` points at
 `Blender/Keymaps and keyconfigs` rather than restating it.
@@ -39,6 +40,7 @@ deleted, it is a vault note.
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
 | `CocoBackup/` | Move shortcuts (as a diff), preferences and add-on settings to another machine. See `CocoBackup/CLAUDE.md`. |
+| `CocoUVs/` | UV map list and texel density tools (with a heatmap) in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
 them. "Development" means editing the Python under an extension's folder,
@@ -140,6 +142,36 @@ methods can be called directly with a `types.SimpleNamespace` standing in for
 
 Do **not** try to force a draw with `bpy.ops.wm.call_menu` under
 `--background`: it crashes Blender with an access violation.
+
+**Modal tools (G/S/R drags, confirm/cancel, Ctrl+Z) can be driven with real
+events too.** Launch the window with `--enable-event-simulate`, then from
+`bpy.app.timers` steps call
+`window.event_simulate(type='G', value='PRESS', x=..., y=...)`, then
+`MOUSEMOVE` events, then a `LEFTMOUSE` press and release. `x`/`y` are window
+coordinates (`region.x + region.width // 2` hits a region's centre).
+Simulated events go through the real event loop, so this reproduces what the
+user's mouse does, which exec-mode `bpy.ops.transform.*` calls do not.
+Used on 5.2 for CocoUVs (see `CocoUVs/CLAUDE.md`).
+**Clicking a UI button** needs the hover first, as a separate step: send
+`MOUSEMOVE`, return from the timer, and send the press ~0.4 s later and the
+release after that (nested `bpy.app.timers`). A move+press+release sent in
+one go is silently ignored by buttons (sidebar tabs still react), which looks
+exactly like a broken button. Sidebar tabs and list rows can be clicked this
+way at coordinates read off a first screenshot; `event_simulate` takes
+window coordinates from the *bottom*-left.
+
+**Colours and visibility depend on the user's theme — test those with their
+preferences, not `--factory-startup`.** Drop `--factory-startup` (keep
+`use_preferences_save = False` first thing) and the probe runs with their
+add-ons, theme and installed extensions. A red `alert` on emboss-less list
+text was clearly red in the factory theme and near-invisible in the user's.
+Their add-ons also crash headless on GPU calls, but load fine in a window.
+
+**A freeze leaves no crash log.** A real crash writes
+`%TEMP%\<blend name>.crash.txt` (`Untitled.crash.txt` for an unsaved file).
+If the user reports a crash and no newer log exists, suspect Blender
+stopped responding and was closed, most often Python doing heavy work on
+every redraw or depsgraph update.
 
 **To exercise an extension's manifest-reading path** (any code calling
 `addon_utils.module_bl_info()`), the verification module name above isn't
