@@ -69,6 +69,17 @@ class COCOUVS_Settings(PropertyGroup):
         description="When a UV map is picked in the list, replace the seams with that map's island borders",
         default=False,
     )
+    trim_rotate: BoolProperty(
+        name="Auto-rotate",
+        description="Turn islands 90 degrees when needed so their long side runs along the trim",
+        default=False,
+    )
+    trim_randomize: BoolProperty(
+        name="Randomize",
+        description="Shift each island a random amount along a repeating trim, "
+        "so repeated pieces show different parts of it",
+        default=False,
+    )
     uv_index: IntProperty(
         name="Active UV Map",
         description="UV map shown as active; selecting one sets it on every selected mesh",

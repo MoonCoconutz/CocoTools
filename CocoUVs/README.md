@@ -30,8 +30,8 @@ that has that UV map:
 
 | Control | Action |
 | --- | --- |
-| **Pen icon** (panel header) | Rename UV maps on every selected object, either by position (the name you type plus 1, 2, 3 ...; empty gives map1, map2, ...) or with Find/Replace (regular expressions and case sensitivity, like Blender's batch rename). **Selected** renames only the highlighted map, **All** every map |
-| **Checkbox** (under the arrows) | Update Seams: when you pick a UV map, the seams are replaced with that map's island borders |
+| **Pen icon** (under the arrows) | Opens a small panel under the button to rename UV maps on every selected object, either by position (the name you type plus 1, 2, 3 ...; empty gives map1, map2, ...) or with Find/Replace (optionally case sensitive, like Blender's batch rename). **Selected** renames only the highlighted map, **All** every map |
+| **Seams Update** (panel header) | When you pick a UV map, the seams are replaced with that map's island borders |
 | **Click a row** | Make that UV map active on every selected object that has it |
 | **N/total** next to a name | With several objects selected: how many of them have that UV map active |
 | **Red N/total box** | That many objects are still on this UV map because they do not have the one you clicked. Hover it for details |
@@ -70,6 +70,71 @@ density, they are all shown green and the panel says **Uniform**.
 While you move, scale or otherwise edit, the heatmap hides. It comes back,
 updated, a quarter of a second after you stop.
 
+### Checker Map
+
+**Alt+T** (in the 3D Viewport and the UV Editor), or the checker button,
+shows a checker map on the selected objects; press again to put their
+materials back. It works in Object and Edit Mode: the objects' materials are
+swapped for a checker material while it is on (the originals are stored on
+the objects, so they come back even after saving and reopening the file),
+Solid viewports switch to Texture colour, and the UV Editor shows the checker
+behind the UVs.
+
+Next to the button: the size, 256 to 8192 px, and the folder button to import
+an image. Below them: the map (Blender's UV Grid or Color Grid, or any image
+you imported). Size and map can be changed while the checker is on.
+
+### Trims
+
+Areas of the UV space where the strips of a trim sheet are. Every **material**
+has its own list: the list shows the active material (the one highlighted in
+the Material tab; in Edit Mode clicking a face makes its material active).
+Areas are saved in the .blend.
+
+| Control | Action |
+| --- | --- |
+| **Eye icon** (panel header) | Show or hide the areas in the UV Editor, each in its own colour with its name |
+| **Click a row** | Pick the area the buttons below send UVs to |
+| **Double-click a name** | Rename the area. The colour swatch changes its colour |
+| `+` | Start drawing: the next drag on the UV Editor makes a new area |
+| **Dotted box** | Add one area per selected UV face, around its UVs (a trim sheet modelled as a strip of quads gives one area per quad). Faces giving the same area as another, or as one already in the list, add it once |
+| `-` / `▲` `▼` | Remove the picked area, move it up or down the list |
+| **Trash bin** | Delete all the material's areas (asks first; Ctrl+Z brings them back) |
+| **Export / Import arrows** | Save the material's areas to a file, or load them into the material (in the file browser, **Replace Existing** removes the current ones first; off, they are added) |
+| **Draw Areas** | Draw and edit areas (see below). Press again to finish |
+| **Tiling** | Which way the picked area repeats: Horizontal, Vertical or None |
+| **Fit + Tile** | Scale the islands to the area's height (width for a vertical trim), keeping proportions. They may run past the area's end, where the trim repeats. On an area that does not tile it works as Fit Inside |
+| **Fit Inside** | Scale the islands, keeping proportions, until each fits inside the area |
+| **Fill** | Stretch the islands to exactly the area's size |
+| **Move** | Move the islands into the area without scaling them |
+| **Auto-rotate** | Turn islands 90° when needed so their long side runs along the trim |
+| **Randomize** | Shift each island a random amount along a repeating trim, so repeated pieces show different parts of it. Change **Seed** in the redo panel for another layout |
+
+Several selected islands are lined up side by side from the start of the area
+(left, or bottom for a vertical trim), in the order they already sit, and
+keep going past the end if they are longer than the area. Across the area they
+are centred.
+
+**Draw mode** (Draw Areas or `+`), in the UV Editor:
+
+- Drag on empty space: a new area. It tiles along its long side.
+- Click an area: pick it. Drag its edges or corners: resize it. Drag its
+  inside: move it.
+- Hold **Ctrl** while dragging to snap to **UV vertices**: hovering a vertex
+  snaps whatever you are dragging to it (even a single edge, if the vertex is
+  beside the area), and an edge also lines up with a vertex along it. A moved
+  area lines its edges up with vertices along them. An orange square marks
+  the vertex.
+- Hold **Shift** to snap to the **grid**: whole texture pixels (the Texture
+  size of the Texel Density section), in steps of 1, 2, 4 ... pixels that
+  follow the zoom, so the grid is always big enough to see. It is drawn
+  faintly while you snap. Ctrl+Shift: vertices first, the grid otherwise.
+- **X** or **Delete** removes the picked area.
+- **Esc**, right-click or the Draw Areas button finishes. Esc or right-click
+  during a drag cancels just that drag.
+- Zooming and panning work as usual; the sidebar and toolbar keep working.
+- **Ctrl+Z** undoes area changes too, in Edit Mode as in Object Mode.
+
 ### Debug
 
 Each row has a toggle that shows the problem in its own colour (the icon on
@@ -91,20 +156,6 @@ Viewport; the edge marks only in the UV Editor (the 3D Viewport already shows
 them in Edit Mode). Islands that only touch along an edge do not count as
 overlapping. Like the heatmap, the overlays hide while you edit and come back
 updated a moment after you stop.
-
-### Checker Map
-
-**Alt+T** (in the 3D Viewport and the UV Editor), or the checker button,
-shows a checker map on the selected objects; press again to put their
-materials back. It works in Object and Edit Mode: the objects' materials are
-swapped for a checker material while it is on (the originals are stored on
-the objects, so they come back even after saving and reopening the file),
-Solid viewports switch to Texture colour, and the UV Editor shows the checker
-behind the UVs.
-
-Next to the button: the size, 256 to 8192 px, and the folder button to import
-an image. Below them: the map (Blender's UV Grid or Color Grid, or any image
-you imported). Size and map can be changed while the checker is on.
 
 ## Preferences
 

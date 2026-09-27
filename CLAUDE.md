@@ -40,7 +40,7 @@ deleted, it is a vault note.
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, listed in the 3D viewport sidebar. See `CocoSelections/CLAUDE.md`. |
 | `CocoBackup/` | Move shortcuts (as a diff), preferences and add-on settings to another machine. See `CocoBackup/CLAUDE.md`. |
-| `CocoUVs/` | UV map list and texel density tools (with a heatmap) in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
+| `CocoUVs/` | UV map list, texel density (with a heatmap), checker map, trim sheet areas and UV debug overlays in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
 them. "Development" means editing the Python under an extension's folder,

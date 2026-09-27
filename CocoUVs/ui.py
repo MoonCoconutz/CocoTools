@@ -1,11 +1,11 @@
-"""The CocoUVs tab in the UV Editor sidebar: UV Maps, Texel Density, Debug and
-Checker Map. The tab name comes from the add-on preferences; an empty name
+"""The CocoUVs tab in the UV Editor sidebar: UV Maps, Texel Density, Checker
+Map, Trims and Debug. The tab name comes from the add-on preferences; an empty name
 leaves the panels unregistered."""
 
 import bpy
 from bpy.types import Panel
 
-from . import checker, common, debug, heatmap, uv_sets
+from . import checker, common, debug, heatmap, trims, uv_sets
 
 
 class _CocoUVsPanel:
@@ -24,7 +24,7 @@ class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
 
     def draw_header_preset(self, context):
         # Right-hand end of the panel header.
-        self.layout.operator("cocouvs.uv_rename", text="", icon='GREASEPENCIL')
+        self.layout.prop(context.scene.cocouvs, "update_seams", text="Seams Update")
 
     def draw(self, context):
         layout = self.layout
@@ -49,7 +49,8 @@ class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
         side.operator("cocouvs.uv_move", text="", icon='TRIA_UP').direction = 'UP'
         side.operator("cocouvs.uv_move", text="", icon='TRIA_DOWN').direction = 'DOWN'
         side.separator()
-        side.prop(context.scene.cocouvs, "update_seams", text="")
+        # A popover opens anchored under the button, like CocoBackup's menu.
+        side.popover("COCOUVS_PT_rename", text="", icon='GREASEPENCIL')
 
         count = len(common.target_meshes(context))
         if count > 1:
@@ -106,6 +107,62 @@ class COCOUVS_PT_texel_density(_CocoUVsPanel, Panel):
                     col.label(text=f"Highest  {common.format_density(high, settings.unit)}", icon='STRIP_COLOR_04')
 
 
+class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
+    bl_idname = "COCOUVS_PT_trims"
+    bl_label = "Trims"
+
+    def draw_header_preset(self, context):
+        self.layout.prop(context.window_manager, "cocouvs_trims_show", text="",
+                         icon='HIDE_OFF' if context.window_manager.cocouvs_trims_show else 'HIDE_ON',
+                         emboss=False)
+        # A little room after it, so it sits left of the header's drag handle.
+        self.layout.separator(factor=1.5)
+
+    def draw(self, context):
+        layout = self.layout
+        mat = trims.material(context)
+        if mat is None:
+            layout.label(text="The active object has no material", icon='INFO')
+            return
+
+        row = layout.row()
+        row.template_list("COCOUVS_UL_trims", "", mat, "cocouvs_trims", mat, "cocouvs_trim_index", rows=8)
+        side = row.column(align=True)
+        # + starts draw mode (never stops it); the next drag makes the area.
+        side.operator("cocouvs.trim_draw", text="", icon='ADD').toggle = False
+        side.operator("cocouvs.trim_add_selection", text="", icon='SELECT_SET')
+        side.operator("cocouvs.trim_remove", text="", icon='REMOVE')
+        side.operator("cocouvs.trim_clear", text="", icon='TRASH')
+        side.separator()
+        side.operator("cocouvs.trim_move", text="", icon='TRIA_UP').direction = 'UP'
+        side.operator("cocouvs.trim_move", text="", icon='TRIA_DOWN').direction = 'DOWN'
+        side.separator()
+        side.operator("cocouvs.trim_export", text="", icon='EXPORT')
+        side.operator("cocouvs.trim_import", text="", icon='IMPORT')
+
+        drawing = trims.is_drawing()
+        layout.operator("cocouvs.trim_draw", text="Finish Drawing" if drawing else "Draw Areas",
+                        icon='GREASEPENCIL', depress=drawing)
+
+        area = trims.picked_area(context)
+        if area is not None:
+            # A dropdown: three expanded buttons cut "Horizontal" off in the sidebar.
+            row = layout.row(align=True)
+            row.prop(area, "tiling", text="Tiling")
+
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.operator("cocouvs.trim_fit", text="Fit + Tile").method = 'TILE'
+        row.operator("cocouvs.trim_fit", text="Fit Inside").method = 'FIT'
+        row = col.row(align=True)
+        row.operator("cocouvs.trim_fit", text="Fill").method = 'FILL'
+        row.operator("cocouvs.trim_fit", text="Move").method = 'MOVE'
+        row = layout.row()
+        settings = context.scene.cocouvs
+        row.prop(settings, "trim_rotate")
+        row.prop(settings, "trim_randomize")
+
+
 class COCOUVS_PT_debug(_CocoUVsPanel, Panel):
     bl_idname = "COCOUVS_PT_debug"
     bl_label = "Debug"
@@ -150,7 +207,9 @@ class COCOUVS_PT_checker(_CocoUVsPanel, Panel):
         col.prop(settings, "checker_map", text="")
 
 
-classes = (COCOUVS_PT_uv_maps, COCOUVS_PT_texel_density, COCOUVS_PT_debug, COCOUVS_PT_checker)
+# Registration order is the order in the sidebar (the user's).
+classes = (COCOUVS_PT_uv_maps, COCOUVS_PT_texel_density, COCOUVS_PT_checker, COCOUVS_PT_trims,
+           COCOUVS_PT_debug)
 
 
 def tab_name():

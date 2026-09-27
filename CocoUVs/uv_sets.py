@@ -20,7 +20,7 @@ import types
 import bmesh
 import bpy
 from bpy.props import BoolProperty, CollectionProperty, EnumProperty, StringProperty
-from bpy.types import Operator, PropertyGroup, UIList
+from bpy.types import Operator, Panel, PropertyGroup, UIList
 
 from . import common
 
@@ -350,18 +350,61 @@ class COCOUVS_OT_uv_move(Operator):
 RENAME_BASE = "map"   # By Index with an empty box: map1, map2, ...
 
 
-def _find_replace(name, find, replace, use_regex, case_sensitive):
-    """Blender's batch-rename Find/Replace (Ctrl+F2) semantics on one name."""
+def _find_replace(name, find, replace, case_sensitive):
+    """Blender's batch-rename Find/Replace (Ctrl+F2) semantics on one name,
+    plain text only."""
     import re
 
     if not find:
         return name
     flags = 0 if case_sensitive else re.IGNORECASE
-    pattern = find if use_regex else re.escape(find)
-    try:
-        return re.sub(pattern, replace if use_regex else replace.replace("\\", "\\\\"), name, flags=flags)
-    except re.error:
-        return name
+    return re.sub(re.escape(find), replace.replace("\\", "\\\\"), name, flags=flags)
+
+
+class COCOUVS_RenameSettings(PropertyGroup):
+    """The rename popover's fields (WindowManager.cocouvs_rename, never saved)."""
+    mode: EnumProperty(name="Mode", items=[
+        ('INDEX', "By Index", "Name maps by their position: the typed name plus 1, 2, 3 (empty: map1, map2, ...)"),
+        ('FIND', "Find/Replace", "Replace text in the names, like Blender's batch rename"),
+    ], default='INDEX')
+    scope: EnumProperty(name="Maps", items=[
+        ('SELECTED', "Selected", "Only the highlighted UV map"),
+        ('ALL', "All", "Every UV map"),
+    ], default='ALL')
+    find: StringProperty(name="Find")
+    replace: StringProperty(name="Replace")
+    case_sensitive: BoolProperty(
+        name="Case Sensitive",
+        description="Match upper and lower case exactly; off, \"uv\" also finds \"UV\"",
+        default=True,
+    )
+
+
+class COCOUVS_PT_rename(Panel):
+    """Opened as a popover under the pen button, like CocoBackup's menu."""
+    bl_idname = "COCOUVS_PT_rename"
+    bl_label = "Rename UV Maps"
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'HEADER'
+    bl_ui_units_x = 13
+
+    def draw(self, context):
+        settings = context.window_manager.cocouvs_rename
+        layout = self.layout
+        layout.label(text="Rename UV Maps", icon='GREASEPENCIL')
+        layout.row().prop(settings, "scope", expand=True)
+        layout.row().prop(settings, "mode", expand=True)
+        col = layout.column()
+        # By Index keeps the box: what is typed there is the base name
+        # (empty = "map"). Replace does not apply, so it is greyed out.
+        col.prop(settings, "find", text="Name" if settings.mode == 'INDEX' else "Find")
+        sub = col.column()
+        sub.enabled = settings.mode == 'FIND'
+        sub.prop(settings, "replace")
+        sub.prop(settings, "case_sensitive")
+        row = layout.row()
+        row.scale_y = 1.3
+        row.operator("cocouvs.uv_rename", text="Rename", icon='CHECKMARK')
 
 
 class COCOUVS_OT_uv_rename(Operator):
@@ -371,62 +414,25 @@ class COCOUVS_OT_uv_rename(Operator):
                       "or with Find/Replace")
     bl_options = {'REGISTER', 'UNDO'}
 
-    mode: EnumProperty(name="Mode", items=[
-        ('INDEX', "By Index", "Name maps by their position: map1, map2, ..."),
-        ('FIND', "Find/Replace", "Replace text in the names, like Blender's batch rename"),
-    ], default='INDEX')
-    scope: EnumProperty(name="Maps", items=[
-        ('SELECTED', "Selected", "Only the highlighted UV map"),
-        ('ALL', "All", "Every UV map"),
-    ], default='ALL')
-    find: StringProperty(name="Find")
-    replace: StringProperty(name="Replace")
-    use_regex: BoolProperty(
-        name="Regular Expression",
-        description="Treat Find as a regular expression (Python re syntax); Replace can use \1, \2 for captured groups",
-        default=False,
-    )
-    case_sensitive: BoolProperty(
-        name="Case Sensitive",
-        description="Match upper and lower case exactly; off, \"uv\" also finds \"UV\"",
-        default=True,
-    )
-
     @classmethod
     def poll(cls, context):
         return any(len(me.uv_layers) for me in common.target_meshes(context))
 
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=320)
-
-    def draw(self, context):
-        layout = self.layout
-        layout.row().prop(self, "scope", expand=True)
-        layout.row().prop(self, "mode", expand=True)
-        col = layout.column()
-        # By Index keeps the box: what is typed there is the base name
-        # (empty = "map"). Replace does not apply, so it is greyed out.
-        col.prop(self, "find", text="Name" if self.mode == 'INDEX' else "Find")
-        sub = col.row()
-        sub.enabled = self.mode == 'FIND'
-        sub.prop(self, "replace")
-        row = col.row()
-        row.prop(self, "use_regex")
-        row.prop(self, "case_sensitive")
-
-    def _new_name(self, index, name):
-        if self.mode == 'INDEX':
-            return f"{self.find.strip() or RENAME_BASE}{index + 1}"
-        return _find_replace(name, self.find, self.replace, self.use_regex, self.case_sensitive)
+    @staticmethod
+    def _new_name(settings, index, name):
+        if settings.mode == 'INDEX':
+            return f"{settings.find.strip() or RENAME_BASE}{index + 1}"
+        return _find_replace(name, settings.find, settings.replace, settings.case_sensitive)
 
     def execute(self, context):
+        settings = context.window_manager.cocouvs_rename
         meshes = common.target_meshes(context)
         chosen = current_name(context)
         new_chosen = None
         renamed = 0
         for me in meshes:
             old = [layer.name for layer in me.uv_layers]
-            new = [self._new_name(i, n) if (self.scope == 'ALL' or n == chosen) else n
+            new = [self._new_name(settings, i, n) if (settings.scope == 'ALL' or n == chosen) else n
                    for i, n in enumerate(old)]
             new = [n or o for n, o in zip(new, old)]      # never an empty name
             if chosen in old and new_chosen is None:
@@ -531,6 +537,8 @@ def _load_post(*_args):
 
 classes = (
     COCOUVS_UVMapItem,
+    COCOUVS_RenameSettings,
+    COCOUVS_PT_rename,
     COCOUVS_OT_uv_add,
     COCOUVS_OT_uv_remove,
     COCOUVS_OT_uv_move,
@@ -544,6 +552,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.WindowManager.cocouvs_uv_list = CollectionProperty(type=COCOUVS_UVMapItem)
+    bpy.types.WindowManager.cocouvs_rename = bpy.props.PointerProperty(type=COCOUVS_RenameSettings)
     bpy.app.handlers.load_post.append(_load_post)
 
 
@@ -553,5 +562,6 @@ def unregister():
     if bpy.app.timers.is_registered(_sync_timer):
         bpy.app.timers.unregister(_sync_timer)
     del bpy.types.WindowManager.cocouvs_uv_list
+    del bpy.types.WindowManager.cocouvs_rename
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

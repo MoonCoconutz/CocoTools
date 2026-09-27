@@ -26,8 +26,11 @@ A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
 - `debug.py`: the Debug overlays (analysis, draw handlers), the select
   operator and Add/Remove Done.
 - `checker.py`: the Checker Map toggle, material swap, image and Alt+T keymap.
+- `trims.py`: trim areas per material, the fit operator, draw mode (modal)
+  and the area overlay.
 - `prefs.py`: add-on preferences (sidebar tab name).
-- `ui.py`: the four panels (UV Maps, Texel Density, Debug, Checker Map) and
+- `ui.py`: the five panels, in the user's order (UV Maps, Texel Density,
+  Checker Map, Trims, Debug: registration order is sidebar order) and
   their registration under the tab name.
 
 ## UV maps act on every selected mesh, by name
@@ -213,19 +216,21 @@ command works on a UV map **name**, on every target that has it.
 
 ## Rename
 
-`cocouvs.uv_rename`, a pen icon (`GREASEPENCIL`) drawn with
-`draw_header_preset` (right-hand end of the UV Maps header), opens a dialog:
+`cocouvs.uv_rename`, a pen icon (`GREASEPENCIL`) under the move arrows (the
+user swapped it with the Seams Update checkbox), opens `COCOUVS_PT_rename` as a
+popover anchored under it, like CocoBackup's menu (fields in
+`WindowManager.cocouvs_rename`, a Rename button runs `cocouvs.uv_rename`):
 mode **By Index** (the typed name plus 1, 2, 3; empty gives `map1, map2, ...`,
 `RENAME_BASE`, the user's choice) or **Find/Replace** (`_find_replace`: Blender batch-rename semantics, with
-optional regex and case sensitivity), and scope **Selected** (only the
+optional case sensitivity; regex was removed at the user's request), and scope **Selected** (only the
 highlighted map) or **All**. Every target mesh goes through temporary names,
 so "map2" -> "map1" cannot collide with an existing "map1". A result that
 would be empty keeps the old name. The highlighted row follows the rename.
 
 ## Update Seams
 
-`Scene.cocouvs.update_seams`, a bare checkbox under the move arrows (the
-user's placement). When on, `make_active` (a row click) calls
+`Scene.cocouvs.update_seams`, a "Seams Update" checkbox drawn with `draw_header_preset` (the
+right-hand end of the UV Maps header, the user's placement). When on, `make_active` (a row click) calls
 `common.seams_from_uv_map` on every target mesh that has the map: an edge is
 a seam where the faces on either side do not share UVs at both ends, and
 mesh boundaries stay unmarked. That gives the default cube's 7 seams.
@@ -251,6 +256,81 @@ Existing seams are replaced.
   (256-8192), or imported images (tagged `cocouvs_checker_import`, listed by
   the dynamic enum `_map_items`). Changing either while on updates the image
   in place.
+
+## Trims (`trims.py`)
+
+- **Areas live on the material**: `Material.cocouvs_trims` (a collection of
+  `COCOUVS_TrimArea`: name, `rect` = (u0, v0, u1, v1), `tiling`, `color`) and
+  `Material.cocouvs_trim_index` (the picked one). The list shows
+  `material()`: the active object's `active_material` (the user's choice). No
+  material: the panel says so and nothing else draws.
+- **Fit** (`fit_islands`, pure numpy, tested directly): islands go side by
+  side along the area's length from its start (left, or bottom), sorted by
+  where they already sit, and keep going past the end (the user's choice:
+  the trim repeats there). Across the area they are centred. TILE scales to
+  the cross size, FIT to fit inside, FILL stretches per axis, MOVE keeps the
+  size. TILE on a non-tiling area falls back to FIT. Auto-rotate turns an
+  island 90 degrees when its long side is across the trim. Randomize adds
+  `uniform(0, area length)` per island from a seeded `random.Random`; the
+  panel checkboxes only seed the operator's own properties in `invoke`, so
+  the redo panel can change them.
+- **Keep the BMesh wrapper alive while using its loops.** `_selected_island_loops`
+  returns the `bm` with the loops: when the Python `BMesh` from
+  `bmesh.from_edit_mesh` is freed (the helper returned), every `BMLoop` taken
+  from it raises `ReferenceError: BMesh data of type BMLoop has been removed`
+  (5.2, found by the headless test).
+- **Draw mode** (`COCOUVS_OT_trim_draw`) is a modal operator on the UV
+  Editor's WINDOW region, found from `context.area` because the buttons that
+  start it live in the UI region. Module state `_state` (running, drag,
+  preview) is shared with the overlay and the panel. The Draw Areas button
+  toggles (a second invoke sets `stop`); `+` passes `toggle=False` so it only
+  starts. Hit test in pixels: the picked area's edges/corners first
+  (`HANDLE_PX`), then the smallest area under the mouse, else a new area.
+- **Region overlap:** the sidebar, toolbar and tool header lie *on top of*
+  the WINDOW region, so "inside WINDOW" is not "on the canvas". `_in_canvas`
+  excludes every other visible region of the area (hidden ones report a
+  1x1 size); without it the modal ate clicks meant for the Trims panel's own
+  buttons (seen in a real-window probe).
+- **Snapping (the user's keys): Ctrl = UV vertices, Shift = grid**, both =
+  vertices first. Vertex: a vertex within `SNAP_PX` of the mouse sets every
+  dragged axis, even for a single-edge drag (the user resizes an area
+  vertically by hovering a vertex beside it); otherwise `_align` lines each
+  moving edge up with a vertex along it (within its span on the other axis).
+  A move aligns either edge per axis. Grid: whole pixels of the Texel Density
+  texture size, the step a power of two of pixels at least `GRID_MIN_PX`
+  apart on screen (`_grid_step`; single pixels, about 0.2 screen pixels at
+  2048, looked like no snapping). `_state["snap"]` makes the overlay draw
+  the grid (alpha 0.05: the user found 0.12 too strong), orange squares on
+  the vertices used and a cross on a grid point. Vertices are read on each
+  press (visible faces, active UV map, Edit Mode only).
+- **Overlay:** one `POST_PIXEL` handler on `SpaceImageEditor`, registered for
+  the add-on's lifetime; it returns at once unless `cocouvs_trims_show` (the
+  header eye, default on) or draw mode is on. Few rectangles, so batches are
+  built per draw.
+- **Undo in Edit Mode.** Areas are material data and an Edit Mode undo step
+  stores only the mesh, so Ctrl+Z did nothing to them (user report). Every
+  change calls `record_change()`: it stores `_snapshot()` (all materials'
+  areas) under a new number and writes that number to the first vertex of
+  the active edit mesh in a hidden int attribute `.cocouvs_trims_undo`,
+  which the undo step does store. `_undo_post` (also on redo) reads it back
+  and `_restore`s that snapshot. The mesh's first change also stores the
+  state before it (`_last_seen`, taken on every UV Editor redraw outside a
+  drag) under `_base`, for undoing past the step that added the attribute.
+  Property updates record through `_index_changed` (the UI then pushes its
+  own step); list operators record at the end of `execute`; draw mode, which
+  has no undo flag, calls `commit()` on release and on X (`ed.undo_push`).
+  Nothing is recorded mid-drag. Snapshots are Python-only, so after
+  reopening a file undo only reaches steps made since. Object Mode needs
+  none of it (memfile undo holds materials). The attribute stays on the mesh.
+- **Areas from Selection is one area per selected face** (its UV bounding
+  box), skipping boxes equal to another new one or an existing area, sorted
+  top to bottom, left to right (the user's choice over one area around the
+  whole selection).
+- Real-window test: `--enable-event-simulate` drags create, Ctrl-snap an edge
+  to a vertex (0.625 on the default cube), Shift-snap a move and a new area to
+  the grid, Ctrl-snap a top edge to a vertex beside the area, Ctrl-align a
+  move, click to pick, X to remove, Ctrl+Z / Ctrl+Shift+Z, a drag over the
+  sidebar left alone, Esc to exit.
 
 ## Sidebar tab name
 
