@@ -18,10 +18,10 @@ so nothing gets duplicated, and your changes to add-on shortcuts travel too.
 
 ## Use
 
-- The **coconut button** in the 3D Viewport header, after the View / Select /
+- The **save-icon button** in the 3D Viewport header, after the View / Select /
   Add / Object menus, opens both, plus the autosave options. Its colour tells
   you about the open file: **red** means it was never saved anywhere, **green**
-  means it is saved, **plain** means it is saved but you changed something
+  means it is saved, **grey** means it is saved but you changed something
   since.
 - **File ▸ Export ▸ CocoBackup (.json)** saves the backup.
 - **File ▸ Import ▸ CocoBackup (.json)** applies it. A popup then lists
@@ -58,7 +58,7 @@ Optional (off by default): every N minutes, if something changed since the
 last save or autosave, a copy is saved in a `Backup` folder next to the file
 (created the first time) as `<name>_autosave_26-09-2026_18.25.blend`, keeping
 only the newest few. If nothing changed, nothing is written. Set it in the
-coconut panel or in the add-on's preferences. The open file itself is not
+header panel or in the add-on's preferences. The open file itself is not
 touched. A file that was never saved is skipped.
 
 ## Good to know

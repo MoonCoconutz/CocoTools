@@ -1,4 +1,4 @@
-"""The coconut button in the 3D Viewport header, and the panel it opens."""
+"""The save-icon button in the 3D Viewport header, and the panel it opens."""
 
 import os
 
@@ -11,10 +11,10 @@ from bpy.types import Panel
 _previews = None
 
 
-def coconut_icon():
+def panel_icon():
     if _previews is None:
         return 0
-    return _previews["coconut"].icon_id
+    return _previews["save_modified"].icon_id
 
 
 def file_state():
@@ -25,12 +25,12 @@ def file_state():
     return "modified" if bpy.data.is_dirty else "saved"
 
 
-_STATE_ICONS = {"unsaved": "coconut_unsaved", "saved": "coconut_saved", "modified": "coconut"}
+_STATE_ICONS = {"unsaved": "save_unsaved", "saved": "save_saved", "modified": "save_modified"}
 
 
 def status_icon():
-    """The header button: red coconut for a file that exists nowhere on disk,
-    green for a saved one, plain for a saved file with unsaved changes."""
+    """The header button: red save icon for a file that exists nowhere on disk,
+    green for a saved one, grey for a saved file with unsaved changes."""
     if _previews is None:
         return 0
     return _previews[_STATE_ICONS[file_state()]].icon_id
@@ -76,7 +76,7 @@ class COCOBACKUP_PT_menu(Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="CocoBackup", icon_value=coconut_icon())
+        layout.label(text="CocoBackup", icon_value=panel_icon())
 
         col = layout.column(align=True)
         col.scale_y = 1.3
@@ -131,8 +131,7 @@ def _unwrap_old_tool_header():
 def register():
     global _previews
     _previews = bpy.utils.previews.new()
-    _previews.load("coconut", os.path.join(os.path.dirname(__file__), "icons", "coconut.png"), 'IMAGE')
-    for name in ("coconut_saved", "coconut_unsaved"):
+    for name in _STATE_ICONS.values():
         _previews.load(name, os.path.join(os.path.dirname(__file__), "icons", name + ".png"), 'IMAGE')
     bpy.utils.register_class(COCOBACKUP_PT_menu)
     _unwrap_old_tool_header()

@@ -10,7 +10,7 @@ changing `keymap_diff.py`.
 ## What it is
 
 One JSON file (format 2) with four optional sections: `keymaps` (a diff),
-`preferences`, `themes` and `addons`. Exported and imported from the coconut
+`preferences`, `themes` and `addons`. Exported and imported from the save-icon
 button in the 3D Viewport header or File ▸ Export / Import. Also an optional
 autosave that writes to a `Backup` folder next to the .blend.
 
@@ -170,7 +170,7 @@ silently kept. Format-1 backups kept the theme inside `preferences`;
 ## Autosave
 
 `autosave.py`: a persistent `bpy.app.timers` tick every N minutes (addon
-preferences, also in the coconut panel) writes
+preferences, also in the header panel) writes
 `<name>_autosave_<dd-mm-YYYY_HH.MM>.blend` in a `Backup` folder next to the file (created on the first autosave) with
 `save_as_mainfile(copy=True)`, so the open file keeps its path and dirty state,
 and deletes all but the newest M. It writes only if a `depsgraph_update_post`
@@ -212,15 +212,20 @@ switches map_type for you and RNA does not, and the refusal used to be
 swallowed. Found testing Fill Tool Modal Map: moving its Middle Mouse item to F
 and back silently did nothing.
 
-## The coconut shows whether the file is saved
+## The save icon shows whether the file is saved
 
-Three icons, all drawn by the user (`icons/`), chosen by `ui.file_state()`:
+A floppy-disk save icon in three colours (`icons/`), chosen by
+`ui.file_state()`. It replaced the user's coconut drawings. The PNGs are
+generated (128 px, flat colour, shutter and label cut out); the colours are the
+user's own choice:
 
 | State | Condition | Icon |
 | --- | --- | --- |
-| unsaved | `bpy.data.filepath` empty: the file is nowhere on disk | `coconut_unsaved.png`, red |
-| saved | a path, `bpy.data.is_dirty` false | `coconut_saved.png`, green |
-| modified | a path, `is_dirty` true | `coconut.png`, plain |
+| unsaved | `bpy.data.filepath` empty: the file is nowhere on disk | `save_unsaved.png`, red `#C8575C` |
+| saved | a path, `bpy.data.is_dirty` false | `save_saved.png`, green `#8ED67F` |
+| modified | a path, `is_dirty` true | `save_modified.png`, grey `#6C6C6C` |
+
+The panel's own title uses the grey one.
 
 Red means only "never saved", not "has unsaved changes"; the user was explicit
 about that. `is_dirty` flips
@@ -228,4 +233,4 @@ after an operator's undo push, which is after `depsgraph_update_post`, so every
 depsgraph, save, load, undo and redo event schedules one check 0.1 s later.
 That check redraws the 3D Viewport headers only if the state really flipped.
 Nothing polls. Operators called from a script do not set `is_dirty`, so the
-"plain after an edit" case can only be checked by hand.
+"grey after an edit" case can only be checked by hand.
