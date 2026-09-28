@@ -52,16 +52,32 @@ def _resolve_bpy_data_path(path_str):
     return obj, prop_name
 
 
+# The execution contexts bpy.ops accepts as its one positional argument
+_OPERATOR_CONTEXTS = frozenset({
+    'INVOKE_DEFAULT', 'INVOKE_REGION_WIN', 'INVOKE_REGION_CHANNELS',
+    'INVOKE_REGION_PREVIEW', 'INVOKE_AREA', 'INVOKE_SCREEN',
+    'EXEC_DEFAULT', 'EXEC_REGION_WIN', 'EXEC_REGION_CHANNELS',
+    'EXEC_REGION_PREVIEW', 'EXEC_AREA', 'EXEC_SCREEN',
+})
+
+
 def _parse_bpy_ops_call(command):
-    """Parse "bpy.ops.module.op_name(kw=val, ...)" into (idname, kwargs).
+    """Parse "bpy.ops.module.op_name('CONTEXT', kw=val, ...)" into
+    (idname, kwargs, context).
+
+    context is the execution context written as the call's one positional
+    argument, or None when there is none. It lets a slot ask for an
+    operator's invoke() -- which some operators need, Mio3 UV's Sort sets up
+    state there that its execute() reads -- without losing the native button
+    and its redo panel.
 
     Returns None if the command is not a plain bpy.ops call with literal
-    keyword arguments: a positional argument, a **kwargs spread, or a value
-    that is not a literal (a function call, a name, an f-string) all bail
-    out to None rather than guess. ast.literal_eval only ever produces plain
-    Python values -- numbers, strings, tuples, lists, dicts, booleans, None
-    -- from the text itself; there is no path from parsing this string to
-    executing anything inside it.
+    keyword arguments: any other positional argument, a **kwargs spread, or
+    a value that is not a literal (a function call, a name, an f-string) all
+    bail out to None rather than guess. ast.literal_eval only ever produces
+    plain Python values -- numbers, strings, tuples, lists, dicts, booleans,
+    None -- from the text itself; there is no path from parsing this string
+    to executing anything inside it.
     """
     if not command.startswith("bpy.ops."):
         return None
@@ -71,8 +87,15 @@ def _parse_bpy_ops_call(command):
         return None
 
     call = tree.body
-    if not isinstance(call, ast.Call) or call.args:
-        return None  # bpy.ops operators take keyword arguments only
+    if not isinstance(call, ast.Call):
+        return None
+    context = None
+    if call.args:
+        arg = call.args[0]
+        if (len(call.args) != 1 or not isinstance(arg, ast.Constant)
+                or arg.value not in _OPERATOR_CONTEXTS):
+            return None
+        context = arg.value
 
     names = []
     node = call.func
@@ -94,7 +117,7 @@ def _parse_bpy_ops_call(command):
         except (ValueError, SyntaxError):
             return None
 
-    return f"{names[1]}.{names[2]}", kwargs
+    return f"{names[1]}.{names[2]}", kwargs, context
 
 
 def _ops_kwargs_accepted(idname, kwargs):
@@ -272,16 +295,24 @@ def create_pie_menu_class(pie_data):
                         # method, both align and axis unwraps -- silently ran
                         # with the operator's bare defaults instead.
                         parsed = _parse_bpy_ops_call(command)
-                        if parsed and not _ops_kwargs_accepted(*parsed):
+                        if parsed and not _ops_kwargs_accepted(parsed[0], parsed[1]):
                             # A value the operator will not take -- run the
                             # command as written, so the error names it
                             op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                             op.command = command
                         elif parsed:
-                            idname, kwargs = parsed
+                            idname, kwargs, context = parsed
                             op = None
                             try:
-                                op = container.operator(idname, text=label, **icon_kw)
+                                # A context written in the command applies to
+                                # this button only; every other slot keeps
+                                # EXEC_DEFAULT
+                                if context:
+                                    container.operator_context = context
+                                try:
+                                    op = container.operator(idname, text=label, **icon_kw)
+                                finally:
+                                    container.operator_context = 'EXEC_DEFAULT'
                                 for prop_name, value in kwargs.items():
                                     # An option this install of the operator
                                     # does not define is skipped, not fatal:
@@ -303,7 +334,8 @@ def create_pie_menu_class(pie_data):
                                     op.command = command
                         else:
                             # Not parseable as literal keyword arguments (a
-                            # positional arg, a **spread, a non-literal value)
+                            # positional arg other than an execution context,
+                            # a **spread, a non-literal value)
                             # -- run the command as written instead of
                             # guessing at it
                             op = container.operator("cocopie.execute_command", text=label, **icon_kw)

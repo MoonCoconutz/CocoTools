@@ -13,6 +13,7 @@ the cursor is captured while the *context menu itself* draws (where
 """
 
 import re
+import bpy
 from bpy.props import StringProperty, IntProperty, BoolProperty
 from bpy.types import Operator, Menu
 from ..items import POSITION_NAMES
@@ -143,7 +144,15 @@ def _write_capture(item, operator_string, prop_label, is_property):
         else:
             op_name = op_name.lower()
         item.label = op_name.split('.')[-1].replace('_', ' ').title()
-        item.command = f"bpy.ops.{op_name}()"
+        # The button that was right-clicked ran the operator through its
+        # invoke(); a pie slot runs execute() unless told otherwise. For an
+        # add-on operator whose invoke() prepares state its execute() reads
+        # (Mio3 UV's Sort), execute alone fails, so a Python operator that
+        # defines invoke() keeps it. C operators cannot be inspected this way
+        # and keep the pie's usual execute.
+        op_class = getattr(bpy.types, operator_string, None)
+        wants_invoke = op_class is not None and callable(getattr(op_class, "invoke", None))
+        item.command = f"bpy.ops.{op_name}({repr('INVOKE_DEFAULT') if wants_invoke else ''})"
 
     return item.label
 
