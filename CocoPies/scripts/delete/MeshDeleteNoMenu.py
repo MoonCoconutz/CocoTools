@@ -46,6 +46,8 @@ def select_only_survivors(found):
                 elem.select = False
         for v in verts:
             v.select = True
+        # Up to the edges between them too, which a delete by edge acts on
+        bm.select_flush(True)
     return True
 
 
@@ -74,19 +76,20 @@ elif use_edge:
     # delete(type='EDGE') takes the faces on both sides with it; dissolving
     # merges them instead.
     #
-    # Dissolving the edges alone does not remove their vertices, though: it
-    # clears a vertex only when that leaves it with two edges. A single edge
-    # at a cube's corner lost one end and an interior edge lost neither --
-    # while X is expected to take both. So whatever of the selected edges'
-    # vertices survives is dissolved as well. Dissolving vertices from the
-    # start is not the same thing: an edge loop running out to a border comes
-    # out as one large n-gon instead of cleanly removed, which is why the
-    # edges still go first.
+    # use_verts=True also dissolves an end vertex left with just two edges,
+    # the one it would otherwise leave as a stray kink. A vertex that still
+    # joins three or more edges stays as a T-junction, as it should: dissolving
+    # it too merged the faces on every side into one large n-gon (an interior
+    # edge in a grid took its four neighbours with it). A selected edge with
+    # no face (a wire) has nothing to dissolve into, so whatever is left of
+    # those is deleted as edges: that takes the edge and any vertex left
+    # without one, but not a vertex another, unselected wire edge still uses.
     found = selected_verts()
     bpy.ops.mesh.dissolve_edges(use_verts=True, use_face_split=False)
+    found = [(bm, [v for v in verts if v.is_valid and not v.link_faces])
+             for bm, verts in found]
     if select_only_survivors(found):
-        bpy.ops.mesh.dissolve_verts()
-    delete_survivors(found)
+        bpy.ops.mesh.delete(type='EDGE')
 else:
     # A lone face has no dissolve equivalent - removing it leaves a hole.
     bpy.ops.mesh.delete(type='FACE')
