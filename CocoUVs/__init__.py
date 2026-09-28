@@ -29,6 +29,3 @@ def unregister():
     for module in reversed(_modules):
         module.unregister()
 
-
-if __name__ == "__main__":
-    register()

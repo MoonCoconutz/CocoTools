@@ -55,7 +55,7 @@ def _redraw(context=None):
 
 
 def _index_changed(self, context):
-    if _state["drag"] is None:
+    if _state["drag"] is None and not _quiet[0]:
         record_change()
     _redraw(context)
 
@@ -73,7 +73,7 @@ UNDO_LAYER = ".cocouvs_trims_undo"
 _snapshots = {}         # number -> state
 _base = {}              # mesh pointer -> number of the state before its first change
 _next = [1]
-_restoring = [False]
+_quiet = [False]        # writes that must not record a change (restoring, building an area)
 _last_seen = [None]     # state at the last redraw: "before" for a mesh's first change
 
 
@@ -92,7 +92,7 @@ def _edit_mesh():
 
 def record_change():
     """Call after any change to the areas while in Edit Mode."""
-    if _restoring[0]:
+    if _quiet[0]:
         return
     me = _edit_mesh()
     if me is None:
@@ -115,7 +115,7 @@ def record_change():
 
 
 def _restore(state):
-    _restoring[0] = True
+    _quiet[0] = True
     try:
         for mat in bpy.data.materials:
             areas, index = state.get(mat.name, ([], -1))
@@ -127,7 +127,7 @@ def _restore(state):
                 a.name, a.rect, a.tiling, a.color = name, rect, tiling, color
             mat.cocouvs_trim_index = index
     finally:
-        _restoring[0] = False
+        _quiet[0] = False
     _last_seen[0] = state
     _redraw()
 
@@ -202,22 +202,27 @@ def _unique_name(areas, base="Trim"):
 
 
 def add_area(mat, rect, name=None, tiling=None, color=None):
-    """Append an area to the material's list and make it the picked one."""
+    """Append an area to the material's list and make it the picked one. The
+    caller records the change once (record_change), not every field."""
     areas = mat.cocouvs_trims
-    name = name or _unique_name(areas)
-    area = areas.add()
-    area.name = name
     u0, v0, u1, v1 = rect
-    area.rect = (min(u0, u1), min(v0, v1), max(u0, u1), max(v0, v1))
     if tiling is None:
         # A new area tiles along its long side.
         tiling = 'HORIZONTAL' if abs(u1 - u0) >= abs(v1 - v0) else 'VERTICAL'
-    area.tiling = tiling
     if color is None:
-        hue = (len(areas) * 0.618034) % 1.0
+        hue = ((len(areas) + 1) * 0.618034) % 1.0
         color = colorsys.hsv_to_rgb(hue, 0.6, 1.0)
-    area.color = color
-    mat.cocouvs_trim_index = len(areas) - 1
+    _quiet[0] = True
+    try:
+        name = name or _unique_name(areas)
+        area = areas.add()
+        area.name = name
+        area.rect = (min(u0, u1), min(v0, v1), max(u0, u1), max(v0, v1))
+        area.tiling = tiling
+        area.color = color
+        mat.cocouvs_trim_index = len(areas) - 1
+    finally:
+        _quiet[0] = False
     return area
 
 
@@ -554,11 +559,11 @@ class COCOUVS_OT_trim_import(_TrimOperator):
         mat = material(context)
         if self.replace:
             mat.cocouvs_trims.clear()
-            record_change()
         tilings = {item[0] for item in TILING_ITEMS}
         for a in areas:
             tiling = a.get("tiling") if a.get("tiling") in tilings else None
             add_area(mat, a["rect"], name=a.get("name"), tiling=tiling, color=a.get("color"))
+        record_change()
         _redraw(context)
         self.report({'INFO'}, f"Loaded {len(areas)} trim areas into {mat.name}")
         return {'FINISHED'}
@@ -983,10 +988,13 @@ def _rect_lines(x0, y0, x1, y1):
 
 def _draw_overlay():
     context = bpy.context
-    wm = context.window_manager
-    if _state["drag"] is None and not _restoring[0]:
-        _last_seen[0] = _snapshot()
-    if not (getattr(wm, "cocouvs_trims_show", False) or _state["running"]):
+    if _state["drag"] is None and not _quiet[0]:
+        # The "before" state for the edit mesh's first change (record_change);
+        # only needed in Edit Mode, before the mesh carries the undo attribute.
+        me = _edit_mesh()
+        if me is not None and me.attributes.get(UNDO_LAYER) is None:
+            _last_seen[0] = _snapshot()
+    if not (context.window_manager.cocouvs_trims_show or _state["running"]):
         return
     space = context.space_data
     if space is None or space.mode != 'UV':

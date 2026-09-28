@@ -14,8 +14,10 @@ A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
 ## Layout
 
 - `common.py`: no classes. Which objects and meshes a command acts on
-  (`target_objects`, `target_meshes`, `edit_objects`), UV visibility and
-  selection rules, the island finder, the area and density maths,
+  (`target_objects`, `target_meshes`, `edit_objects`, `has_targets`), what the
+  overlays show (`source_objects`), the overlays' shared mesh read
+  (`read_mesh`, cached), their 3D drawing (`draw_on_surface`), UV visibility
+  and selection rules, the island finders, the area and density maths,
   `scale_island`, `scale_islands_together`.
 - `properties.py`: `Scene.cocouvs` settings, and `WindowManager.cocouvs_heatmap`
   (on the WM so it is never saved into a .blend).
@@ -38,6 +40,14 @@ A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
 `target_objects()` = active + selected + anything in Edit Mode, each once,
 active first; `target_meshes()` = their meshes, one per data block. Every
 command works on a UV map **name**, on every target that has it.
+
+**Only scan the view layer while editing.** Finding the objects in Edit Mode
+means looking at every object, and the sidebar did that about ten times per
+redraw (five panel polls, the list, each row's camera): 6.5 ms per redraw in
+a 5000-object scene. Blender keeps objects in Edit Mode only alongside an
+active one that is, so `common._editing()` returns at once unless the active
+object is in Edit Mode, and the panels poll `has_targets()` (active or a
+selected mesh). Now 0.6 ms (2026-09-28).
 
 - **The list is the union of names, not the active mesh's `uv_layers`.** The
   user wants every UV map on any selected object listed, whichever object is
@@ -153,6 +163,19 @@ command works on a UV map **name**, on every target that has it.
   address), never `BMVert.index` or `index_update()`. Faces are fan-split in
   numpy, not with `calc_loop_triangles()`. A headless test checks that
   vert/face/loop indices are untouched.
+- **One read for both overlays.** The heatmap and the Debug overlays read
+  the mesh through `common.read_mesh()`, which caches each object's arrays
+  until the next depsgraph update (both handlers call `forget_reads()`; so do
+  switching either on or off). Their timers fire together after an edit, so
+  with both on the mesh is read once instead of twice (7.9k faces: 0.164 s ->
+  0.125 s for both recomputes). The cached dict is shared: `analyze()` adds
+  its masks to it, which the heatmap ignores. The select operator
+  (`keep_faces=True`) always reads fresh, since it needs live BMFaces.
+- **The switch survives a file opened without its UI.** `cocouvs_heatmap`
+  lives on the WindowManager: a normal open or File > New resets it, but with
+  Load UI off it keeps this session's value. `_load_post` therefore re-applies
+  the switch (`set_enabled(wm.cocouvs_heatmap)`) instead of switching off,
+  which left it showing "on" with nothing drawn.
 - **Speed:** one Python pass reads each corner's UV and `hash(loop.vert)`.
   Everything else is numpy: vertex lookup by `searchsorted`, the corner key
   packed into one int64, islands by min-label propagation with pointer
@@ -248,6 +271,13 @@ Existing seams are replaced.
 - While on, Solid 3D views in Material colour switch to Texture colour (the
   material's image node is kept active for that), and UV Editors show the
   image. Both are restored when it goes off; the view state is Python-only.
+- **Every original is stored before any slot is changed.** Objects sharing
+  a mesh share its slots (link DATA): storing and assigning one object at a
+  time made the second one record the checker as its own material, and
+  depending on the order objects are restored in (alphabetical), turning the
+  checker off left it on the mesh. Found and fixed 2026-09-28.
+- New materials come with a node tree on 5.x; `Material.use_nodes` is
+  deprecated (a DeprecationWarning, removal planned for 6.0), so it is not set.
 - **Removing the added slot must use `mesh.materials.clear()`, not
   `pop()`**: on 5.2, `pop()` leaves the object's `material_slots` count
   stale (an empty slot stays in the Material tab), even after
@@ -319,7 +349,12 @@ Existing seams are replaced.
   Property updates record through `_index_changed` (the UI then pushes its
   own step); list operators record at the end of `execute`; draw mode, which
   has no undo flag, calls `commit()` on release and on X (`ed.undo_push`).
-  Nothing is recorded mid-drag. Snapshots are Python-only, so after
+  Nothing is recorded mid-drag. `add_area()` sets its fields under `_quiet`
+  and its caller records once: each field's update used to record, 26
+  snapshots of every material for an import of five areas.
+  `_last_seen` (the redraw snapshot) is taken only in Edit Mode, and only
+  while the edit mesh has no undo attribute yet; before, every UV Editor
+  redraw copied every material's areas, in any mode. Snapshots are Python-only, so after
   reopening a file undo only reaches steps made since. Object Mode needs
   none of it (memfile undo holds materials). The attribute stays on the mesh.
 - **Areas from Selection is one area per selected face** (its UV bounding
@@ -349,7 +384,9 @@ preferences entry, which is the case for the verification loader.
 
 ## Verifying
 
-The headless script covers:
+The headless scripts (8 of them, 132 checks, plus 26 for the 2026-09-28
+cleanup: shared read, Edit Mode targets, checker on instances, heatmap after
+an open without UI, trims recording) cover:
 
 - add, remove and move, in Object and Edit Mode;
 - row clicks, renames and the camera through the list's own properties;

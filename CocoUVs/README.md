@@ -83,6 +83,7 @@ behind the UVs.
 Next to the button: the size, 256 to 8192 px, and the folder button to import
 an image. Below them: the map (Blender's UV Grid or Color Grid, or any image
 you imported). Size and map can be changed while the checker is on.
+Objects sharing a mesh get their materials back too.
 
 ### Trims
 

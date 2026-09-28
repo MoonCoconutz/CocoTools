@@ -89,10 +89,8 @@ def make_active(name, context=None):
             me.uv_layers.active_index = index
     context = context or bpy.context
     if context.scene.cocouvs.update_seams:
-        done = set()
-        for obj in common.target_objects(context):
-            if obj.data.as_pointer() not in done and obj.data.uv_layers.get(name) is not None:
-                done.add(obj.data.as_pointer())
+        for obj in common.unique_meshes(common.target_objects(context)):
+            if obj.data.uv_layers.get(name) is not None:
                 common.seams_from_uv_map(obj, name)
 
 
@@ -499,35 +497,31 @@ class COCOUVS_UL_uv_maps(UIList):
     chosen one is drawn red."""
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            counts, total, chosen = _row_state
-            active_on = counts.get(item.name, 0)
-            stragglers = active_on > 0 and item.name != chosen
-            main = layout.row()
-            main.alert = stragglers
-            main.prop(item, "name", text="", emboss=False, icon='GROUP_UVS')
-            if stragglers:
-                # A solid red box. `alert` on emboss-less text is only a faint
-                # tint in some themes (measured on the user's: (0.89, 0.80,
-                # 0.84) against (0.91, 0.93, 0.95)); an embossed widget turns
-                # properly red in any theme. The button only explains itself.
-                box = main.row(align=True)
-                box.alert = True
-                box.ui_units_x = 2.2
-                info = box.operator("cocouvs.uv_map_mismatch", text=f"{active_on}/{total}")
-                info.name = item.name
-                info.chosen = chosen or ""
-                info.count = active_on
-                info.total = total
-            elif total > 1 and active_on:
-                count = main.row()
-                count.alignment = 'RIGHT'
-                count.label(text=f"{active_on}/{total}")
-            icon = 'RESTRICT_RENDER_OFF' if item.render else 'RESTRICT_RENDER_ON'
-            layout.prop(item, "render", text="", icon=icon, emboss=False)
-        elif self.layout_type == 'GRID':
-            layout.alignment = 'CENTER'
-            layout.label(text="", icon='GROUP_UVS')
+        counts, total, chosen = _row_state
+        active_on = counts.get(item.name, 0)
+        stragglers = active_on > 0 and item.name != chosen
+        main = layout.row()
+        main.alert = stragglers
+        main.prop(item, "name", text="", emboss=False, icon='GROUP_UVS')
+        if stragglers:
+            # A solid red box. `alert` on emboss-less text is only a faint
+            # tint in some themes (measured on the user's: (0.89, 0.80,
+            # 0.84) against (0.91, 0.93, 0.95)); an embossed widget turns
+            # properly red in any theme. The button only explains itself.
+            box = main.row(align=True)
+            box.alert = True
+            box.ui_units_x = 2.2
+            info = box.operator("cocouvs.uv_map_mismatch", text=f"{active_on}/{total}")
+            info.name = item.name
+            info.chosen = chosen or ""
+            info.count = active_on
+            info.total = total
+        elif total > 1 and active_on:
+            count = main.row()
+            count.alignment = 'RIGHT'
+            count.label(text=f"{active_on}/{total}")
+        icon = 'RESTRICT_RENDER_OFF' if item.render else 'RESTRICT_RENDER_ON'
+        layout.prop(item, "render", text="", icon=icon, emboss=False)
 
 
 @bpy.app.handlers.persistent

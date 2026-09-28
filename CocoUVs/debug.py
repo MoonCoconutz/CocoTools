@@ -7,7 +7,8 @@ them in Edit Mode). Each kind has a select operator.
 
 Same rules as the heatmap: never recompute from a draw callback (an edit only
 marks the overlay stale and hides it; a timer recomputes once edits stop), and
-only read the mesh while drawing - it may be mid-transform.
+only read the mesh - it may be mid-transform. The read (common.read_mesh) is
+shared with the heatmap.
 
 Definitions:
 - Flipped: an island whose total signed UV area is negative - its UVs wind
@@ -37,15 +38,15 @@ OVERLAP_EPS = 1e-6     # UV units of overlap below which triangles only "touch"
 SAT_CHUNK = 400_000    # triangle pairs tested per numpy batch
 
 FACE_KINDS = ('DONE', 'FLIPPED', 'OVERLAP', 'SELF')
-# kind: (label, legend icon, strip-colour slot for the overlay, fallback RGB)
+# kind: (label, legend icon, strip-colour slot for the overlay)
 KIND_INFO = {
-    'DONE': ("Done", 'STRIP_COLOR_05', 4, (0.365, 0.714, 0.918)),
-    'FLIPPED': ("Flipped", 'STRIP_COLOR_07', 6, (0.776, 0.451, 0.722)),
-    'OVERLAP': ("Overlapping", 'STRIP_COLOR_02', 1, (0.945, 0.639, 0.333)),
-    'SELF': ("Self-Intersecting", 'STRIP_COLOR_03', 2, (0.945, 0.863, 0.333)),
+    'DONE': ("Done", 'STRIP_COLOR_05', 4),
+    'FLIPPED': ("Flipped", 'STRIP_COLOR_07', 6),
+    'OVERLAP': ("Overlapping", 'STRIP_COLOR_02', 1),
+    'SELF': ("Self-Intersecting", 'STRIP_COLOR_03', 2),
 }
 # Edge marks, drawn bottom to top, with the 3D Viewport theme colour they use.
-EDGE_TYPES = ('BEVEL', 'CREASE', 'SHARP', 'SEAM')
+EDGE_TYPES = common.EDGE_TYPES
 EDGE_THEME = {'BEVEL': "bevel", 'CREASE': "crease", 'SHARP': "sharp", 'SEAM': "seam"}
 
 _handles = []
@@ -66,108 +67,13 @@ def _any_enabled(wm):
 
 def kind_color(kind):
     """The overlay colour: the theme's strip colour behind the row's legend
-    icon, so the icon and the overlay always match; a fixed colour otherwise."""
-    label, icon, slot, fallback = KIND_INFO[kind]
-    try:
-        rgb = tuple(bpy.context.preferences.themes[0].strip_color[slot].color)
-    except (AttributeError, IndexError, TypeError):
-        rgb = fallback
-    return (*rgb, ALPHA)
+    icon, so the icon and the overlay always match."""
+    return (*bpy.context.preferences.themes[0].strip_color[KIND_INFO[kind][2]].color, ALPHA)
 
 
 def edge_color(kind):
     theme = bpy.context.preferences.themes[0].view_3d
-    return (*tuple(getattr(theme, EDGE_THEME[kind]))[:3], 1.0)
-
-
-# --- Reading the mesh (read-only) -------------------------------------------
-
-def _source_objects(view_layer):
-    """Objects in Edit Mode if there are any, otherwise the selected meshes."""
-    editing = [o for o in view_layer.objects if o.type == 'MESH' and o.mode == 'EDIT']
-    objects = editing or [o for o in view_layer.objects.selected
-                          if o.type == 'MESH' and o.visible_get(view_layer=view_layer)]
-    unique, seen = [], set()
-    for obj in objects:
-        if obj.data.as_pointer() not in seen:
-            seen.add(obj.data.as_pointer())
-            unique.append(obj)
-    return unique, bool(editing)
-
-
-def _read(obj, editing, sync, want_edges, keep_faces=False):
-    """One object's visible faces as numpy arrays. Only reads the mesh.
-    With keep_faces the BMFace list is kept for selecting (Edit Mode only)."""
-    me = obj.data
-    bm = bmesh.from_edit_mesh(me) if editing else bmesh.new()
-    if not editing:
-        bm.from_mesh(me)
-    try:
-        uv_layer = bm.loops.layers.uv.active
-        active = me.uv_layers.active
-        if uv_layer is None or active is None:
-            return None
-        faces = [f for f in bm.faces if not f.hide]
-        if not faces:
-            return None
-        done_layer = bm.faces.layers.bool.get(common.done_layer_name(active.name))
-        part = {
-            "obj": obj,
-            "counts": np.array([len(f.loops) for f in faces], dtype=np.int64),
-            "shown": np.array([sync or f.select for f in faces], dtype=bool) if editing
-            else np.zeros(len(faces), dtype=bool),
-            "done": np.array([f[done_layer] for f in faces], dtype=bool) if done_layer is not None
-            else np.zeros(len(faces), dtype=bool),
-            "uv": np.array([loop[uv_layer].uv[:] for f in faces for loop in f.loops], dtype=np.float64),
-        }
-        loop_vert = np.array([hash(loop.vert) for f in faces for loop in f.loops], dtype=np.int64)
-        verts = bm.verts
-        vert_hash = np.array([hash(v) for v in verts], dtype=np.int64)
-        vert_co = np.array([v.co[:] for v in verts], dtype=np.float64)
-        if want_edges:
-            loop_edge = np.array([hash(loop.edge) for f in faces for loop in f.loops], dtype=np.int64)
-            edges = bm.edges
-            edge_hash = np.array([hash(e) for e in edges], dtype=np.int64)
-            crease = bm.edges.layers.float.get("crease_edge")
-            bevel = bm.edges.layers.float.get("bevel_weight_edge")
-            flags = {
-                'SEAM': np.array([e.seam for e in edges], dtype=bool),
-                'SHARP': np.array([not e.smooth for e in edges], dtype=bool),
-                'CREASE': np.array([e[crease] > 0.0 for e in edges], dtype=bool) if crease is not None
-                else np.zeros(len(edges), dtype=bool),
-                'BEVEL': np.array([e[bevel] > 0.0 for e in edges], dtype=bool) if bevel is not None
-                else np.zeros(len(edges), dtype=bool),
-            }
-        if keep_faces:
-            part["faces"] = faces
-            part["bm"] = bm
-    finally:
-        if not editing:
-            bm.free()
-
-    order = np.argsort(vert_hash)
-    loop_vi = order[np.searchsorted(vert_hash[order], loop_vert)]
-    counts = part["counts"]
-    starts = np.zeros(len(counts), dtype=np.int64)
-    starts[1:] = np.cumsum(counts)[:-1]
-    part["starts"] = starts
-    part["island"] = common.face_islands(counts, starts, loop_vi, part["uv"])
-    mw = np.array(obj.matrix_world, dtype=np.float64)
-    part["world"] = (vert_co @ mw[:3, :3].T + mw[:3, 3])[loop_vi]
-
-    # Fan triangles (first corner, k, k+1), per face.
-    n_tris = counts - 2
-    tri_face = np.repeat(np.arange(len(counts)), n_tris)
-    k = np.arange(len(tri_face)) - np.repeat(np.cumsum(n_tris) - n_tris, n_tris) + 1
-    a = starts[tri_face]
-    part["tri_face"] = tri_face
-    part["corners"] = np.stack([a, a + k, a + k + 1], axis=1)
-
-    if want_edges:
-        order = np.argsort(edge_hash)
-        loop_ei = order[np.searchsorted(edge_hash[order], loop_edge)]
-        part["loop_marks"] = {kind: flags[kind][loop_ei] for kind in EDGE_TYPES}
-    return part
+    return (*getattr(theme, EDGE_THEME[kind])[:3], 1.0)
 
 
 # --- Analysis ------------------------------------------------------------------
@@ -311,8 +217,8 @@ def _compute():
     kinds = _enabled_kinds(wm)
     want_edges = wm.cocouvs_debug_edges
     sync = window.scene.tool_settings.use_uv_select_sync
-    objects, editing = _source_objects(window.view_layer)
-    parts = [p for p in (_read(o, editing, sync, want_edges and editing) for o in objects) if p]
+    objects, editing = common.source_objects(window.view_layer)
+    parts = [p for p in (common.read_mesh(o, editing, sync, want_edges and editing) for o in objects) if p]
     if not parts:
         return None
     counts = analyze(parts, kinds)
@@ -408,13 +314,11 @@ def _draw_uv():
         return
     uv, _view3d, lines = batches
     region = context.region
-    view2d = region.view2d
-    x0, y0 = view2d.view_to_region(0.0, 0.0, clip=False)
-    x1, y1 = view2d.view_to_region(1.0, 1.0, clip=False)
+    x, y, w, h = common.uv_square(region)
     gpu.state.blend_set('ALPHA')
     with gpu.matrix.push_pop():
-        gpu.matrix.translate((x0, y0))
-        gpu.matrix.scale((x1 - x0, y1 - y0))
+        gpu.matrix.translate((x, y))
+        gpu.matrix.scale((w, h))
         tri_shader = gpu.shader.from_builtin('SMOOTH_COLOR')
         for batch in uv:
             batch.draw(tri_shader)
@@ -433,27 +337,12 @@ def _draw_3d():
     batches = _get_batches()
     if batches is None or not batches[1]:
         return
-    shader = gpu.shader.from_builtin('SMOOTH_COLOR')
-    gpu.state.blend_set('ALPHA')
-    gpu.state.depth_test_set('LESS_EQUAL')
-    gpu.state.depth_mask_set(False)
-    with gpu.matrix.push_pop_projection():
-        # Pulled a hair towards the camera against z-fighting, as the heatmap.
-        proj = gpu.matrix.get_projection_matrix().copy()
-        if proj[3][3] == 0.0:
-            proj[2][3] *= 1.0 + 1e-4
-        else:
-            proj[2][3] -= 1e-5
-        gpu.matrix.load_projection_matrix(proj)
-        for batch in batches[1]:
-            batch.draw(shader)
-    gpu.state.depth_mask_set(True)
-    gpu.state.depth_test_set('NONE')
-    gpu.state.blend_set('NONE')
+    common.draw_on_surface(batches[1], gpu.shader.from_builtin('SMOOTH_COLOR'))
 
 
 @bpy.app.handlers.persistent
 def _depsgraph_update(_scene, _depsgraph):
+    common.forget_reads()
     mark_dirty()
 
 
@@ -468,6 +357,7 @@ def refresh(_self=None, _context=None):
     _remove_handlers()
     _data = None
     _batches = None
+    common.forget_reads()
     wm = bpy.context.window_manager
     if wm is not None and _any_enabled(wm):
         _handles.append((bpy.types.SpaceImageEditor, bpy.types.SpaceImageEditor.draw_handler_add(
@@ -534,7 +424,7 @@ class COCOUVS_OT_debug_select(Operator):
     def execute(self, context):
         sync = context.tool_settings.use_uv_select_sync
         edges = self.kind == 'EDGES'
-        parts = [p for p in (_read(o, True, sync, edges, keep_faces=True)
+        parts = [p for p in (common.read_mesh(o, True, sync, edges, keep_faces=True)
                              for o in common.edit_objects(context)) if p]
         if not parts:
             self.report({'WARNING'}, "No UVs to select from")

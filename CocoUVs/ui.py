@@ -15,7 +15,7 @@ class _CocoUVsPanel:
 
     @classmethod
     def poll(cls, context):
-        return context.space_data.mode == 'UV' and bool(common.target_objects(context))
+        return context.space_data.mode == 'UV' and common.has_targets(context)
 
 
 class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
@@ -52,7 +52,7 @@ class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
         # A popover opens anchored under the button, like CocoBackup's menu.
         side.popover("COCOUVS_PT_rename", text="", icon='GREASEPENCIL')
 
-        count = len(common.target_meshes(context))
+        count = len({obj.data for obj in objects})
         if count > 1:
             info = layout.row()
             info.active = False
@@ -177,7 +177,7 @@ class COCOUVS_PT_debug(_CocoUVsPanel, Panel):
 
         col = layout.column(align=True)
         for kind in debug.FACE_KINDS:
-            label, icon, _slot, _rgb = debug.KIND_INFO[kind]
+            label, icon, _slot = debug.KIND_INFO[kind]
             prop = f"cocouvs_debug_{kind.lower()}"
             text = label
             if getattr(wm, prop):

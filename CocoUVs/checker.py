@@ -20,7 +20,6 @@ from . import common
 MATERIAL = "CocoUVs Checker"
 IMAGE = "CocoUVs Checker"
 ORIG_KEY = "cocouvs_checker_orig"
-SIZES = (256, 512, 1024, 2048, 4096, 8192)
 
 _addon_keymaps = []
 _view_state = {}   # space pointer -> what to restore
@@ -73,8 +72,7 @@ def _update_image(scene):
 def _material():
     mat = bpy.data.materials.get(MATERIAL)
     if mat is None:
-        mat = bpy.data.materials.new(MATERIAL)
-        mat.use_nodes = True
+        mat = bpy.data.materials.new(MATERIAL)   # comes with a node tree on 5.x
     tree = mat.node_tree
     tex = tree.nodes.get("Checker")
     if tex is None:
@@ -88,7 +86,8 @@ def _material():
     return mat
 
 
-def _apply(obj, mat):
+def _remember(obj):
+    """Store what the object's slots hold now, unless already stored."""
     if ORIG_KEY in obj:
         return
     slots = obj.material_slots
@@ -96,7 +95,10 @@ def _apply(obj, mat):
         "slots": [[s.link, s.material.name if s.material else ""] for s in slots],
         "added": 0 if len(slots) else 1,
     })
-    if not len(slots):
+
+
+def _apply(obj, mat):
+    if not len(obj.material_slots):
         obj.data.materials.append(None)
     for slot in obj.material_slots:
         slot.material = mat
@@ -146,6 +148,10 @@ def turn_on(context):
     image = _update_image(context.scene)
     mat = _material()
     objects = common.target_objects(context)
+    # Every original first: objects sharing a mesh share its slots, and the
+    # second one would otherwise record the checker as its own material.
+    for obj in objects:
+        _remember(obj)
     for obj in objects:
         _apply(obj, mat)
     _set_views(True, image)

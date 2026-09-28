@@ -3,7 +3,9 @@ density maths. No Blender classes are registered here."""
 
 import math
 
+import bmesh
 import bpy
+import gpu
 import numpy as np
 
 # Display unit -> how many of that unit make one metre.
@@ -39,8 +41,6 @@ def seams_from_uv_map(obj, uv_name):
     """Replace the mesh's seams with the island borders of `uv_name`: an edge
     is a seam where the faces on either side do not share UVs at both ends.
     Mesh boundary edges are left unmarked, as Blender's Seams from Islands."""
-    import bmesh
-
     me = obj.data
     in_edit = obj.mode == 'EDIT'
     bm = bmesh.from_edit_mesh(me) if in_edit else bmesh.new()
@@ -84,55 +84,69 @@ def remove_done_marks(me, uv_name):
         me.attributes.remove(done)
 
 
+def _editing(view_layer):
+    """Mesh objects in Edit Mode. Blender keeps objects in Edit Mode only
+    alongside an active one that is, so outside Edit Mode this costs nothing;
+    the scan of the whole view layer runs only while editing."""
+    active = view_layer.objects.active
+    if active is None or active.mode != 'EDIT':
+        return []
+    return [o for o in view_layer.objects if o.type == 'MESH' and o.mode == 'EDIT']
+
+
+def unique_meshes(objects):
+    """One object per mesh data block, order kept."""
+    result = []
+    seen = set()
+    for obj in objects:
+        if obj.data not in seen:
+            seen.add(obj.data)
+            result.append(obj)
+    return result
+
+
 def target_objects(context=None):
     """Every mesh object the UV map commands act on: the active object plus
     every selected one, and anything in Edit Mode, each once, active first."""
-    context = context or bpy.context
-    view_layer = context.view_layer
+    view_layer = (context or bpy.context).view_layer
     candidates = []
     active = view_layer.objects.active
     if active is not None:
         candidates.append(active)
     candidates.extend(view_layer.objects.selected)
-    candidates.extend(o for o in view_layer.objects if o.mode == 'EDIT')
+    candidates.extend(_editing(view_layer))
+    return list(dict.fromkeys(o for o in candidates
+                              if o is not None and o.type == 'MESH' and o.data is not None))
 
-    objects = []
-    seen = set()
-    for obj in candidates:
-        if obj.type != 'MESH' or obj.data is None or obj.as_pointer() in seen:
-            continue
-        seen.add(obj.as_pointer())
-        objects.append(obj)
-    return objects
+
+def has_targets(context):
+    """Whether target_objects() would find anything, without collecting them."""
+    view_layer = context.view_layer
+    active = view_layer.objects.active
+    if active is not None and active.type == 'MESH':
+        return True
+    return any(o is not None and o.type == 'MESH' for o in view_layer.objects.selected)
 
 
 def target_meshes(context=None):
     """The meshes of target_objects(). Instances sharing one mesh count once.
     The active object's mesh comes first."""
-    meshes = []
-    seen = set()
-    for obj in target_objects(context):
-        key = obj.data.as_pointer()
-        if key not in seen:
-            seen.add(key)
-            meshes.append(obj.data)
-    return meshes
+    return [obj.data for obj in unique_meshes(target_objects(context))]
 
 
 def edit_objects(context=None):
     """Mesh objects in Edit Mode, one per mesh data block."""
-    context = context or bpy.context
-    result = []
-    seen = set()
-    for obj in context.view_layer.objects:
-        if obj.type != 'MESH' or obj.mode != 'EDIT':
-            continue
-        key = obj.data.as_pointer()
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(obj)
-    return result
+    return unique_meshes(_editing((context or bpy.context).view_layer))
+
+
+def source_objects(view_layer):
+    """What the overlays show: the objects in Edit Mode if there are any,
+    otherwise the visible selected meshes. One per mesh. Returns
+    (objects, editing)."""
+    editing = _editing(view_layer)
+    objects = editing or [o for o in view_layer.objects.selected
+                          if o is not None and o.type == 'MESH' and o.visible_get(view_layer=view_layer)]
+    return unique_meshes(objects), bool(editing)
 
 
 def ppm_to_unit(ppm, unit):
@@ -259,12 +273,8 @@ def apply_face_selection(bm, visible, matched_faces, sync, extend):
 
 
 def world_coords(bm, matrix):
-    """World-space position of every vertex, keyed by the BMVert itself.
-
-    Never key by BMVert.index: setting indices (index_update) writes to the
-    edit mesh, and the heatmap runs this from a draw callback while a
-    transform is in progress - the transform relies on those indices, and
-    renumbering them mid-drag scrambled the UVs and crashed Blender."""
+    """World-space position of every vertex, keyed by the BMVert itself, not
+    by BMVert.index: setting indices (index_update) writes to the edit mesh."""
     return {v: matrix @ v.co for v in bm.verts}
 
 
@@ -343,6 +353,136 @@ def scale_islands_together(islands_with_layers, factor):
         luv = loop[uv_layer]
         uv = luv.uv
         luv.uv = (cu + (uv.x - cu) * factor, cv + (uv.y - cv) * factor)
+
+
+# --- Reading a mesh for the overlays (read-only) ------------------------------
+# The heatmap and the Debug overlays both need every visible face's corners,
+# UVs, islands and world positions. Their timers fire together after an edit,
+# so one read is cached until the next depsgraph update (forget_reads()).
+
+EDGE_TYPES = ('BEVEL', 'CREASE', 'SHARP', 'SEAM')
+
+_reads = {}
+
+
+def forget_reads():
+    _reads.clear()
+
+
+def read_mesh(obj, editing, sync, want_edges=False, keep_faces=False):
+    """One object's visible faces as numpy arrays, or None. Only reads the
+    mesh: in Edit Mode this may run mid-transform, so vertices and edges are
+    identified by hash() (their address), never by .index. With keep_faces
+    (Edit Mode only, never cached) the BMFaces and the BMesh are kept too,
+    for selecting."""
+    if keep_faces:
+        return _read_mesh(obj, editing, sync, want_edges, True)
+    key = (obj.as_pointer(), editing, sync)
+    cached = _reads.get(key, False)
+    if cached is False or (want_edges and cached is not None and "loop_marks" not in cached):
+        cached = _reads[key] = _read_mesh(obj, editing, sync, want_edges, False)
+    return cached
+
+
+def _read_mesh(obj, editing, sync, want_edges, keep_faces):
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me) if editing else bmesh.new()
+    if not editing:
+        bm.from_mesh(me)
+    try:
+        uv_layer = bm.loops.layers.uv.active
+        active = me.uv_layers.active
+        if uv_layer is None or active is None:
+            return None
+        faces = [f for f in bm.faces if not f.hide]
+        if not faces:
+            return None
+        done_layer = bm.faces.layers.bool.get(done_layer_name(active.name))
+        part = {
+            "obj": obj,
+            "counts": np.array([len(f.loops) for f in faces], dtype=np.int64),
+            "shown": np.array([sync or f.select for f in faces], dtype=bool) if editing
+            else np.zeros(len(faces), dtype=bool),
+            "done": np.array([f[done_layer] for f in faces], dtype=bool) if done_layer is not None
+            else np.zeros(len(faces), dtype=bool),
+            "uv": np.array([loop[uv_layer].uv[:] for f in faces for loop in f.loops], dtype=np.float64),
+        }
+        loop_vert = np.array([hash(loop.vert) for f in faces for loop in f.loops], dtype=np.int64)
+        verts = bm.verts
+        vert_hash = np.array([hash(v) for v in verts], dtype=np.int64)
+        vert_co = np.array([v.co[:] for v in verts], dtype=np.float64)
+        if want_edges:
+            loop_edge = np.array([hash(loop.edge) for f in faces for loop in f.loops], dtype=np.int64)
+            edges = bm.edges
+            edge_hash = np.array([hash(e) for e in edges], dtype=np.int64)
+            crease = bm.edges.layers.float.get("crease_edge")
+            bevel = bm.edges.layers.float.get("bevel_weight_edge")
+            none = np.zeros(len(edges), dtype=bool)
+            flags = {
+                'SEAM': np.array([e.seam for e in edges], dtype=bool),
+                'SHARP': np.array([not e.smooth for e in edges], dtype=bool),
+                'CREASE': np.array([e[crease] > 0.0 for e in edges], dtype=bool) if crease is not None else none,
+                'BEVEL': np.array([e[bevel] > 0.0 for e in edges], dtype=bool) if bevel is not None else none,
+            }
+        if keep_faces:
+            part["faces"] = faces
+            part["bm"] = bm
+    finally:
+        if not editing:
+            bm.free()
+
+    order = np.argsort(vert_hash)
+    loop_vi = order[np.searchsorted(vert_hash[order], loop_vert)]
+    counts = part["counts"]
+    starts = np.zeros(len(counts), dtype=np.int64)
+    starts[1:] = np.cumsum(counts)[:-1]
+    part["starts"] = starts
+    part["island"] = face_islands(counts, starts, loop_vi, part["uv"])
+    mw = np.array(obj.matrix_world, dtype=np.float64)
+    part["world"] = (vert_co @ mw[:3, :3].T + mw[:3, 3])[loop_vi]
+
+    # Fan triangles (first corner, k, k+1), per face - read-only, unlike
+    # calc_loop_triangles().
+    n_tris = counts - 2
+    tri_face = np.repeat(np.arange(len(counts)), n_tris)
+    k = np.arange(len(tri_face)) - np.repeat(np.cumsum(n_tris) - n_tris, n_tris) + 1
+    a = starts[tri_face]
+    part["tri_face"] = tri_face
+    part["corners"] = np.stack([a, a + k, a + k + 1], axis=1)
+
+    if want_edges:
+        order = np.argsort(edge_hash)
+        loop_ei = order[np.searchsorted(edge_hash[order], loop_edge)]
+        part["loop_marks"] = {kind: flags[kind][loop_ei] for kind in EDGE_TYPES}
+    return part
+
+
+def draw_on_surface(batches, shader):
+    """Draw 3D Viewport overlay batches over the surface, pulled a hair
+    towards the camera so they do not z-fight with it (what Blender's own
+    overlays do)."""
+    gpu.state.blend_set('ALPHA')
+    gpu.state.depth_test_set('LESS_EQUAL')
+    gpu.state.depth_mask_set(False)
+    with gpu.matrix.push_pop_projection():
+        proj = gpu.matrix.get_projection_matrix().copy()
+        if proj[3][3] == 0.0:           # perspective
+            proj[2][3] *= 1.0 + 1e-4
+        else:                            # orthographic
+            proj[2][3] -= 1e-5
+        gpu.matrix.load_projection_matrix(proj)
+        for batch in batches:
+            batch.draw(shader)
+    gpu.state.depth_mask_set(True)
+    gpu.state.depth_test_set('NONE')
+    gpu.state.blend_set('NONE')
+
+
+def uv_square(region):
+    """(x, y, width, height): where the UV 0-1 square lands in the region."""
+    x0, y0 = region.view2d.view_to_region(0.0, 0.0, clip=False)
+    x1, y1 = region.view2d.view_to_region(1.0, 1.0, clip=False)
+    return x0, y0, x1 - x0, y1 - y0
 
 
 def redraw_all(context=None):
