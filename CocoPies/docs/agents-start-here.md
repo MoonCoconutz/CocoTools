@@ -21,19 +21,21 @@ addon's own Preferences panel. No build step, no linter, no test suite.
 "Development" means editing Python under `CocoPies/`, then proving it
 registers and behaves inside a real Blender.
 
-It must work on **Blender 4.5 and 5.2** — both are LTS releases the user
-actually runs. An API present in one and not the other is a real bug.
+It targets **Blender 5.2+ only** (since 1.13.0, 2026-09-28). Use 5.2 APIs
+directly and do not test on 4.5.
 
 ## There is one copy
 
-A single CocoTools clone, registered in **both** Blender 4.5 and 5.2 as a
-**Local extension repository** pointed at the clone's root (Preferences ▸ Get
-Extensions ▸ repositories ▸ **+** ▸ Add Local Repository). Blender lists every
-folder there holding a `blender_manifest.toml`, so `CocoPies/` *is* the live
-install in both Blenders. Editing a file is editing the install — there is no
-copy step and no deploy step.
+A single CocoTools clone, registered in Blender 5.2 as a **Local extension
+repository** pointed at the clone's root (Preferences ▸ Get Extensions ▸
+repositories ▸ **+** ▸ Add Local Repository). Blender lists every folder there
+holding a `blender_manifest.toml`, so `CocoPies/` *is* the live dev install.
+Editing a file is editing the install — there is no copy step and no deploy
+step. The user also runs the published build from the GitHub Pages feed
+(`bl_ext.mooncoconutz_github_io.CocoPies`), which keeps its own stored pies:
+read the live module name from `preferences.addons` before touching anything.
 
-CocoPies is an **extension** in both, so:
+CocoPies is an **extension**, so:
 
 - module name is `bl_ext.<repo_module>.CocoPies` — read the exact value from
   `bpy.context.preferences.addons`, it depends on the name given to the local
@@ -79,8 +81,9 @@ These each cost the project real damage at least once.
 
 ## Working with this user
 
-He judges UI by exact visual detail, and he is right to — several "fixes" in
-this project's history moved a bug rather than removing it. Two consequences:
+The user judges UI by exact visual detail, and is right to — several "fixes"
+in this project's history moved a bug rather than removing it. Two
+consequences:
 
 - Do not guess at pixels. If a question is about how something *draws*, use
   the GUI screenshot harness in [verify-and-deploy.md](verify-and-deploy.md)

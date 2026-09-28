@@ -12,13 +12,13 @@ the cursor is captured while the *context menu itself* draws (where
 `_CAPTURED` for the submenus to read.
 """
 
-import bpy
 import re
 from bpy.props import StringProperty, IntProperty, BoolProperty
 from bpy.types import Operator, Menu
 from ..items import POSITION_NAMES
 from ..utils import (
-    ADDON_ID, get_prefs, get_pie, ensure_slot_items, slot_is_used,
+    get_prefs, get_pie, ensure_slot_items, slot_is_used,
+    holding_rebuilds, unused_pie_name, unused_pie_idname,
 )
 from ..keymaps import register_pie_menus
 
@@ -100,28 +100,6 @@ def _capture_button(context):
         'prop_label': prop_id.replace('_', ' ').title(),
         'is_property': True,
     }
-
-
-def _unused_pie_name(prefs):
-    """A "Pie Menu N" that nothing is called yet.
-
-    Counting the pies is not enough: deleting one frees its number, so a plain
-    count can collide with a name that is still in use.
-    """
-    taken = {p.name for p in prefs.pie_menus} if prefs else set()
-    n = len(taken) + 1
-    while f"Pie Menu {n}" in taken:
-        n += 1
-    return f"Pie Menu {n}"
-
-
-def _unused_pie_idname(prefs):
-    """Likewise for the idname, which has to be unique to register at all"""
-    taken = {p.idname for p in prefs.pie_menus} if prefs else set()
-    n = len(taken) + 1
-    while f"COCOPIE_MT_custom_pie_{n}" in taken:
-        n += 1
-    return f"COCOPIE_MT_custom_pie_{n}"
 
 
 def _items_by_position(pie):
@@ -300,7 +278,9 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
         _write_capture(item, self.operator_string, self.prop_label, self.is_property)
 
         register_pie_menus()
-        self.report({'INFO'}, f"Added '{item.label}' to {pie.name} ({POSITION_NAMES[self.position]})")
+        # item.position, not self.position: that is -1 when no direction was
+        # asked for, and naming it raised after the item had been written
+        self.report({'INFO'}, f"Added '{item.label}' to {pie.name} ({POSITION_NAMES[item.position]})")
         return {'FINISHED'}
 
 
@@ -323,7 +303,8 @@ class COCOPIE_OT_add_to_new_pie(Operator):
         # The name is asked for up front rather than assigned and renamed
         # afterwards: renaming is only possible in the Preferences pie list,
         # and not having to go there is the point of this entry.
-        self.name = _unused_pie_name(get_prefs(context))
+        prefs = get_prefs(context)
+        self.name = unused_pie_name(prefs) if prefs is not None else "Pie Menu 1"
         return context.window_manager.invoke_props_dialog(self, width=300)
 
     def draw(self, context):
@@ -337,13 +318,20 @@ class COCOPIE_OT_add_to_new_pie(Operator):
             self.report({'WARNING'}, "Nothing was captured from that button")
             return {'CANCELLED'}
 
+        name = self.name.strip() or unused_pie_name(prefs)
+        idname = unused_pie_idname(prefs)
         pie = prefs.pie_menus.add()
-        pie.name = self.name.strip() or _unused_pie_name(prefs)
-        pie.idname = _unused_pie_idname(prefs)
+        with holding_rebuilds():
+            pie.name = name
+            pie.idname = idname
+            # No shortcut, as the report below says. The property's default
+            # is Q, which bound every new pie to Q in every editor -- taking
+            # Blender's Quick Favorites with it.
+            pie.key = ""
 
-        ensure_slot_items(pie)
-        label = _write_capture(pie.items[0], self.operator_string,
-                               self.prop_label, self.is_property)
+            ensure_slot_items(pie)
+            label = _write_capture(pie.items[0], self.operator_string,
+                                   self.prop_label, self.is_property)
 
         prefs.active_pie_index = len(prefs.pie_menus) - 1
         register_pie_menus()

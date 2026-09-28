@@ -1,35 +1,21 @@
 """Operators for creating pies and arranging the items inside them."""
 
 import bpy
-import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from ..items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
-)
+import traceback
+from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty
+from bpy.types import Operator
+from ..items import KEYMAP_TYPE_ITEMS
 from ..utils import (
     apply_suppressions, restore_suppressions, find_suppression,
     record_prior_state,
     suppression_identity, invalidate_external_shortcut_index,
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-    ensure_slot_items, slot_is_used, ensure_keymap_scopes,
+    ADDON_ID, get_prefs, get_pie, ensure_keymap_scopes,
     collapsed_group_keys, set_group_collapsed,
+    holding_rebuilds, unused_pie_name, unused_pie_idname,
 )
-from ..icons import (
-    ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
-)
-from ..menus import execute_script, create_pie_menu_class
+from ..menus import execute_script
 from ..keymaps import register_pie_menus, unregister_pie_menus
-from ..previews import slot_button_args, icon_args
+from ..presets import pie_to_dict, _apply_pie_dict
 
 
 class COCOPIE_OT_execute_command(Operator):
@@ -87,70 +73,6 @@ class COCOPIE_OT_tap_toggle_direction(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Command failed: {str(e)}")
             return {'CANCELLED'}
-
-
-class COCOPIE_OT_hold_or_tap(Operator):
-    """Retired, but still registered on purpose.
-
-    This timed hold-vs-tap by hand from a PRESS binding, because a keyboard
-    key has no native "held vs tapped" event value. Quick Tap now uses a
-    real CLICK_DRAG/CLICK pair instead (see _add_keymap_item), which Blender
-    resolves itself -- so nothing binds this any more.
-
-    It stays registered because a stale item pointing at it may still exist
-    in a saved user keyconfig, written before the switch. An unregistered
-    idname there is a broken keymap entry rather than a dead one; keeping the
-    class means such a leftover degrades to the old behaviour instead of
-    erroring, and unregister_pie_menus goes on sweeping the idname away."""
-    bl_idname = "cocopie.hold_or_tap"
-    bl_label = "Pie (Hold) / Toggle (Tap)"
-    bl_options = {'INTERNAL'}
-
-    pie_index: IntProperty()
-    # The already Blender-mapped key identifier (e.g. "T", or "ZERO" for the
-    # "0" key) -- matched against event.type, which uses the same names.
-    key: StringProperty()
-
-    HOLD_THRESHOLD = 0.2  # seconds
-
-    _timer = None
-
-    def modal(self, context, event):
-        if event.type == self.key and event.value == 'RELEASE':
-            self._cancel_timer(context)
-            pie = get_pie(context, self.pie_index)
-            # A tap runs a command instead of a direction when the pie says
-            # so. Routed through cocopie.execute_command, the same operator a
-            # pie item uses, so a tap and a slot behave identically -- same
-            # namespace, same error reporting, same undo push.
-            if pie is not None and pie.tap_action == 'COMMAND':
-                if pie.tap_command:
-                    bpy.ops.cocopie.execute_command(command=pie.tap_command)
-            else:
-                bpy.ops.cocopie.tap_toggle_direction(pie_index=self.pie_index)
-            return {'FINISHED'}
-
-        if event.type == 'TIMER':
-            self._cancel_timer(context)
-            pie = get_pie(context, self.pie_index)
-            if pie is not None:
-                # The pie's own modal takes it from here; this operator's job
-                # -- deciding hold vs tap -- is done either way.
-                bpy.ops.wm.call_menu_pie('INVOKE_DEFAULT', name=pie.idname)
-            return {'FINISHED'}
-
-        return {'PASS_THROUGH'}
-
-    def invoke(self, context, event):
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(self.HOLD_THRESHOLD, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
-
-    def _cancel_timer(self, context):
-        if self._timer is not None:
-            context.window_manager.event_timer_remove(self._timer)
-            self._timer = None
 
 
 class COCOPIE_OT_toggle_suppress_binding(Operator):
@@ -228,19 +150,17 @@ class COCOPIE_OT_add_keymap_scope(Operator):
         # rows once those few were all taken.
         taken = {scope.keymap_type for scope in existing}
         preferred = ('3D_VIEW', 'UV_EDITOR', 'IMAGE_EDITOR', 'NODE_EDITOR', 'WINDOW')
-        rest = tuple(ident for ident, _label, _desc in KEYMAP_TYPE_ITEMS if ident)
-        new_scope = existing.add()
-        for candidate in preferred + rest:
-            if candidate not in taken:
-                new_scope.keymap_type = candidate
-                break
-        else:
-            # Every scope CocoPies knows is already on this pie; nothing left to
-            # add, so do not leave a duplicate row behind
-            existing.remove(len(existing) - 1)
+        # item[0], not unpacking: real items carry a fourth field (their frozen
+        # number) and the headings do not, so no one shape fits both
+        rest = tuple(item[0] for item in KEYMAP_TYPE_ITEMS if item[0])
+        candidate = next((c for c in preferred + rest if c not in taken), None)
+        if candidate is None:
+            # Every scope CocoPies knows is already on this pie
             self.report({'INFO'}, "This pie is already registered in every editor")
             return {'CANCELLED'}
 
+        with holding_rebuilds():
+            existing.add().keymap_type = candidate
         register_pie_menus()
         return {'FINISHED'}
 
@@ -327,31 +247,31 @@ class COCOPIE_OT_add_pie_menu(Operator):
     def execute(self, context):
         try:
             prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            # Create new pie menu
+
+            # Named before it is added, from what is actually taken: counting
+            # the pies collides with a name still in use once one is deleted
+            name = unused_pie_name(prefs)
+            idname = unused_pie_idname(prefs)
             new_pie = prefs.pie_menus.add()
-            count = len(prefs.pie_menus)
-            new_pie.name = f"Pie Menu {count}"
-            new_pie.idname = f"COCOPIE_MT_custom_pie_{count}"
-            
-            # Add default item
-            item = new_pie.items.add()
-            item.label = "Example Item"
-            item.command = "bpy.ops.mesh.primitive_cube_add()"
-            item.icon = "MESH_CUBE"
-            item.position = 0
-            
+            with holding_rebuilds():
+                new_pie.name = name
+                new_pie.idname = idname
+
+                # Add default item
+                item = new_pie.items.add()
+                item.label = "Example Item"
+                item.command = "bpy.ops.mesh.primitive_cube_add()"
+                item.icon = "MESH_CUBE"
+                item.position = 0
+
             prefs.active_pie_index = len(prefs.pie_menus) - 1
-            
-            # Register the new menu
             register_pie_menus()
-            
+
             self.report({'INFO'}, f"Created {new_pie.name}")
         except Exception as e:
             self.report({'ERROR'}, f"Failed to add pie menu: {str(e)}")
-            import traceback
             traceback.print_exc()
-        
+
         return {'FINISHED'}
 
 
@@ -395,43 +315,28 @@ class COCOPIE_OT_duplicate_pie_menu(Operator):
             prefs = context.preferences.addons[ADDON_ID].preferences
             
             if 0 <= self.index < len(prefs.pie_menus):
+                # Copied through the same dict a preset file holds, so a
+                # duplicate carries every setting a preset does -- the old
+                # field-by-field copy dropped the Trigger, the Style and the
+                # whole Quick Tap setup. Read before the add, which can move
+                # the collection in memory under `source`.
                 source = prefs.pie_menus[self.index]
-                
-                # Unregister before modifying
+                data = pie_to_dict(source)
+                data["idname"] = unused_pie_idname(prefs, f"{source.idname}_copy")
+                # Off until the user changes its shortcut, which is still the
+                # original's
+                data["enabled"] = False
+                name = unused_pie_name(prefs, f"{source.name} Copy")
+
                 unregister_pie_menus()
-                
-                # Create duplicate
                 new_pie = prefs.pie_menus.add()
-                new_pie.name = f"{source.name} Copy"
-                new_pie.idname = f"{source.idname}_copy"
-                new_pie.keymap_type = source.keymap_type
-                # Every editor the source was live in, not just the legacy
-                # single one -- otherwise a duplicate of a multi-scope pie
-                # silently comes back scoped to one editor
-                for scope in ensure_keymap_scopes(source):
-                    new_pie.keymap_scopes.add().keymap_type = scope.keymap_type
-                new_pie.key = source.key
-                new_pie.any_modifier = source.any_modifier
-                new_pie.shift = source.shift
-                new_pie.ctrl = source.ctrl
-                new_pie.alt = source.alt
-                new_pie.oskey = False
-                new_pie.enabled = False
-                
-                # Copy items
-                for item in source.items:
-                    new_item = new_pie.items.add()
-                    new_item.label = item.label
-                    new_item.command = item.command
-                    new_item.icon = item.icon
-                    new_item.enabled = item.enabled
-                    new_item.position = item.position
-                
-                # Re-register
+                with holding_rebuilds():
+                    new_pie.name = name
+                    _apply_pie_dict(new_pie, data)
                 register_pie_menus()
         except Exception as e:
             self.report({'ERROR'}, f"Failed to duplicate: {str(e)}")
-        
+
         return {'FINISHED'}
 
 
@@ -501,6 +406,11 @@ class COCOPIE_OT_move_pie_menu(Operator):
             prefs.pie_menus.move(index, new_index)
             # Keep the selection on the menu that moved, not on the row index
             prefs.active_pie_index = new_index
+            # Not cosmetic to the registration, whatever the list shows: each
+            # pie's menu draws from the stored pie it was built from, and a
+            # Quick Tap item carries its pie's index -- after a move both
+            # pointed at the neighbour until something else rebuilt
+            register_pie_menus()
         except Exception as e:
             self.report({'ERROR'}, f"Failed to move pie menu: {str(e)}")
 

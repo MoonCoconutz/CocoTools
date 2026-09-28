@@ -3,7 +3,6 @@
 from .pies import (
     COCOPIE_OT_execute_command,
     COCOPIE_OT_tap_toggle_direction,
-    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_select_pie,
     COCOPIE_OT_toggle_group,
     COCOPIE_OT_add_pie_menu,
@@ -21,7 +20,6 @@ from .presets import (
     COCOPIE_OT_load_preset,
 )
 from .tools import (
-    COCOPIE_OT_test_pie_menu,
     COCOPIE_OT_refresh_menus,
     COCOPIE_OT_edit_item_command,
     COCOPIE_OT_pick_script,
@@ -40,7 +38,6 @@ from .context_menu import (
 __all__ = [
     "COCOPIE_OT_execute_command",
     "COCOPIE_OT_tap_toggle_direction",
-    "COCOPIE_OT_hold_or_tap",
     "COCOPIE_OT_select_pie",
     "COCOPIE_OT_toggle_group",
     "COCOPIE_OT_add_pie_menu",
@@ -54,7 +51,6 @@ __all__ = [
     "COCOPIE_OT_save_preset",
     "COCOPIE_OT_resolve_preset_conflict",
     "COCOPIE_OT_load_preset",
-    "COCOPIE_OT_test_pie_menu",
     "COCOPIE_OT_refresh_menus",
     "COCOPIE_OT_edit_item_command",
     "COCOPIE_OT_pick_script",

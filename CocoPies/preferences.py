@@ -1,47 +1,25 @@
 """The addon preferences panel -- the whole pie editor."""
 
-import bpy
-import os
-import json
+import traceback
 from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
+    StringProperty, IntProperty, BoolProperty, CollectionProperty,
 )
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
+from bpy.types import AddonPreferences
 from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
+    ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
     COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
     SCOPE_COLUMNS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
 )
 from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    ADDON_ID, format_shortcut, find_shortcut_conflicts,
     ensure_slot_items, slot_is_used, ensure_keymap_scopes,
     addon_version_string, find_external_conflicts, pie_menu_groups,
     collapsed_group_keys,
 )
-from .icons import (
-    ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
-)
-from .keymaps import register_pie_menus, unregister_pie_menus
 from .previews import slot_button_args, icon_args
-from .properties import COCOPIE_PieMenuItem, COCOPIE_PieMenuData, COCOPIE_SuppressedBinding
+from .properties import COCOPIE_PieMenuData, COCOPIE_SuppressedBinding
 from .ui import draw_pie_row
-
-
-def icon_column_units(pie):
-    """How wide the Icon column is for this pie.
-
-    One square, the same for every pie and every row. Kept as a function
-    because the table header and the rows both have to agree on it, and it used
-    to differ per pie: an icon loaded as triangle geometry drew wider than its
-    button, so a pie holding one widened the whole column. Nothing draws that
-    way any more (see previews.py), so there is one width again.
-    """
-    return COL_ICON_UNITS
 
 
 def _equal_slots(parent, count):
@@ -120,7 +98,6 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             box.alert = True
             box.label(text="Error drawing preferences!", icon='ERROR')
             box.label(text=str(e))
-            import traceback
             traceback.print_exc()
     
     def draw_left_column(self, layout):
@@ -143,9 +120,9 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             col.label(text="Create one with the button below.")
         else:
             # One section per editor: a collapsible heading, then that
-            # editor's pies as plain rows. Deliberately not a template_list
-            # per section -- that widget always draws inside a box, and six
-            # stacked boxes read as six panels rather than one list.
+            # editor's pies as plain rows (ui/lists.py). Deliberately not a
+            # template_list per section -- that widget always draws inside a
+            # box, and six stacked boxes read as six panels, not one list.
             collapsed = collapsed_group_keys(self)
             groups = pie_menu_groups(self.pie_menus)
             for position, (key, label, indices) in enumerate(groups):
@@ -338,8 +315,8 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         row = col.row(align=True, heading="Shortcut")
         trigger = row.row(align=True)
         trigger.scale_x = 0.9
-        # Tap to Toggle drives its own hold/tap timing regardless of this
-        # setting, so it is greyed out rather than hidden -- the value is
+        # Quick Tap binds its own drag/tap pair regardless of this setting,
+        # so it is greyed out rather than hidden -- the value is
         # still there, ready to apply again the moment Tap to Toggle is off.
         trigger.enabled = not pie.tap_toggle
         trigger.prop(pie, "event_value", text="")
@@ -424,11 +401,10 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                     label += "  -- disabled by CocoPies"
                 row.label(text=label)
 
-        # Replaces the Trigger entirely when on: holding the key opens the
-        # pie, a quick tap alternates between the two chosen directions
-        # instead. Not restricted to a particular Trigger -- it supplies its
-        # own hold/tap timing (see COCOPIE_OT_hold_or_tap), since keyboard
-        # keys have no built-in event value for that distinction.
+        # Replaces the Trigger entirely when on: pressing and moving opens the
+        # pie, a quick tap runs the tap action instead. It binds its own
+        # CLICK_DRAG / CLICK pair (keymaps._add_keymap_item), whatever the
+        # Trigger says.
         col.separator(factor=0.5)
         tt = col.row(align=True, heading="Quick Tap")
         tt.prop(pie, "tap_toggle", text="")
@@ -481,10 +457,9 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         box.separator(factor=0.5)
 
         table = box.column(align=True)
-        icon_units = icon_column_units(pie)
-        self.draw_item_header(table, icon_units)
+        self.draw_item_header(table)
         for index, item in enumerate(pie.items):
-            self.draw_single_item(table, pie, item, index, icon_units)
+            self.draw_single_item(table, pie, item, index)
 
         # Status line — anything that needs attention
         box.separator(factor=0.5)
@@ -504,7 +479,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             row.label(text=f"{len(missing)} direction(s) named but with no command yet",
                       icon='INFO')
 
-    def draw_item_header(self, layout, icon_units=COL_ICON_UNITS):
+    def draw_item_header(self, layout):
         """Dim column captions sized to match draw_single_item's columns"""
         header = layout.row(align=True)
         header.scale_y = 0.7
@@ -519,7 +494,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         cell.label(text="Pos")
 
         cell = header.row(align=True)
-        cell.ui_units_x = icon_units
+        cell.ui_units_x = COL_ICON_UNITS
         cell.label(text="Icon")
 
         cell = header.row(align=True)
@@ -534,7 +509,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         cell.ui_units_x = COL_TOOLS_UNITS
         cell.label(text="")
 
-    def draw_single_item(self, layout, pie, item, index, icon_units=COL_ICON_UNITS):
+    def draw_single_item(self, layout, pie, item, index):
         """Draw one direction's row. The row is the slot -- index is position."""
         used = slot_is_used(item)
 
@@ -575,7 +550,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         # sits at its natural one unit inside however wide a cell it is given.
         # Scaled by the same number as the row's height, so it comes out square.
         icon_cell = body.row(align=True)
-        icon_cell.ui_units_x = icon_units
+        icon_cell.ui_units_x = COL_ICON_UNITS
         icon_btn = icon_cell.row(align=True)
         icon_btn.scale_x = ITEM_ROW_UNITS
         op = icon_btn.operator("cocopie.select_icon", text="",

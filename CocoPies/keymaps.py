@@ -1,28 +1,15 @@
 """Registering the pie menu classes and their keyboard shortcuts."""
 
 import bpy
-import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
+import traceback
+from .items import KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS
 from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    get_prefs, format_shortcut, _debug,
     COCOPIE_KEYMAP_IDNAMES, invalidate_external_shortcut_index,
     apply_suppressions, restore_suppressions,
     pie_scope_types,
 )
-from .menus import execute_script, create_pie_menu_class
+from .menus import create_pie_menu_class
 
 
 registered_pie_classes = []
@@ -51,8 +38,8 @@ def _add_keymap_item(km, key, pie_data, pie_index):
     """Create this pie's keymap item(s). Returns a list of (km, kmi).
 
     Quick Tap used to be one item on PRESS driving a modal operator that
-    timed hold-vs-tap by hand (COCOPIE_OT_hold_or_tap, kept registered but
-    no longer bound -- see below). It is now two ordinary keymap items, the
+    timed hold-vs-tap by hand (cocopie.hold_or_tap, since removed; its idname
+    stays in the unregister sweep). It is now two ordinary keymap items, the
     same pair the keymap editor would show:
 
         CLICK_DRAG -> wm.call_menu_pie      (hold and move: the pie)
@@ -376,24 +363,23 @@ def register_pie_menus():
     # and is also when another addon has most likely been toggled behind us.
     invalidate_external_shortcut_index()
 
-    try:
-        prefs = bpy.context.preferences.addons[ADDON_ID].preferences
-    except:
+    prefs = get_prefs()
+    if prefs is None:
         return
-    
+
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
-    
+
     if not kc:
         print("CocoPies: No addon keyconfig found")
         return
-    
+
     for pie_index, pie_data in enumerate(prefs.pie_menus):
         if not pie_data.enabled:
             continue
-        
+
         menu_class = create_pie_menu_class(pie_data)
-        
+
         try:
             bpy.utils.register_class(menu_class)
             registered_pie_classes.append(menu_class)
@@ -435,11 +421,10 @@ def register_pie_menus():
                     print(f"CocoPies: Could not register keymap for {km_name}: {e}")
 
             _debug(f"Registered keymap: {format_shortcut(pie_data)} in "
-                  f"{[n for n, _s in targets]} for {pie_data.idname}")
-        
+                   f"{[n for n, _s in targets]} for {pie_data.idname}")
+
         except Exception as e:
             print(f"CocoPies: Error registering pie menu {pie_data.idname}: {e}")
-            import traceback
             traceback.print_exc()
 
     # Push the items just created into the keyconfig Blender dispatches from.
@@ -476,10 +461,10 @@ def unregister_pie_menus():
     """Unregister all pie menus and keymaps.
 
     Sweeps every keymap CocoPies could have touched for any wm.call_menu_pie
-    item that points at one of our menus, or any cocopie.hold_or_tap item
-    (Tap to Toggle's keymap item, which would orphan exactly the same way if
-    left out of this sweep), rather than trusting only
-    registered_keymaps. That list lives at module level, so it is empty again
+    item that points at one of our menus, or any item running a CocoPies
+    operator (COCOPIE_KEYMAP_IDNAMES -- Quick Tap's tap items, which would
+    orphan exactly the same way if left out of this sweep), rather than
+    trusting only registered_keymaps. That list lives at module level, so it is empty again
     every time this module gets freshly re-imported -- which happens on a
     disable/enable cycle that does not reuse the cached module, and on
     Blender's own "Reload Scripts". A fresh-but-empty list makes this function
@@ -524,8 +509,9 @@ def unregister_pie_menus():
                 except Exception:
                     pass
 
-    # Still drained for cleanliness; the sweep above is what actually
-    # guarantees nothing real is left behind
+    # Not redundant with the sweep above: that one only recognises menus named
+    # COCOPIE_MT_*, and a pie's idname is the user's to edit. This list is the
+    # only thing that finds a pie renamed to VIEW3D_MT_something.
     for km, kmi in registered_keymaps:
         try:
             km.keymap_items.remove(kmi)

@@ -1,26 +1,16 @@
 """Builds the Blender Menu class that actually draws a pie."""
 
 import ast
-import bpy
 import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
+import re
+import bpy
+from bpy.types import Menu
 from .utils import slot_is_used
-from .previews import icon_args, pie_icon_args
-from .icons import (
-    ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
-)
+from .previews import pie_icon_args
+
+
+# The menu a wm.call_menu / wm.call_menu_pie command names
+_MENU_NAME_RE = re.compile(r"name=['\"]([^'\"]+)['\"]")
 
 
 def execute_script(filepath, **params):
@@ -31,7 +21,6 @@ def execute_script(filepath, **params):
     near-identical files per axis. A script written before this existed is
     unaffected: it simply has no extra names to see.
     """
-    import os
     filepath = os.path.normpath(filepath)
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Script not found: {filepath}")
@@ -221,8 +210,7 @@ def create_pie_menu_class(pie_data):
                     # second pie opens where the mouse is, the way Blender's
                     # own chained pies do.
                     if command and "wm.call_menu_pie" in command and "name=" in command:
-                        import re
-                        match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
+                        match = _MENU_NAME_RE.search(command)
                         if match:
                             # INVOKE_DEFAULT just for this button: the pie
                             # sets EXEC_DEFAULT for everything (so configured
@@ -241,8 +229,7 @@ def create_pie_menu_class(pie_data):
 
                     # Check if this is a submenu call
                     elif command and "wm.call_menu" in command and "name=" in command:
-                        import re
-                        match = re.search(r"name=['\"]([^'\"]+)['\"]", command)
+                        match = _MENU_NAME_RE.search(command)
                         if match:
                             menu_name = match.group(1)
                             container.menu(menu_name, text=label, **icon_kw)
@@ -299,8 +286,8 @@ def create_pie_menu_class(pie_data):
                                     # An option this install of the operator
                                     # does not define is skipped, not fatal:
                                     # the exec fallback below loses the redo
-                                    # panel. Lets one slot pass Mio3 UV 2.x
-                                    # options the 1.5.x on Blender 4.5 lacks.
+                                    # panel. Keeps a slot working across an
+                                    # addon version that drops an option.
                                     if prop_name not in op.bl_rna.properties:
                                         continue
                                     setattr(op, prop_name, value)
@@ -325,7 +312,7 @@ def create_pie_menu_class(pie_data):
                         # Anything else - use execute_command
                         op = container.operator("cocopie.execute_command", text=label, **icon_kw)
                         op.command = command
-                except Exception as e:
+                except Exception:
                     container.label(text=slot.label)
             else:
                 container.separator()

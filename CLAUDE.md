@@ -37,7 +37,7 @@ deleted, it is a vault note.
 
 | Folder | What it is |
 | --- | --- |
-| `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. See `CocoPies/CLAUDE.md`. |
+| `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. **5.2+ only.** See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, in a Selections popover in the 3D Viewport tool header. **5.2+ only.** See `CocoSelections/CLAUDE.md`. |
 | `CocoBackup/` | Move shortcuts (as a diff), preferences, themes and add-on settings to another machine, plus an autosave. **5.2+ only.** See `CocoBackup/CLAUDE.md`. |
 | `CocoUVs/` | UV map list, texel density (with a heatmap), checker map, trim sheet areas and UV debug overlays in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
@@ -49,25 +49,23 @@ Blender process.
 
 ## Target versions
 
-**Must work on both Blender 4.5 and 5.2** (LTS releases the user actually
-runs — installed under `C:\Program Files\Blender Foundation\`) unless an
-extension's own `CLAUDE.md` says otherwise. An API that exists on one and
-not the other is a real bug, not an edge case. Confirm any non-trivial `bpy`
-API actually exists on both before relying on it — read
-`bpy.types.X.bl_rna.functions[...]` / check via a headless run rather than
-trusting memory of the API.
+**Every extension here is Blender 5.2+ only** (`blender_version_min =
+"5.2.0"` in all four manifests; CocoPies was the last to drop 4.5, in 1.13.0
+on 2026-09-28). 5.2 LTS is installed under
+`C:\Program Files\Blender Foundation\`. Use 5.2 APIs directly and do not test
+on 4.5. Confirm any non-trivial `bpy` API actually exists on 5.2 before
+relying on it — read `bpy.types.X.bl_rna.functions[...]` / check via a
+headless run rather than trusting memory of the API.
 
 ## Verifying a change
 
 There's no Python on `PATH`; use Blender's own interpreter, headless:
 
 ```bash
-"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <script>
 "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --python <script>
 ```
 
-Run against **both** versions before considering a change verified. Expect
-noisy, unrelated `SystemError: GPU functions...` tracebacks from other addons
+Expect noisy, unrelated `SystemError: GPU functions...` tracebacks from other addons
 in the user's stack (they run headless-unfriendly code at import) — grep for
 your own marker output rather than treating any traceback as failure.
 
@@ -132,6 +130,18 @@ setup instead, run with their config, set `use_preferences_save = False`
 first, `addon_utils.disable(<installed module>, default_set=False)`, and load
 the working tree under another module name. Used for CocoBackup and
 CocoSelections on 5.2 (see their `CLAUDE.md`).
+
+Make the script that restores the clean copy **refuse to launch when the copy
+is missing**. A run whose copy step failed pointed `BLENDER_USER_RESOURCES` at
+an empty folder, and Blender loaded the user's own add-on list (2026-09-28;
+nothing was written, since the probe set `use_preferences_save = False` first).
+
+**Two such profiles make an old-against-new comparison**, the strongest check
+for a refactor: one repository folder holding the committed copy of the
+extension, one holding the working copy, the same GUI probe run against both,
+and every difference in the dumped data or the screenshots accounted for.
+CocoPies 1.13.0 was verified that way; `CocoPies/docs/verify-and-deploy.md`
+has the recipe.
 
 `Operator.__subclasses__()` under `--background` under-reports registered
 operators; treat an empty result as inconclusive, not proof of absence.

@@ -1,6 +1,6 @@
 ---
 name: cocopies-verifier
-description: Proves a CocoPies change loads and behaves on both Blender 4.5 and 5.2. Use after editing anything under CocoPies/ and before reporting a change as working. Returns a pass/fail per version with the marker output behind it.
+description: Proves a CocoPies change loads and behaves on Blender 5.2 (CocoPies is 5.2+ only). Use after editing anything under CocoPies/ and before reporting a change as working. Returns pass/fail with the marker output behind it.
 tools: Bash, Read, Grep, Glob, Write
 ---
 
@@ -15,13 +15,16 @@ traps. This file is the job, not the reference.
 2. Write a probe script to the scratchpad that loads the package under a
    unique module name, registers, asserts, unregisters. Print every result on
    a line starting with `MARK` so it survives the noise.
-3. Run it against **both** 4.5 and 5.2. Both are LTS releases the user runs; a
-   pass on one is not a pass.
+3. Run it against Blender 5.2. CocoPies is 5.2+ only since 1.13.0; do not
+   test on 4.5.
 4. If the change touches anything visual, also run the GUI screenshot harness
    and look at the result. Render the shipped `draw_*` methods, not a copy.
-5. There is nothing to deploy. The working tree is the live install in both
-   Blenders (one Local extension repository points at this clone). Confirm the
-   manifest version was bumped this session, and say so.
+   If it touches stored pies or keymaps, or is a refactor, run the
+   old-against-new comparison in isolated profiles (`verify-and-deploy.md`,
+   section 3) and account for every difference.
+5. There is nothing to deploy. The working tree is the live dev install (one
+   Local extension repository points at this clone). Confirm the manifest
+   version was bumped this session, and say so.
 
 ## Non-negotiable
 
@@ -40,5 +43,5 @@ traps. This file is the job, not the reference.
 
 State plainly what you ran, what passed, and what you could not check
 headlessly. If something failed, give the marker output and your reading of
-it rather than a summary. Never describe a change as verified when only one
-Blender version was exercised, or when the only evidence is that it imported.
+it rather than a summary. Never describe a change as verified when the only
+evidence is that it imported.

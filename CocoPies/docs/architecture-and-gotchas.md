@@ -11,9 +11,9 @@ two disagree, `CLAUDE.md` is right.
 | `menus.py` | `create_pie_menu_class(pie_data)` (note: *create_*, not build_), `execute_script()`, `_parse_bpy_ops_call()` |
 | `keymaps.py` | `register_pie_menus()` / `unregister_pie_menus()`; `_watch_keyconfig_preset` (draw hook on `USERPREF_PT_keymap`, re-applies suppressions after a keymap preset switch) |
 | `defaults.py` | `default_pie_definitions(script_paths)`, `bundled_script_paths()`, `sync_starter_pies()`, `ensure_default_pies()` |
-| `presets.py` | `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer used by starters, presets and imports alike |
-| `utils.py` | `get_prefs()`, `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`, `ensure_slot_items()`, `slot_is_used()`, `normalized_scope()` |
-| `previews.py` | all three kinds of loaded icon; `icon_args()` is what every caller uses |
+| `presets.py` | `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer used by starters, presets, imports and Duplicate alike — and its inverse `pie_to_dict(pie)` |
+| `utils.py` | `get_prefs()`, `holding_rebuilds()`, `unused_pie_name()` / `unused_pie_idname()`, `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`, `ensure_slot_items()`, `slot_is_used()`, `normalized_scope()` |
+| `previews.py` | all three kinds of loaded icon; `icon_args()` for icon-sized buttons, `pie_icon_args()` for pie slots |
 | `ui/lists.py` | `draw_pie_row()` — the Pie Menus list rows |
 | `preferences.py` | the whole editor: `draw_left_column`, `draw_pie_settings`, `draw_pie_items`, `draw_single_item` |
 
@@ -31,14 +31,28 @@ configured direction from an empty one.
 rebuilds every `Menu` class and keymap item from scratch. Simple, but it makes
 `unregister_pie_menus()` load-bearing.
 
+**Writing several settings at once holds rebuilds** with
+`utils.holding_rebuilds()` and rebuilds once at the end. Without it a preset
+import rebuilt 415 times (2.1 s for 24 pies), and a rebuild half-way through
+writing a pie read it half-written. `_apply_pie_dict` already holds; a new
+bulk writer should too.
+
+**Reordering or removing pies must rebuild.** A pie's `Menu` class draws from
+the stored pie it was built from, and a Quick Tap item carries the pie's
+index, so a `.move()` without a rebuild points both at the neighbour.
+
 **Keymap items must be swept by content, not trusted from a Python list.**
 `registered_keymaps` only reflects items made by *this* module instance, and is
 empty again after any disable/enable cycle — while real items from a previous
 load are still sitting in the keyconfig. `keymap_items.new()` always appends,
 so orphans compound silently. The sweep walks every keymap CocoPies could have
 touched for any `wm.call_menu_pie` whose `properties.name` starts with
-`COCOPIE_MT_`, or any `cocopie.hold_or_tap`. **Any new CocoPies-owned keymap
-idname must be added to that sweep** or it will orphan the same way.
+`COCOPIE_MT_`, or any item running an operator in `COCOPIE_KEYMAP_IDNAMES`.
+**Any new CocoPies-owned keymap idname must be added to that set** (and a
+retired one stays — `cocopie.hold_or_tap` is still listed) or it will orphan
+the same way. The `registered_keymaps` pass after the sweep is not redundant:
+it is the only thing that finds a pie whose user-edited idname does not start
+with `COCOPIE_MT_`.
 
 **`KEYMAP_TYPE_ITEMS` numbers are frozen on-disk data.** Blender saves an
 `EnumProperty` as its integer, so those numbers are the stored format of every
@@ -95,10 +109,13 @@ is an icon. Measured in a real window at UI scale 1.0:
 The button does not grow to fit its icon. Since the button *is* the click
 target and the selection highlight, an overflowing icon means only a corner is
 clickable, the highlight hides behind the artwork, and grid neighbours touch
-whatever spacing the layout asks for. The sculpt brush icons were geometry for
-exactly this reason and are now PNGs (`icons/brushes/`, see its README for the
-`.dat` format and how to re-render). **Keep every icon on the
-preview-collection path.**
+whatever spacing the layout asks for. The sculpt brush icons therefore ship
+both ways (`icons/brushes/`, see its README for the `.dat` format and how to
+re-render): `icon_args()` returns the PNG, for every icon-sized button (the
+picker, the Preferences list), and `pie_icon_args()` returns the geometry for
+a pie slot, where the button is a wide bar with nothing to overflow and the
+bigger artwork is the point. **Keep that split** — all-PNG makes pie icons
+tiny, all-geometry brings the picker bug back.
 
 **Sizing.** An icon-only button collapses to its content, and `ui_units_x` does
 **not** change that — it sizes the *cell*, and the button sits at its natural
@@ -125,7 +142,7 @@ with rows, `scale_x` on the button so it fills the cell.
   `self` in `filter_items` for `draw_item` to read back does not work either —
   Blender does not guarantee the same Python instance serves both in one
   redraw.
-- `emboss='NONE_OR_STATUS'` exists on 4.5 and 5.2 but is for animation-state
-  colouring on property fields. It does **not** mark a `depress`ed operator
+- `emboss='NONE_OR_STATUS'` exists but is for animation-state colouring on
+  property fields. It does **not** mark a `depress`ed operator
   button — tried, and the selected cell came back unmarked. (Also: `RADIAL_MENU`
   was renamed `PIE_MENU` in 5.2, so do not hard-code that identifier.)

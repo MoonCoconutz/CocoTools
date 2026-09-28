@@ -5,7 +5,8 @@ shortcut, the eight slots, the icons, the commands each slot runs — is
 configured from the addon preferences, and the menus are registered live as
 you edit them.
 
-Requires **Blender 4.5 or newer**. Tested on 4.5.8 LTS and 5.2 LTS.
+Requires **Blender 5.2 or newer** (since 1.13.0; 1.12.7 was the last version
+for 4.5).
 
 ---
 
@@ -33,16 +34,24 @@ the Add-ons list to get to it.
 | Setting | What it does |
 | --- | --- |
 | **Name** | Title shown when the pie opens |
-| **Editor** | Where the shortcut is active — *Window (Global)*, a single **mode** (Object, Mesh edit, Sculpt, the paint modes, UV Editor…), or a whole **editor** (3D View, Node Editor, Sequencer…) |
-| **Key** + **Any / Shift / Ctrl / Alt / OS** | The shortcut. Letters are upper-cased automatically |
+| **Style** | *Pie* (eight directions) or *List* (a plain dropdown, in slot order) |
+| **Editor** | Where the shortcut is active — *Window (Global)*, a single **mode** (Object, Mesh edit, Sculpt, the paint modes, UV Editor…), or a whole **editor** (3D View, Node Editor, Sequencer…). **Add Editor** makes one pie live in several |
+| **Key** + **Any / Shift / Ctrl / Alt** | The shortcut. Letters are upper-cased automatically. Leave the key empty for a pie that is only opened from another pie |
 | **Trigger** | *Any*, *Press*, *Release*, *Click*, *Double Click*, *Drag*, or *Nothing* — the same set, same names, as Blender's own keymap editor |
+| **Quick Tap** | Press and drag opens the pie, a quick tap does something else instead: alternate between two chosen directions, or run a command |
 | **Enabled** | Unregisters the menu and its shortcut when off |
 
-The modifier row (**Any / Shift / Ctrl / Alt / OS**) is the same one Blender's
-own keymap editor draws for a shortcut, in the same order, doing the same
-thing: **Any** means the shortcut fires regardless of which modifiers are held,
-overriding the other four whatever they show — that is not a CocoPies
+The modifier row (**Any / Shift / Ctrl / Alt**) is the same one Blender's own
+keymap editor draws for a shortcut, in the same order, doing the same thing:
+**Any** means the shortcut fires regardless of which modifiers are held,
+overriding the other three whatever they show — that is not a CocoPies
 convention, `wm.keymap_items.new(any=True)` forces this in Blender itself.
+There is no Win/Cmd toggle: the operating system takes those combinations
+before Blender sees them.
+
+When a shortcut is also bound elsewhere, the editor lists who owns it. Tick a
+row to have CocoPies switch that binding off while CocoPies is enabled; it is
+switched back on when you untick it or disable CocoPies.
 
 CocoPies warns you when two **enabled** menus would fight over the same
 shortcut, including the case where one is global and the other is
@@ -68,29 +77,44 @@ configure anything:
 
 | Pie | Shortcut | Scope | What it does |
 | --- | --- | --- | --- |
-| **Workspace Menu** | `Shift + T` | Global | Jump to Shading, Layout, UV Editing, Geometry Nodes, Sculpting or Scripting |
+| **Workspace Menu** | `Shift + T` | Global | Jump to Shading, Layout, UV Editing, Geometry Nodes, Sculpting or Scripting. A tap alternates Layout / UV Editing |
 | **Edge Info** | `Alt + 2` | Global | Toggle the sharp / seam / crease / bevel-weight overlays |
+| **Animation** | `Shift + Space` | Global | Play, play reverse, jump to start / end, previous / next keyframe, auto keying, keyframe menu |
 | **UV Unwrap** | `Shift + F` | UV Editor | Mio3 unwrap and axis unwraps, align X/Y, rectify, gridify, classic unwrap |
 | **UV Transform** | `Shift + D` | UV Editor | Flip, rotate, stack, sort and orient islands |
-| **UV Select** | `Shift + A` | UV Editor | Select similar, overlapping, zero-area, flipped, boundary |
+| **UV Select** | `Shift + A` | UV Editor | Select similar, overlapping, zero-area, flipped, done, self-intersecting, boundary |
+| **3D UV** | `Shift + F` | 3D View | Mark / clear seams, smart project, unwrap, bevel weight, crease, sharp |
+| **Region Toggle** | `N` | 3D View | Show the toolbar, sidebar, tool settings, header, last-operation panel or asset shelf |
+| **Mesh Delete** | `X` | Mesh edit | Delete and dissolve by element. A tap deletes the selection without the menu |
+| **Mesh Merge** | `M` | Mesh edit | Merge by distance, at center, collapse, at first / last, at 3D cursor |
+| **Mesh Flatten** | `Shift + M` | Mesh edit | Scale the selection flat on X, Y or Z, around the world centre or the 3D cursor |
+| **Mesh Select** | `A` | Mesh edit | Select more / less, all, none, invert, linked. A tap alternates select all / deselect all |
+| **Proportional Edit** | `O` | Object mode, Mesh edit | Falloff shapes and toggles. A tap turns proportional editing on or off |
+| **Curve Delete** | `X` | Curve edit | Delete vertices or segments. A tap deletes the segment |
+| **Add Object** | `Shift + Ctrl + A` | Object mode | Common primitives, plus the full Add menu |
+| **Apply Transforms** | `Ctrl + A` | Object mode | Apply rotation / scale / location, visual transform, make single-user, and a Clear Transforms list |
+| **Object Parenting** | `P` | Object mode | Set and clear parent, with and without keeping the transform |
+| **Sculpt Brush Select** | `W` | Sculpt | Mask, Grab, Draw, and four sub-pies holding the rest of the bundled brushes |
 
-UV Transform is mostly [Zen UV](https://zenuv.rocks) — Flip X/Y and Rotate 90
-are stock Blender (`transform.resize` / `transform.rotate`, the same as
-`S X -1` and `R -90`) so those three work regardless, and Stack Similar is
-Mio3's Stack (selected only), and Stack Islands is Mio3 Align ▸ Center in
-island mode (Bounding Box pivot: islands stack in place, not at the UV centre).
-UV Unwrap's Gridify runs with Geometry Ratio 0 (Mio3 UV 2.x / Blender 5.x only;
-Mio3 1.5 on 4.5 has no such option). UV Select mixes Zen UV
-with [Mio3 UV](https://github.com/mio3io/mio3-uv), except **Boundary**, which
-runs a bundled script — Blender has no operator that selects island borders,
-so CocoPies ships one (see below). UV Unwrap is all Mio3. Without the addon a
-slot depends on, it simply reports a missing operator; install it and that
-slot starts working with no edit needed.
+The two delete pies switch Blender's own X delete menu off while CocoPies is
+enabled, so a tap on X reaches them (untick it in the pie's settings to give X
+back).
 
-Starter pies are only created when there is **no** configuration at all, so one
-you delete or rename never comes back on the next startup. **Restore Starter
-Pies**, under Presets, adds back any that are missing and leaves everything
-else alone.
+UV Transform is mostly [Mio3 UV](https://github.com/mio3io/mio3-uv) — Flip X/Y
+and Rotate 90 are stock Blender (`transform.resize` / `transform.rotate`, the
+same as `S X -1` and `R -90`), so those three work regardless. Stack Islands is
+Mio3 Align ▸ Center in island mode (Bounding Box pivot: islands stack in place,
+not at the UV centre). UV Unwrap is all Mio3 apart from the classic unwrap;
+its Gridify runs with Geometry Ratio 0. UV Select is Mio3 UV, with Select
+Overlapping, Select Done and Select Self Intersecting coming from **CocoUVs**
+(also in the CocoTools repository). Without the addon a slot depends on, it
+simply reports a missing operator; install it and that slot starts working
+with no edit needed.
+
+Starter pies are recorded once given, so one you delete or rename never comes
+back on the next startup — while a starter added by an update still appears on
+its own. **Restore Starter Pies**, under Presets, adds back any that are
+missing and leaves everything else alone.
 
 ### The bundled example scripts
 
@@ -100,12 +124,10 @@ example of `execute_script()`. They ship inside the addon at
 
 Open one to see the shape a script slot expects, then copy it for your own.
 
-`CocoPies/scripts/uv/` holds scripts that exist because Blender has no operator
-for the job at all. **SelectUVBoundary.py** selects the border edges of every
-UV island: it counts how many faces use each edge *in UV space*, and an edge
-used only once is a border. That finds real mesh boundaries and UV seams in one
-pass, without needing to tell them apart — a closed cube has no open mesh edges
-at all, yet still has island borders wherever its UVs were cut.
+`CocoPies/scripts/delete/MeshDeleteNoMenu.py` is the one script that exists
+because Blender has no operator for the job: Mesh Delete's tap. It deletes the
+selection without a menu, dissolving vertices or edges rather than punching
+holes, according to the select mode.
 
 The path a slot stores is resolved from the addon's own location when the
 starter pies are created, so it points at wherever CocoPies was installed. This
@@ -257,7 +279,7 @@ override.
 warning — another enabled menu, or one of Blender's own keymaps, may already
 own that combination. `Q` in particular is taken by default in several editors.
 
-**A menu looks stale after editing.** **Refresh Menus** re-registers
+**A menu looks stale after editing.** **Refresh All Keymaps** re-registers
 everything from scratch.
 
 **Tracing registration.** Set `DEBUG = True` in `CocoPies/utils.py` to
@@ -277,13 +299,13 @@ CocoPies/                    the addon (a folder in the CocoTools monorepo)
   properties.py             the stored data: a pie, and an item in it
   menus.py                  builds the Menu class that draws a pie
   keymaps.py                registers pie classes and their shortcuts
-  presets.py                preset merging and collision handling
+  presets.py                preset reading/writing, merging and collision handling
   defaults.py               starter pies, and the scripts they run
-  previews.py               loads the custom slot arrow icons
+  previews.py               loads CocoPies' own icons: slot arrows, sculpt brushes, custom
   preferences.py            the pie editor panel
   operators/                everything the buttons call
-  ui/                       list widgets
-  icons/                    the eight slot arrows, plus shipped custom icons
+  ui/                       the Pie Menus list rows
+  icons/                    the slot arrows, the sculpt brush icons, your custom icons
   scripts/workspaces/       the bundled example scripts
-  scripts/uv/               UV helpers Blender has no operator for
+  scripts/delete/           Mesh Delete's tap, which Blender has no operator for
 ```

@@ -3,25 +3,8 @@ collisions when a preset overlaps what is already configured."""
 
 import bpy
 import os
-import json
 import re
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
-from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-    ensure_slot_items, slot_is_used,
-)
+from .utils import holding_rebuilds, pie_scope_types
 from .keymaps import register_pie_menus, unregister_pie_menus
 
 
@@ -79,8 +62,56 @@ def _repoint_missing_bundled_script(command):
     return 'execute_script("%s"%s)' % (fixed, extra)
 
 
+def pie_to_dict(pie):
+    """One stored pie as the plain dict a preset file holds -- the inverse of
+    _apply_pie_dict, and what Duplicate copies through as well"""
+    return {
+        "name": pie.name,
+        "idname": pie.idname,
+        # keymap_type is still written for CocoPies versions that predate
+        # multi-scope pies: they read it and ignore keymap_scopes, so such a
+        # preset still imports there -- scoped to the first editor rather
+        # than failing outright
+        "keymap_type": pie_scope_types(pie)[0],
+        "keymap_scopes": pie_scope_types(pie),
+        "key": pie.key,
+        "any_modifier": pie.any_modifier,
+        "shift": pie.shift,
+        "ctrl": pie.ctrl,
+        "alt": pie.alt,
+        "oskey": pie.oskey,
+        "enabled": pie.enabled,
+        "event_value": pie.event_value,
+        "menu_style": pie.menu_style,
+        "tap_toggle": pie.tap_toggle,
+        "tap_toggle_a": pie.tap_toggle_a,
+        "tap_toggle_b": pie.tap_toggle_b,
+        "tap_action": pie.tap_action,
+        "tap_command": pie.tap_command,
+        "items": [
+            {
+                "label": item.label,
+                "command": item.command,
+                "icon": item.icon,
+                "enabled": item.enabled,
+                "position": item.position,
+            }
+            for item in pie.items
+        ],
+    }
+
+
 def _apply_pie_dict(pie, pie_dict):
-    """Copy a preset dict's fields onto an existing/new COCOPIE_PieMenuData item"""
+    """Copy a preset dict's fields onto an existing/new COCOPIE_PieMenuData item.
+
+    Writes a dozen settings, each of which would rebuild every pie on its own,
+    so rebuilds are held throughout -- every caller rebuilds once afterwards.
+    """
+    with holding_rebuilds():
+        _write_pie_dict(pie, pie_dict)
+
+
+def _write_pie_dict(pie, pie_dict):
     # A "label" key in older presets is ignored -- that field no longer exists
     pie.idname = pie_dict.get("idname", "COCOPIE_MT_custom_pie")
     pie.keymap_type = pie_dict.get("keymap_type", "WINDOW")
@@ -155,22 +186,23 @@ def _merge_preset_menus(prefs, incoming, mode):
     added = 0
     replaced = 0
 
-    for pie_dict in incoming:
-        name = pie_dict.get("name", "Pie Menu")
+    with holding_rebuilds():
+        for pie_dict in incoming:
+            name = pie_dict.get("name", "Pie Menu")
 
-        if name in existing_by_name:
-            if mode == 'REPLACE':
-                pie = prefs.pie_menus[existing_by_name[name]]
-                _apply_pie_dict(pie, pie_dict)
-                replaced += 1
-            # SKIP: leave the existing menu untouched
-            continue
+            if name in existing_by_name:
+                if mode == 'REPLACE':
+                    pie = prefs.pie_menus[existing_by_name[name]]
+                    _apply_pie_dict(pie, pie_dict)
+                    replaced += 1
+                # SKIP: leave the existing menu untouched
+                continue
 
-        pie = prefs.pie_menus.add()
-        pie.name = name
-        _apply_pie_dict(pie, pie_dict)
-        existing_by_name[name] = len(prefs.pie_menus) - 1
-        added += 1
+            pie = prefs.pie_menus.add()
+            pie.name = name
+            _apply_pie_dict(pie, pie_dict)
+            existing_by_name[name] = len(prefs.pie_menus) - 1
+            added += 1
 
     register_pie_menus()
     return added, replaced

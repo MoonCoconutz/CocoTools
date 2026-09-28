@@ -1,44 +1,24 @@
 """The stored data: one pie menu, and one item inside it."""
 
-import bpy
-import os
-import json
 from bpy.props import (
     StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
+    CollectionProperty,
 )
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
-)
-from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-)
-from .icons import (
-    ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
-)
-from .keymaps import register_pie_menus, unregister_pie_menus
+from bpy.types import PropertyGroup
+from .items import POSITION_NAMES, KEYMAP_TYPE_ITEMS
+from .utils import get_prefs, holding_rebuilds, rebuilds_held
+from .keymaps import register_pie_menus
 
 
 def update_key_uppercase(self, context):
     """Auto-uppercase the key and update menus"""
-    # Convert to uppercase automatically (avoid infinite loop)
-    if self.key and self.key != self.key.upper():
-        # Store old value to check if it changed
-        old_key = self.key
-        self.key = self.key.upper()
-        # Only update if it actually changed
-        if old_key != self.key:
-            # Update the pie menu after uppercase conversion
-            update_pie_menu(self, context)
-    else:
-        # Key is already uppercase, just update
-        update_pie_menu(self, context)
+    upper = self.key.upper()
+    if self.key != upper:
+        # Re-enters this callback with the uppercase key, and that call does
+        # the rebuild -- rebuilding here as well did it twice
+        self.key = upper
+        return
+    update_pie_menu(self, context)
 
 
 class COCOPIE_PieMenuItem(PropertyGroup):
@@ -69,11 +49,19 @@ class COCOPIE_PieMenuItem(PropertyGroup):
     
     position: IntProperty(
         name="Position",
-        description="Position in pie menu (0-7: Right, Top, Left, Bottom, Bottom-Left, Bottom-Right, Top-Left, Top-Right)",
+        description="Position in pie menu (0-7: Left, Right, Bottom, Top, Top-Left, Top-Right, Bottom-Left, Bottom-Right)",
         default=0,
         min=0,
         max=7
     )
+
+
+# Blender keeps only pointers to the strings a dynamic enum callback returns,
+# so Python has to keep them alive or the dropdown can read freed memory --
+# garbled labels, or a crash (the EnumProperty documentation's own warning).
+# One list per pie, handed back unchanged while its labels are, so the two
+# dropdowns drawn side by side never free each other's strings.
+_tap_direction_items = {}
 
 
 def _tap_toggle_direction_items(self, context):
@@ -83,11 +71,17 @@ def _tap_toggle_direction_items(self, context):
         item = next((it for it in self.items if it.position == i), None)
         label = item.label if (item and item.label) else "Empty"
         options.append((str(i), f"{POSITION_NAMES[i]}: {label}", ""))
+    key = self.as_pointer()
+    if _tap_direction_items.get(key) == options:
+        return _tap_direction_items[key]
+    _tap_direction_items[key] = options
     return options
 
 
 def update_pie_menu(self, context):
     """Called when pie menu properties change"""
+    if rebuilds_held():
+        return
     try:
         register_pie_menus()
     except Exception as e:
@@ -140,9 +134,9 @@ class COCOPIE_SuppressedBinding(PropertyGroup):
     ctrl: BoolProperty(default=False)
     alt: BoolProperty(default=False)
     oskey: BoolProperty(default=False)
-    # Set at apply time: False when the item was already switched off before
-    # CocoPies got to it, so unregister does not switch on something the user
-    # turned off themselves.
+    # Set once, when the suppression is created (utils.record_prior_state):
+    # False when the item was already switched off before CocoPies got to it,
+    # so unregister does not switch on something the user turned off.
     restore_on_unregister: BoolProperty(default=False)
 
 
@@ -257,16 +251,17 @@ class COCOPIE_PieMenuData(PropertyGroup):
         update=update_pie_menu
     )
     
-    # Replaces the Trigger with its own hold/tap timing (see
-    # COCOPIE_OT_hold_or_tap) -- holding the key opens the pie, a quick tap
-    # jumps straight to one of two chosen directions instead. Forced to
-    # Drag whenever this turns on, since that is the only Trigger value that
-    # describes what is actually happening: the key is held down. The
+    # Replaces the Trigger with a CLICK_DRAG / CLICK pair (see
+    # keymaps._add_keymap_item) -- press and move opens the pie, a quick tap
+    # runs the tap action instead. Forced to Drag whenever this turns on,
+    # since that is the only Trigger value that describes what opens the
+    # pie. The
     # Settings UI greys the Trigger dropdown out while this is on rather
     # than hiding it, so the displayed value stays honest either way.
     def _update_tap_toggle(self, context):
         if self.tap_toggle:
-            self.event_value = 'CLICK_DRAG'
+            with holding_rebuilds():
+                self.event_value = 'CLICK_DRAG'
         update_pie_menu(self, context)
 
     tap_toggle: BoolProperty(
@@ -295,7 +290,7 @@ class COCOPIE_PieMenuData(PropertyGroup):
     # The command form exists so a tap can do something the pie does not
     # contain at all -- most usefully, hand the key back to whatever owned it
     # before. X in mesh edit is the case this was built for: tap deletes
-    # (bpy.ops.mesh.cocodelete_delete()), hold opens the delete pie. Kept as
+    # (the bundled MeshDeleteNoMenu.py), drag opens the delete pie. Kept as
     # a plain command string rather than a reference to another extension, so
     # CocoPies needs to know nothing about what is on the other end.
     tap_command: StringProperty(

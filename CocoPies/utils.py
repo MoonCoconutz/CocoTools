@@ -3,28 +3,47 @@ and working out which pies would collide."""
 
 import addon_utils
 import bpy
+import contextlib
 import sys
-import os
 import json
 import re
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS,
-)
+from .items import KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS, KEYMAP_TYPE_ITEMS
 
 # The key this addon is registered under, and the key its preferences are
 # stored against. Taken from the package rather than __name__, which inside a
 # submodule would be "CocoPies.utils" and match no registered addon.
 ADDON_ID = __package__
+
+
+# Almost every pie setting rebuilds every pie's menu and shortcuts when it
+# changes (properties.update_pie_menu), and a rebuild is not cheap: it sweeps
+# and refreshes the keyconfigs three times over. Code that writes a whole pie
+# at once -- importing a preset, seeding starters, duplicating -- used to pay
+# that once per field, a couple of hundred rebuilds for one import, and some
+# of them ran half-way through writing a pie (a duplicate came back scoped to
+# Window as well as its own editor that way). Such code holds rebuilds for the
+# duration and rebuilds once itself when it is done.
+_rebuild_hold = 0
+
+
+@contextlib.contextmanager
+def holding_rebuilds():
+    """Stop setting changes from rebuilding the pies until the block ends.
+
+    Does not rebuild on the way out: the caller does that once, after its
+    last write, the way every caller already did.
+    """
+    global _rebuild_hold
+    _rebuild_hold += 1
+    try:
+        yield
+    finally:
+        _rebuild_hold -= 1
+
+
+def rebuilds_held():
+    return _rebuild_hold > 0
 
 
 def addon_version_string():
@@ -83,10 +102,12 @@ def clear_oskey(prefs):
     Idempotent, and cheap enough to run at every register.
     """
     cleared = 0
-    for pie in prefs.pie_menus:
-        if pie.oskey:
-            pie.oskey = False
-            cleared += 1
+    # Runs just before register() rebuilds everything anyway
+    with holding_rebuilds():
+        for pie in prefs.pie_menus:
+            if pie.oskey:
+                pie.oskey = False
+                cleared += 1
     return cleared
 
 
@@ -126,15 +147,21 @@ def ensure_keymap_scopes(pie):
     imported from an older preset, or built by defaults.py, which still
     declares a single "keymap_type") arrives with an empty collection; this is
     what silently migrates it, so no stored data has to be rewritten up front.
+
+    Seeding must not rebuild. It changes nothing about where the pie is live --
+    the seeded scope is the one it was already treated as having -- and it runs
+    from inside register_pie_menus() and from draw code, where a rebuild would
+    tear down the pies halfway through registering or drawing them.
     """
     if len(pie.keymap_scopes) == 0:
-        scope = pie.keymap_scopes.add()
-        # Assigning an enum value Blender doesn't know raises, and a preset
-        # from a future//hand-edited version could carry one
-        try:
-            scope.keymap_type = pie.keymap_type
-        except TypeError:
-            scope.keymap_type = 'WINDOW'
+        with holding_rebuilds():
+            scope = pie.keymap_scopes.add()
+            # Assigning an enum value Blender doesn't know raises, and a preset
+            # from a future or hand-edited version could carry one
+            try:
+                scope.keymap_type = pie.keymap_type
+            except TypeError:
+                scope.keymap_type = 'WINDOW'
     return pie.keymap_scopes
 
 
@@ -220,11 +247,6 @@ def group_key_label(key):
     if key == MULTI_GROUP_KEY:
         return MULTI_GROUP_LABEL
     return next((item[1] for item in KEYMAP_TYPE_ITEMS if item[0] == key), key)
-
-
-def pie_group_label(pie):
-    """The heading text of the section this pie belongs under"""
-    return group_key_label(pie_group_key(pie))
 
 
 def pie_menu_groups(pie_menus):
@@ -920,10 +942,17 @@ def record_prior_state(prefs, entry):
     storing suppressions here instead of applying them permanently is meant to
     prevent. The honest question is "was it on when the box was ticked", and
     that can only be answered at ticking time.
+
+    A binding that cannot be found at all counts as on, which is how Blender
+    ships every binding. That is the case for the delete starters' suppressions
+    on a fresh install: they are recorded while register() runs, before
+    Blender has filled the user keyconfig, so the lookup finds nothing. Reading
+    that as "off" left Blender's X delete menu switched off for good once
+    CocoPies was disabled, or the box unticked -- measured on a fresh profile.
     """
     identity = suppression_identity(entry)
-    entry.restore_on_unregister = any(
-        kmi.active for _i, kmi in _iter_matching_items({identity}))
+    found = [kmi.active for _i, kmi in _iter_matching_items({identity})]
+    entry.restore_on_unregister = any(found) if found else True
     return entry.restore_on_unregister
 
 
@@ -1023,15 +1052,33 @@ def slot_is_used(item):
     return bool(item.command.strip() or item.label.strip())
 
 
-def find_duplicate_positions(pie):
-    """Set of slots claimed by more than one item — the later one wins in the pie"""
-    seen = set()
-    dupes = set()
-    for item in pie.items:
-        if item.position in seen:
-            dupes.add(item.position)
-        seen.add(item.position)
-    return dupes
+def _unused(taken, base, default, sep):
+    if base is None:
+        base, n = default, len(taken) + 1
+    elif base not in taken:
+        return base
+    else:
+        n = 2
+    while f"{base}{sep}{n}" in taken:
+        n += 1
+    return f"{base}{sep}{n}"
+
+
+def unused_pie_name(prefs, base=None):
+    """A name no pie has yet: "Pie Menu N", or `base` itself when it is free
+    and "<base> 2", "<base> 3"... when it is not.
+
+    Counting the pies is not enough: deleting one frees its number, so a plain
+    count can collide with a name that is still in use.
+    """
+    return _unused({p.name for p in prefs.pie_menus}, base, "Pie Menu", " ")
+
+
+def unused_pie_idname(prefs, base=None):
+    """Likewise for the idname, which has to be unique to register at all --
+    two pies sharing one leave only one of them registered"""
+    return _unused({p.idname for p in prefs.pie_menus}, base,
+                   "COCOPIE_MT_custom_pie", "_")
 
 # Flip to True to trace menu and keymap registration in the system console.
 # Registration is rebuilt from scratch on every change to a pie's settings, so

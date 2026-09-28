@@ -22,7 +22,7 @@ CocoPies/  CocoSelections/
 `CocoTools/CocoPies/` is flat: the package files directly, plus that
 extension's own `CLAUDE.md`, `README.md` and `blender_manifest.toml`.
 
-The user's clone of this repo is also his dev install — see
+The user's clone of this repo is also their dev install — see
 [agents-start-here.md](agents-start-here.md).
 
 ## Drift: closed

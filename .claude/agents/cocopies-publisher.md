@@ -11,8 +11,7 @@ the release pipeline. This file is the procedure.
 ## Where you are
 
 There is **one** working copy: a CocoTools clone, which is also the user's live
-dev install in both Blender 4.5 and 5.2 (a Local extension repository points at
-it). There is no second repo to copy from and no drift check to run — that
+dev install in Blender 5.2 (a Local extension repository points at it). There is no second repo to copy from and no drift check to run — that
 setup was retired on 2026-08-30. Publishing is an ordinary commit and push.
 
 ## Procedure

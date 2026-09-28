@@ -1,15 +1,6 @@
 """Constants: pie slot geometry, item row sizing, and the Blender keymap
 each scope registers into."""
 
-import bpy
-import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-
 
 # Blender fills the eight pie slots in a fixed order:
 #   0 West, 1 East, 2 South, 3 North, 4 North-West, 5 North-East,
@@ -23,24 +14,6 @@ POSITION_NAMES = {
     0: "Left", 1: "Right", 2: "Bottom", 3: "Top",
     4: "Top-Left", 5: "Top-Right", 6: "Bottom-Left", 7: "Bottom-Right",
 }
-
-# Row-major reading order of a 3x3 grid; None is the (inert) centre cell
-POSITION_GRID = (4, 3, 5, 0, None, 1, 6, 2, 7)
-
-_UI_UNIT_Y = 20
-
-# One cell of the picker grid, square: UI_UNIT_X and UI_UNIT_Y are both
-# widget_unit, so the same number gives a cell as wide as it is tall.
-GRID_CELL_UNITS = 2.0
-
-# The padding Blender puts around a popup's contents. Measured, since it is not
-# exposed, and near enough the same on both axes.
-_GRID_POPUP_PADDING = 1.2
-
-# Three square cells plus that padding. The grid deliberately carries nothing
-# between the rows: a separator line adds height without adding any width, and
-# that alone is what made every earlier attempt at a square popup fail.
-GRID_POPUP_WIDTH = int((3 * GRID_CELL_UNITS + _GRID_POPUP_PADDING) * _UI_UNIT_Y)
 
 # Height of one item row, and the width of the icon-only columns in it.
 #

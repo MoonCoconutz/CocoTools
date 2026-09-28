@@ -10,8 +10,6 @@ drag-to-resize grab handle (sections collapse instead, see
 `COCOPIE_OT_toggle_group`).
 """
 
-import bpy
-
 from ..utils import format_shortcut, find_shortcut_conflicts
 
 

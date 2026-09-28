@@ -3,19 +3,17 @@ import bpy
 from .properties import (COCOPIE_KeymapScope, COCOPIE_PieMenuItem,
                          COCOPIE_PieMenuData, COCOPIE_SuppressedBinding)
 from .preferences import COCOPIE_AddonPreferences
-from .defaults import (COCOPIE_OT_restore_defaults, ensure_default_pies,
+from .defaults import (COCOPIE_OT_restore_defaults,
                        sync_starter_pies, migrate_starter_suppressions)
 from .keymaps import (
     register_pie_menus, unregister_pie_menus,
     register_keyconfig_watcher, unregister_keyconfig_watcher,
 )
 from .utils import get_prefs, clear_oskey
-from .ui import draw_pie_row
 from .previews import register_previews, unregister_previews
 from .operators import (
     COCOPIE_OT_execute_command,
     COCOPIE_OT_tap_toggle_direction,
-    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_select_pie,
     COCOPIE_OT_toggle_group,
     COCOPIE_OT_add_pie_menu,
@@ -29,7 +27,6 @@ from .operators import (
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
     COCOPIE_OT_load_preset,
-    COCOPIE_OT_test_pie_menu,
     COCOPIE_OT_refresh_menus,
     COCOPIE_OT_edit_item_command,
     COCOPIE_OT_pick_script,
@@ -56,7 +53,6 @@ classes = (
     COCOPIE_OT_toggle_group,
     COCOPIE_OT_execute_command,
     COCOPIE_OT_tap_toggle_direction,
-    COCOPIE_OT_hold_or_tap,
     COCOPIE_OT_add_pie_menu,
     COCOPIE_OT_remove_pie_menu,
     COCOPIE_OT_duplicate_pie_menu,
@@ -68,7 +64,6 @@ classes = (
     COCOPIE_OT_save_preset,
     COCOPIE_OT_resolve_preset_conflict,
     COCOPIE_OT_load_preset,
-    COCOPIE_OT_test_pie_menu,
     COCOPIE_OT_refresh_menus,
     COCOPIE_OT_edit_item_command,
     COCOPIE_OT_pick_script,
@@ -85,12 +80,6 @@ classes = (
 # register() -- this is what stops a re-enable from being read as a fresh
 # install and overwriting the user's pies with starters.
 _seeded_this_session = False
-
-# Blender 5.0 renamed the button context menu; 4.x still uses the old name
-CONTEXT_MENU_CLASSES = (
-    'UI_MT_button_context_menu',
-    'WM_MT_button_context',
-)
 
 
 def _scrub_context_menu_entries(menu):
@@ -121,20 +110,10 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    registered = False
-    for menu_class in CONTEXT_MENU_CLASSES:
-        try:
-            if hasattr(bpy.types, menu_class):
-                menu = getattr(bpy.types, menu_class)
-                _scrub_context_menu_entries(menu)
-                menu.append(menu_func_context)
-                registered = True
-                break
-        except Exception as e:
-            print(f"CocoPies: Could not register to {menu_class}: {e}")
-
-    if not registered:
-        print("CocoPies: Context menu not available - use manual Add Item button")
+    # The button right-click menu, where "Add to CocoPies" lives
+    menu = bpy.types.UI_MT_button_context_menu
+    _scrub_context_menu_entries(menu)
+    menu.append(menu_func_context)
 
     # Lay down any starter pie this configuration has never been given -- all
     # of them on a fresh install, and just the new ones after an update that
@@ -193,12 +172,10 @@ def register():
 
 
 def unregister():
-    for menu_class in CONTEXT_MENU_CLASSES:
-        try:
-            if hasattr(bpy.types, menu_class):
-                _scrub_context_menu_entries(getattr(bpy.types, menu_class))
-        except Exception:
-            pass  # Silently ignore if not registered
+    try:
+        _scrub_context_menu_entries(bpy.types.UI_MT_button_context_menu)
+    except Exception as e:
+        print(f"CocoPies: could not remove the right-click entry: {e}")
 
     unregister_keyconfig_watcher()
     unregister_pie_menus()
@@ -215,7 +192,3 @@ def unregister():
             print(f"CocoPies: could not unregister {getattr(cls, '__name__', cls)}: {e}")
 
     unregister_previews()
-
-
-if __name__ == "__main__":
-    register()

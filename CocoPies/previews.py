@@ -74,7 +74,7 @@ def brush_icons_dir():
 #
 # The two paths draw at different sizes and each is right in one place. A
 # preview PNG draws ~19px centred inside its button and never larger, whatever
-# the button does -- measured in a real window, on both 4.5 and 5.2. Triangle
+# the button does -- measured in a real window. Triangle
 # geometry draws ~31px and the button does not grow to fit it.
 #
 # In the icon picker that overflow is a bug: the buttons there are icon-sized,

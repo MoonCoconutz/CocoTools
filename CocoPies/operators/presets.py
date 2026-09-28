@@ -1,29 +1,13 @@
 """Saving and loading preset files."""
 
 import bpy
-import os
 import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from ..items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
-from ..utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-    pie_scope_types,
-)
-from ..keymaps import register_pie_menus, unregister_pie_menus
+from bpy.props import StringProperty, EnumProperty
+from bpy.types import Operator
+from ..utils import ADDON_ID
 from ..presets import (
-    _apply_pie_dict, _merge_preset_menus, _pending_preset_data,
-    _draw_preset_conflict_popup, _deferred_show_preset_conflict_popup,
+    pie_to_dict, _merge_preset_menus, _pending_preset_data,
+    _deferred_show_preset_conflict_popup,
 )
 
 
@@ -43,51 +27,9 @@ class COCOPIE_OT_save_preset(Operator):
     def execute(self, context):
         try:
             prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            # Convert to dictionary
-            data = {"pie_menus": []}
-            
-            for pie in prefs.pie_menus:
-                pie_dict = {
-                    "name": pie.name,
-                    "idname": pie.idname,
-                    # keymap_type is still written for CocoPies versions that
-                    # predate multi-scope pies: they read it and ignore
-                    # keymap_scopes, so such a preset still imports there --
-                    # scoped to the first editor rather than failing outright
-                    "keymap_type": pie_scope_types(pie)[0],
-                    "keymap_scopes": pie_scope_types(pie),
-                    "key": pie.key,
-                    "any_modifier": pie.any_modifier,
-                    "shift": pie.shift,
-                    "ctrl": pie.ctrl,
-                    "alt": pie.alt,
-                    "oskey": pie.oskey,
-                    "enabled": pie.enabled,
-                    "event_value": pie.event_value,
-                    "menu_style": pie.menu_style,
-                    "tap_toggle": pie.tap_toggle,
-                    "tap_toggle_a": pie.tap_toggle_a,
-                    "tap_toggle_b": pie.tap_toggle_b,
-                    "tap_action": pie.tap_action,
-                    "tap_command": pie.tap_command,
-                    "items": []
-                }
-                
-                for item in pie.items:
-                    item_dict = {
-                        "label": item.label,
-                        "command": item.command,
-                        "icon": item.icon,
-                        "enabled": item.enabled,
-                        "position": item.position
-                    }
-                    pie_dict["items"].append(item_dict)
-                
-                data["pie_menus"].append(pie_dict)
-            
-            # Save to file
-            with open(self.filepath, 'w') as f:
+            data = {"pie_menus": [pie_to_dict(pie) for pie in prefs.pie_menus]}
+
+            with open(self.filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
             
             self.report({'INFO'}, f"Saved preset to {self.filepath}")
@@ -153,7 +95,7 @@ class COCOPIE_OT_load_preset(Operator):
         try:
             prefs = context.preferences.addons[ADDON_ID].preferences
 
-            with open(self.filepath, 'r') as f:
+            with open(self.filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             incoming = data.get("pie_menus", [])

@@ -1,19 +1,20 @@
 # Verifying a change, and getting it into Blender
 
-Three tools, in increasing cost: a headless run, a real-window screenshot, and
-the user's own eyes. Use the cheapest one that can actually answer the
-question — but know which questions each one *cannot* answer.
+Four tools, in increasing cost: a headless run, a real-window screenshot, an
+old-against-new comparison in isolated profiles, and the user's own eyes. Use
+the cheapest one that can actually answer the question — but know which
+questions each one *cannot* answer.
+
+CocoPies is **5.2+ only** since 1.13.0. Every command here runs Blender 5.2;
+do not test on 4.5.
 
 ## 1. Headless — does it load and behave
 
 There is no Python on `PATH`. Use Blender's own interpreter:
 
 ```bash
-"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --factory-startup --python <script>
 "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python <script>
 ```
-
-Run **both** before calling anything verified.
 
 `--factory-startup` is worth adding: without it the user's own addons load and
 throw unrelated `SystemError: GPU functions...` tracebacks (Zen UV, HardOps and
@@ -68,11 +69,11 @@ columns line up) can be answered without asking the user, by driving a
 throwaway GUI Blender:
 
 ```bash
-"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --factory-startup --no-window-focus --window-geometry 40 40 1150 800 --python probe.py
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --factory-startup --no-window-focus --window-geometry 40 40 1150 800 --python probe.py
 ```
 
 `--factory-startup` keeps the user's addons and preferences out of it;
-`--no-window-focus` stops the window stealing focus while he is working.
+`--no-window-focus` stops the window stealing focus while the user is working.
 
 In the script, in this order:
 
@@ -122,18 +123,57 @@ background, so its bounding box is exactly the drawn icon). Comparing the two
 needs no colour guessing. Colour-clustering a single mixed image gives noisy,
 misleading numbers — it did here, twice.
 
-## 3. The user's eyes
+## 3. Old against new — did anything change that should not have
+
+The strongest check, and the one to use for a refactor or anything touching
+stored pies or keymaps. It is how 1.13.0 was verified.
+
+1. Copy the committed `CocoPies/` (before your change) into one scratch folder
+   and the working copy into another, each as `<folder>/CocoPies`.
+2. Build one profile per copy, headless: an empty folder as
+   `BLENDER_USER_RESOURCES`, `--factory-startup`, then
+   `preferences.extensions.repos.new(name=..., module=..., custom_directory=<folder>, source='USER')`,
+   `addon_utils.enable("bl_ext.<module>.CocoPies", default_set=True)`,
+   `show_splash = False`, `save_userpref()`. The extension registers the real
+   way, so `preferences.addons` exists, starters are seeded and keymaps are
+   real. Keep a clean copy of each profile and restore it before every run —
+   and make the run script refuse to start if the clean copy is missing: an
+   empty `BLENDER_USER_RESOURCES` folder silently reads the user's own
+   configuration instead.
+3. Run the same GUI probe against both (`--enable-event-simulate
+   --no-window-focus`, `use_preferences_save = False` first). Record every
+   pie's fields and items, every `COCOPIE` item in `keyconfigs.addon` and
+   `keyconfigs.user`, which menu classes exist, and the X delete bindings'
+   `active`. Exercise the operators through `bpy.ops.cocopie.*`. Screenshot
+   the Preferences panel by drawing it into an `invoke_props_dialog` —
+   `type(prefs).draw(proxy, context)` with a proxy whose `layout` is the
+   dialog's and whose other attributes fall through to the real prefs — and a
+   real pie opened with `wm.call_menu_pie('INVOKE_DEFAULT', ...)`. Close each
+   popup with a simulated `ESC`.
+4. Compare. Bundled script paths contain the folder name, so normalise it
+   first. Identical data and byte-identical screenshots (`md5sum`) are the bar;
+   every difference should be one you meant.
+
+To replay the user's real pies rather than the starters, read them off the
+running Blender read-only into a preset-shaped JSON and apply it in both
+profiles with `resolve_preset_conflict(mode='REPLACE')` after staging it in
+`presets._pending_preset_data`.
+
+To count rebuilds, wrap `keymaps.unregister_pie_menus` in the probe:
+`register_pie_menus()` calls it through the module global on every rebuild.
+
+## 4. The user's eyes
 
 The Preferences window opens as a **second OS window** and cannot be
 screenshotted by the tooling, and popups are transient. Never switch a
 `VIEW_3D` area to `'PREFERENCES'` to work around this — it silently becomes
-`'PROPERTIES'` instead and costs him his viewport. Ask for a screenshot, or
-better, reproduce the same layout in the harness above.
+`'PROPERTIES'` instead and costs the user their viewport. Draw the real panel
+into a dialog as in section 3, or ask the user for a screenshot.
 
 ## There is nothing to deploy
 
-The working tree is the live install in both Blenders, via the Local extension
-repository pointed at this clone's root. Saving a file is the deploy. See
+The working tree is the live dev install in Blender 5.2, via the Local
+extension repository pointed at this clone's root. Saving a file is the deploy. See
 [agents-start-here.md](agents-start-here.md).
 
 What still has to happen every time:

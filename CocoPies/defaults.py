@@ -1,30 +1,13 @@
 """The starter pie menus, and the example workspace scripts they run."""
 
-import bpy
 import os
 import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from .items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
-from .icons import safe_icon
+from bpy.types import Operator
 from .utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
+    get_prefs, holding_rebuilds, find_suppression, record_prior_state,
 )
-from .keymaps import register_pie_menus, unregister_pie_menus
-from .presets import (
-    _apply_pie_dict, _merge_preset_menus, _pending_preset_data,
-    _draw_preset_conflict_popup, _deferred_show_preset_conflict_popup,
-)
+from .keymaps import register_pie_menus
+from .presets import _apply_pie_dict
 
 
 # Since 4.3 a sculpt brush is an *asset*, not a tool setting, so selecting one
@@ -128,27 +111,6 @@ def _flatten_command(axis, pivot=None):
 CURSOR_PIVOT = "bpy.context.scene.cursor.location"
 
 
-def _icon(*candidates):
-    """The first of `candidates` this Blender actually has.
-
-    Blender 5.0 added the EDGE_SEAM / EDGE_CREASE / EDGE_SHARP / EDGE_BEVEL
-    icons; 4.5 ships none of them. Naming one there is not an error -- draw
-    time runs every icon through safe_icon() -- but the slot comes out with a
-    blank where its icon should be, so the starters would look half-finished
-    on the older release the addon still supports. Each slot therefore names
-    the icon it wants first and a 4.5-era stand-in after it, resolved once
-    here when the starter pies are created.
-
-    The result is baked into the stored pie, so a pie seeded on 4.5 keeps the
-    fallback if that config is later opened on 5.x. That is deliberate: by
-    then it is the user's own data, and theirs to change.
-    """
-    for name in candidates:
-        if safe_icon(name, fallback=None) is not None:
-            return name
-    return 'NONE'
-
-
 def bundled_script_paths():
     """{filename: absolute path} for the example scripts that are present.
 
@@ -214,10 +176,10 @@ def default_pie_definitions(script_paths):
             "items": [
                 {"label": "Delete Vertices", "position": 0,
                  "command": "bpy.ops.curve.delete(type='VERT')",
-                 "icon": _icon("DOT"), "enabled": True},
+                 "icon": "DOT", "enabled": True},
                 {"label": "Delete Segment", "position": 1,
                  "command": "bpy.ops.curve.delete(type='SEGMENT')",
-                 "icon": _icon("DRIVER_DISTANCE"), "enabled": True},
+                 "icon": "DRIVER_DISTANCE", "enabled": True},
             ],
         },
         {
@@ -245,18 +207,18 @@ def default_pie_definitions(script_paths):
             "ctrl": False, "shift": False, "alt": True,
             "enabled": True,
             "items": [
-                {"label": "Display Bevel Weight", "icon": _icon('EDGE_BEVEL', 'MOD_BEVEL'), "position": 0,
+                {"label": "Display Bevel Weight", "icon": 'EDGE_BEVEL', "position": 0,
                  "enabled": True, "command": overlay("show_edge_bevel_weight")},
-                {"label": "Display Seams", "icon": _icon('EDGE_SEAM', 'COLORSET_01_VEC'), "position": 1,
+                {"label": "Display Seams", "icon": 'EDGE_SEAM', "position": 1,
                  "enabled": True, "command": overlay("show_edge_seams")},
-                {"label": "Display Crease", "icon": _icon('EDGE_CREASE', 'COLORSET_03_VEC'), "position": 2,
+                {"label": "Display Crease", "icon": 'EDGE_CREASE', "position": 2,
                  "enabled": True, "command": overlay("show_edge_crease")},
-                {"label": "Display Sharp", "icon": _icon('EDGE_SHARP', 'MOD_EDGESPLIT'), "position": 3,
+                {"label": "Display Sharp", "icon": 'EDGE_SHARP', "position": 3,
                  "enabled": True, "command": overlay("show_edge_sharp")},
             ],
         },
-        # Mostly Zen UV; Flip X/Y are stock Blender instead (see above).
-        # Without Zen UV installed the rest of these slots simply report a
+        # Mostly Mio3 UV; Flip X/Y and Rotate 90 are stock Blender instead.
+        # Without Mio3 UV installed the rest of these slots simply report a
         # missing operator; install it and they start working, with no edit
         # needed here.
         {
@@ -291,19 +253,13 @@ def default_pie_definitions(script_paths):
                 {"label": "Flip Y", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
                  "command": "bpy.ops.transform.resize(value=(1, -1, 1), constraint_axis=(False, True, False))"},
                 {"label": "Sort", "icon": 'SORTSIZE', "position": 4, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_distribute_islands()"},
+                 "command": "bpy.ops.uv.mio3_sort()"},
                 {"label": "Stack Similar", "icon": 'STICKY_UVS_LOC', "position": 5, "enabled": True,
                  "command": "bpy.ops.uv.mio3_stack(selected=True)"},
                 {"label": "Orient World", "icon": 'WORLD', "position": 6, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_world_orient()"},
-                # Explicit rather than defaults: Zen UV's own default for
-                # "Orient by" is Bounding Box, but the user wants By Selection.
-                # The other three already matched Zen UV's defaults, spelled
-                # out anyway so the whole setting is visible in one place and
-                # will not drift if Zen UV's defaults ever change.
+                 "command": "bpy.ops.uv.mio3_orient_world()"},
                 {"label": "Orient to Axis", "icon": 'ORIENTATION_GIMBAL', "position": 7, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_orient_island(order='ONE_BY_ONE', "
-                            "mode='BY_SELECTION', orient_direction='AUTO', rotate_direction='CCW')"},
+                 "command": "bpy.ops.uv.mio3_orient()"},
             ],
         },
         {
@@ -312,22 +268,26 @@ def default_pie_definitions(script_paths):
             "keymap_type": "UV_EDITOR", "keymap_scopes": ["UV_EDITOR"], "key": "A",
             "ctrl": False, "shift": True, "alt": False,
             "enabled": True,
-            # Mostly Mio3 UV, with overlap coming from Zen UV
+            # Mostly Mio3 UV; overlapping, done and self-intersecting come
+            # from CocoUVs. Position 4 is left empty on purpose.
             "items": [
                 {"label": "Select Similar", "icon": 'SELECT_SET', "position": 0, "enabled": True,
                  "command": "bpy.ops.uv.mio3_select_similar()"},
-                {"label": "Select Overlap", "icon": 'SELECT_SUBTRACT', "position": 1, "enabled": True,
-                 "command": "bpy.ops.uv.zenuv_select_uv_overlap()"},
+                {"label": "Select Overlapping", "icon": 'AREA_DOCK', "position": 1, "enabled": True,
+                 "command": "bpy.ops.cocouvs.select_overlapping()"},
                 {"label": "Select Zero", "icon": 'ERROR', "position": 2, "enabled": True,
                  "command": "bpy.ops.uv.mio3_select_zero()"},
                 {"label": "Select Flipped", "icon": 'MOD_MIRROR', "position": 3, "enabled": True,
                  "command": "bpy.ops.uv.mio3_select_flipped_faces()"},
+                {"label": "Select Done", "icon": 'CHECKMARK', "position": 5, "enabled": True,
+                 "command": "bpy.ops.cocouvs.select_done()"},
+                {"label": "Select Self Intersecting", "icon": 'SELECT_EXTEND', "position": 6, "enabled": True,
+                 "command": "bpy.ops.cocouvs.select_self_intersecting()"},
                 {"label": "Boundary", "icon": 'MESH_GRID', "position": 7, "enabled": True,
                  "command": "bpy.ops.uv.mio3_select_edge()"},
             ],
         },
-        # Unlike the other two UV pies, this one drives Mio3 UV rather than
-        # Zen UV, and only the classic unwrap is stock Blender.
+        # Mio3 UV throughout; only the classic unwrap is stock Blender.
         {
             "name": "UV Unwrap",
             "idname": "COCOPIE_MT_uv_unwrap",
@@ -348,10 +308,9 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.mio3_unwrap()"},
                 {"label": "Rectify", "icon": 'MESH_PLANE', "position": 4, "enabled": True,
                  "command": "bpy.ops.uv.mio3_rectify()"},
-                # Geometry Ratio 0 rather than Mio3's 0.5. ratio_influence only
-                # exists from Mio3 UV 2.x (Blender 5.0+); on 4.5's 1.5.x the pie
-                # button skips it (menus.py). Keep this a plain bpy.ops call:
-                # anything else runs through exec and loses the redo panel.
+                # Geometry Ratio 0 rather than Mio3's 0.5. Keep this a plain
+                # bpy.ops call: anything else runs through exec and loses the
+                # redo panel.
                 {"label": "Gridify", "icon": 'MESH_GRID', "position": 5, "enabled": True,
                  "command": "bpy.ops.uv.mio3_gridify(ratio_influence=0.0)"},
                 {"label": "UV Unwrap X", "icon": 'AXIS_SIDE', "position": 6, "enabled": True,
@@ -380,7 +339,7 @@ def default_pie_definitions(script_paths):
             "items": [
                 {"label": "Clear Seams", "icon": 'X', "position": 0, "enabled": True,
                  "command": "bpy.ops.mesh.mark_seam(clear=True)"},
-                {"label": "Mark Seams", "icon": _icon('EDGE_SEAM', 'COLORSET_01_VEC'), "position": 1, "enabled": True,
+                {"label": "Mark Seams", "icon": 'EDGE_SEAM', "position": 1, "enabled": True,
                  "command": "bpy.ops.mesh.mark_seam(clear=False)"},
                 {"label": "Smart UV Project", "icon": 'MOD_UVPROJECT', "position": 2, "enabled": True,
                  "command": "bpy.ops.uv.smart_project()"},
@@ -392,7 +351,7 @@ def default_pie_definitions(script_paths):
                 {"label": "Clear All Seams", "icon": 'X', "position": 4, "enabled": True,
                  "command": "bpy.ops.mesh.select_all(action='SELECT')\n"
                             "bpy.ops.mesh.mark_seam(clear=True)"},
-                {"label": "Edge Bevel Weight", "icon": _icon('EDGE_BEVEL', 'MOD_BEVEL'), "position": 5, "enabled": True,
+                {"label": "Edge Bevel Weight", "icon": 'EDGE_BEVEL', "position": 5, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "bm.edges.ensure_lookup_table()\n"
@@ -403,7 +362,7 @@ def default_pie_definitions(script_paths):
                             "for e in sel:\n"
                             "    e[layer] = new_val\n"
                             "bmesh.update_edit_mesh(context.object.data)"},
-                {"label": "Edge Crease", "icon": _icon('EDGE_CREASE', 'COLORSET_03_VEC'), "position": 6, "enabled": True,
+                {"label": "Edge Crease", "icon": 'EDGE_CREASE', "position": 6, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "bm.edges.ensure_lookup_table()\n"
@@ -414,7 +373,7 @@ def default_pie_definitions(script_paths):
                             "for e in sel:\n"
                             "    e[layer] = new_val\n"
                             "bmesh.update_edit_mesh(context.object.data)"},
-                {"label": "Mark Sharp", "icon": _icon('EDGE_SHARP', 'MOD_EDGESPLIT'), "position": 7, "enabled": True,
+                {"label": "Mark Sharp", "icon": 'EDGE_SHARP', "position": 7, "enabled": True,
                  "command": "import bmesh\n"
                             "bm = bmesh.from_edit_mesh(context.object.data)\n"
                             "sel = [e for e in bm.edges if e.select]\n"
@@ -429,9 +388,8 @@ def default_pie_definitions(script_paths):
         # operators -- no dependency on that extension staying installed.
         # Two of the originals (Mesh Select, Proportional Edit) used a
         # mouse-drag gesture to pick between a single fallback action on a
-        # tap and the full pie on a hold; CocoPies has no drag-distance
-        # gesture yet, only Tap to Toggle's hold-duration timer, used here
-        # as the nearest equivalent.
+        # tap and the full pie on a drag; Quick Tap is the same gesture here
+        # (a CLICK / CLICK_DRAG pair, see keymaps._add_keymap_item).
         {
             "name": "Mesh Delete",
             "idname": "COCOPIE_MT_mesh_delete",
@@ -969,7 +927,6 @@ def seed_starter_suppression(prefs, starter_name):
     identity = STARTER_SUPPRESSIONS.get(starter_name)
     if identity is None:
         return False
-    from .utils import find_suppression, record_prior_state
     if find_suppression(prefs, identity) is not None:
         return False
     entry = prefs.suppressed_bindings.add()
@@ -1023,8 +980,10 @@ def ensure_default_pies(prefs):
             continue
 
         pie = prefs.pie_menus.add()
-        pie.name = definition["name"]
-        _apply_pie_dict(pie, definition)
+        # Held: the caller rebuilds once, after the last pie
+        with holding_rebuilds():
+            pie.name = definition["name"]
+            _apply_pie_dict(pie, definition)
         # Added as we go, not just read once up front: two definitions sharing
         # a name would otherwise both pass the check and seed two pies. That
         # happened -- a second Mesh Delete was added to this list beside the
@@ -1064,8 +1023,10 @@ def sync_starter_pies(prefs):
             continue
 
         pie = prefs.pie_menus.add()
-        pie.name = name
-        _apply_pie_dict(pie, definition)
+        # Held: register() rebuilds once, after the last pie
+        with holding_rebuilds():
+            pie.name = name
+            _apply_pie_dict(pie, definition)
         # See ensure_default_pies: kept current so two definitions sharing a
         # name cannot both seed
         existing.add(name)

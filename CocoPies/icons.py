@@ -1,13 +1,6 @@
 """Blender's icon catalogue, grouped into browsable categories."""
 
 import bpy
-import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
 
 
 # ----------------------------------------------------------------------------
@@ -29,7 +22,7 @@ ICON_CATEGORY_ENUM = [
     ('OTHER',    "Other",     "Everything that didn't fit elsewhere",  10),
     # Not one of Blender's own: these come from image files CocoPies loads
     ('CUSTOM',   "Custom",    "Your own icons, loaded from image files", 11),
-    # Blender's pre-4.3 sculpt brush icons, shipped with CocoPies because
+    # The old built-in sculpt brush icons, shipped with CocoPies because
     # Blender itself no longer exposes them by name
     ('BRUSH',    "Brush",     "Sculpt brush icons",                     12),
 ]

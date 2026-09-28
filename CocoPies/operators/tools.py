@@ -1,54 +1,16 @@
-"""Per-item tools: testing a pie, editing a command, picking a script or icon."""
+"""Per-item tools: editing a command, picking a script or icon."""
 
-import bpy
 import os
-import json
-from bpy.props import (
-    StringProperty, IntProperty, BoolProperty, EnumProperty,
-    CollectionProperty, PointerProperty, FloatProperty,
-)
-from bpy.types import Operator, PropertyGroup, Menu, AddonPreferences
-from ..items import (
-    POSITION_ARROWS, POSITION_NAMES, POSITION_GRID,
-    GRID_CELL_UNITS, GRID_POPUP_WIDTH, ITEM_ROW_UNITS,
-    COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
-    KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS,
-)
-from ..utils import (
-    ADDON_ID, get_prefs, get_pie, get_pie_item, format_shortcut,
-    keymap_names_for, find_shortcut_conflicts, find_duplicate_positions, _debug,
-)
-from ..icons import (
-    ICON_CATEGORY_ENUM, get_all_icons, safe_icon, get_icons_by_category,
-)
-from ..menus import execute_script, create_pie_menu_class
-from ..keymaps import register_pie_menus, unregister_pie_menus
+from bpy.props import StringProperty, IntProperty, EnumProperty
+from bpy.types import Operator
+from ..items import POSITION_NAMES
+from ..utils import ADDON_ID, get_pie_item
+from ..icons import ICON_CATEGORY_ENUM, safe_icon, get_icons_by_category
+from ..keymaps import register_pie_menus
 from ..previews import (
     icon_args, custom_icon_names, custom_icon_dirs, register_previews,
     CUSTOM_PREFIX, BRUSH_PREFIX, brush_icon_names, image_icon_label,
 )
-
-
-class COCOPIE_OT_test_pie_menu(Operator):
-    """Test the selected pie menu"""
-    bl_idname = "cocopie.test_pie_menu"
-    bl_label = "Test Pie Menu"
-    bl_options = {'REGISTER'}
-    
-    pie_index: IntProperty()
-    
-    def execute(self, context):
-        try:
-            prefs = context.preferences.addons[ADDON_ID].preferences
-            
-            if 0 <= self.pie_index < len(prefs.pie_menus):
-                pie = prefs.pie_menus[self.pie_index]
-                bpy.ops.wm.call_menu_pie(name=pie.idname)
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to test: {str(e)}")
-        
-        return {'FINISHED'}
 
 
 class COCOPIE_OT_refresh_menus(Operator):
@@ -73,7 +35,9 @@ class COCOPIE_OT_edit_item_command(Operator):
     """Edit this item's command in a roomier field"""
     bl_idname = "cocopie.edit_item_command"
     bl_label = "Set Command"
-    bl_options = {'REGISTER', 'UNDO'}
+    # No UNDO: this only writes preferences, which are not on the undo stack
+    # (see "An operator that can run from the viewport" in CLAUDE.md)
+    bl_options = {'REGISTER'}
 
     pie_index: IntProperty()
     item_index: IntProperty()
@@ -88,11 +52,8 @@ class COCOPIE_OT_edit_item_command(Operator):
         if item:
             self.command = item.command
 
-        wm = context.window_manager
-        try:
-            return wm.invoke_props_dialog(self, width=680, title="Edit Command")
-        except TypeError:
-            return wm.invoke_props_dialog(self, width=680)
+        return context.window_manager.invoke_props_dialog(
+            self, width=680, title="Edit Command")
 
     def draw(self, context):
         layout = self.layout
@@ -142,7 +103,8 @@ class COCOPIE_OT_pick_script(Operator):
     """Open file browser to pick a Python script"""
     bl_idname = "cocopie.pick_script"
     bl_label = "Pick Script"
-    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    # No UNDO, for the same reason as Set Command
+    bl_options = {'REGISTER', 'INTERNAL'}
     
     pie_index: IntProperty()
     item_index: IntProperty()
@@ -168,7 +130,6 @@ class COCOPIE_OT_pick_script(Operator):
                 item.command = f'execute_script("{filepath}")'
                 
                 # Auto-set label from filename if label is still default
-                import os
                 filename = os.path.splitext(os.path.basename(filepath))[0]
                 if item.label in ("New Item", "Item", ""):
                     item.label = filename.replace("_", " ").replace("-", " ").title()
@@ -219,7 +180,7 @@ class COCOPIE_OT_select_icon(Operator):
     # matters more here than fitting the maximum number on screen.
     IMAGE_GRID_COLUMNS = 8
     # An icon inside a button draws at a fixed ~19px no matter what the button
-    # does -- measured, and identical on 4.5 and 5.2. Scaling the cell only
+    # does -- measured in a real window. Scaling the cell only
     # grows the frame around unchanged artwork, which is what the earlier
     # scale_x/scale_y attempt here did. template_icon() is the one thing that
     # genuinely resizes it, because it draws from the preview collection's
@@ -263,13 +224,8 @@ class COCOPIE_OT_select_icon(Operator):
             "icon": item.icon if item else 'NONE',
         })
 
-        wm = context.window_manager
-        try:
-            return wm.invoke_props_dialog(self, width=880, title="Select Icon",
-                                          confirm_text="Done")
-        except TypeError:
-            # title/confirm_text aren't accepted on every 4.x/5.x build
-            return wm.invoke_props_dialog(self, width=880)
+        return context.window_manager.invoke_props_dialog(
+            self, width=880, title="Select Icon", confirm_text="Done")
 
     def _filtered_icons(self):
         # Custom icons are not in Blender's catalogue -- they are files

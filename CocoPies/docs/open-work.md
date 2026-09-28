@@ -1,6 +1,6 @@
 # Open work
 
-State as of **2026-09-03**. Check the facts before acting on them — this file
+State as of **2026-09-28**. Check the facts before acting on them — this file
 is a starting point, not an authority.
 
 ## 1. The port is finished
@@ -84,29 +84,38 @@ Tag it retroactively if that matters:
 git tag CocoPies-v1.10.1 07f5f13 && git push origin CocoPies-v1.10.1
 ```
 
-## 3. The feed is offline while the repo is private
+## 3. The feed is live again
 
-`MoonCoconutz/CocoTools` was made private on 2026-09-02. GitHub Pages does not
-serve a private repo on a Free or Pro plan, so
-`https://mooncoconutz.github.io/CocoTools/index.json` 404s and Blender's remote
-repository cannot update from it. This is deliberate, not a fault.
+The repo was private from 2026-09-02, which took the Pages feed offline. It is
+public again: on 2026-09-28 `https://mooncoconutz.github.io/CocoTools/index.json`
+answered 200 and listed CocoPies 1.12.7. Should it go private again, Pages
+stops serving and Blender's remote repository cannot update; development is
+unaffected, since the Local Repository reads this working tree.
 
-Consequences worth knowing:
+## 4. Pies made before 1.13.0 can carry the bugs it fixed
 
-- Development is unaffected — the Local Repository reads this working tree, so
-  every change is live without the feed.
-- `CocoPies-v1.10.6` is tagged and pushed. Making the repo public again and
-  re-running the workflow from the Actions tab (`workflow_dispatch`) publishes
-  it; no re-tagging needed.
-- Blender *does* support authenticated repositories (`use_access_token` /
-  `access_token`, sent as `Authorization: Bearer`), but that cannot rescue a
-  Pages URL that is not being served at all. A private feed would mean moving
-  the index and the zips to `raw.githubusercontent.com` and giving every user a
-  PAT — untested, and not worth it below a real audience. Sending a built zip
-  is one command: `blender --command extension build --source-dir <ext>`.
+1.13.0 fixed how pies are *made*, not pies already stored:
+
+- A pie made with **Add to a New Pie** before 1.13.0 is bound to Q in
+  Window (Global). Clear its key or give it a real one.
+- A **Duplicate** made before 1.13.0 is scoped to Window as well as its own
+  editor, and lost its Trigger, Style and Quick Tap settings. Two duplicates
+  of one pie share an idname, so only one of them registers.
+- A fresh install's delete-starter suppressions were recorded with
+  `restore_on_unregister = False`, so disabling CocoPies does not give
+  Blender's X delete menu back. The user's own configuration had `True`
+  (checked live 2026-09-28), so nothing was migrated.
 
 ## Recently closed, for context
 
+- **1.13.0** (2026-09-28): 5.2+ only, and a clean-up checked old against new
+  in isolated profiles (identical pies, keymaps and screenshots, the user's
+  real pies included). Fixed: Add Editor raised on every click; moving a pie
+  left its shortcut drawing the neighbour's menu and its tap running the
+  neighbour's direction; Duplicate, Add to a New Pie and the fresh-install
+  suppression flag above; a preset import rebuilt 415 times (now once). The
+  retired `cocopie.hold_or_tap` and the unused `cocopie.test_pie_menu`
+  operators were removed. New starter defaults for UV Transform and UV Select.
 - **1.10.8** (2026-09-03): Apply Transforms and Mesh Flatten ported; menus
   gained a List style (a flat dropdown instead of a pie), which is what let
   Apply Transforms reproduce the source's Clear Transforms submenu.

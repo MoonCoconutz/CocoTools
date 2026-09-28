@@ -30,26 +30,42 @@ see the root `CLAUDE.md`'s headless-verification note).
 
 ## Target versions
 
-**Must work on both Blender 4.5 and 5.2** (LTS releases the user actually
-runs — installed under `C:\Program Files\Blender Foundation\`). An API that
-exists on one and not the other is a real bug, not an edge case. Confirm any
-non-trivial `bpy` API actually exists on both before relying on it — read
-`bpy.types.X.bl_rna.functions[...]` / check via a headless run rather than
-trusting memory of the API.
+**Blender 5.2+ only** (`blender_version_min = "5.2.0"`), the user's decision
+of 2026-09-28, same as CocoBackup and CocoSelections. The 4.5 compatibility
+code went in 1.13.0: the `WM_MT_button_context` fallback for the right-click
+menu, the `_icon()` stand-ins for the `EDGE_*` icons 4.5 lacks, and the
+`TypeError` fallbacks around `invoke_props_dialog(title=, confirm_text=)`. Use
+5.2 APIs directly; do not test on 4.5. Confirm a non-trivial `bpy` API exists
+on 5.2 before relying on it (`bpy.types.X.bl_rna.functions[...]`, or a
+headless run) rather than trusting memory of the API.
 
 ## Verifying a change
 
 There's no Python on `PATH`; use Blender's own interpreter, headless:
 
 ```bash
-"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <script>
-"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --python <script>
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --factory-startup --python <script>
 ```
 
-Run against **both** versions before considering a change verified. Expect
-noisy, unrelated `SystemError: GPU functions...` tracebacks from other addons
-in the user's stack (they run headless-unfriendly code at import) — grep for
-your own marker output rather than treating any traceback as failure.
+Expect noisy, unrelated `SystemError: GPU functions...` tracebacks from other
+addons in the user's stack if you drop `--factory-startup` — grep for your own
+marker output rather than treating any traceback as failure.
+
+**For anything that touches stored pies or keymaps, compare old against new in
+isolated profiles** — this is how 1.13.0 was verified, and it found five bugs
+the headless loader could not. Copy the committed `CocoPies/` into one scratch
+folder and the working copy into another, build a profile for each with
+`BLENDER_USER_RESOURCES` (root `CLAUDE.md`, "An isolated profile"), then run
+the same GUI probe in both (`--enable-event-simulate --no-window-focus`):
+dump every pie, every `COCOPIE` item in `keyconfigs.addon` and `.user`, which
+menu classes exist, and screenshot the Preferences panel drawn into an
+`invoke_props_dialog` (call `type(prefs).draw` with a proxy whose `layout` is
+the dialog's and whose other attributes fall through to the real prefs) and a
+real pie. Script paths differ between the two copies, so normalise the folder
+name before comparing. Identical data and byte-identical screenshots are the
+bar. The user's real pies can be replayed through both the same way: read them
+off the running Blender (read-only) into a preset-shaped JSON and apply it
+with `resolve_preset_conflict(mode='REPLACE')`.
 
 Load the addon package under a **unique module name** in the verification
 script, not `import CocoPies` — that resolves to the already-installed copy
@@ -171,8 +187,8 @@ The Preferences window, when open as a **second** OS window, cannot be
 screenshotted (the screenshot tool only reaches window 0) and popups are
 transient — never switch a `VIEW_3D` area to `'PREFERENCES'` to work around
 this, it silently becomes `'PROPERTIES'` instead and costs the user their
-viewport. A UI change needs the user's own eyes; ask for a screenshot rather
-than trying to force a capture.
+viewport. Draw the real panel into an `invoke_props_dialog` in a throwaway
+window instead (see "Verifying a change"), or ask the user for a screenshot.
 
 **Starter seeding is by record, not by absence** (`defaults.py`). Startup
 calls `sync_starter_pies()`, which adds only starters whose name is not in
@@ -188,13 +204,6 @@ Snapshotting `prefs.pie_menus` to JSON around a reload is still worth doing as
 a check, but it should now come back with zero differences. If it ever differs
 again, something new is wrong — diagnose it rather than reaching for the
 rebuild and moving on.
-
-The Preferences window, when open as a **second** OS window, cannot be
-screenshotted (the screenshot tool only reaches window 0) and popups are
-transient — never switch a `VIEW_3D` area to `'PREFERENCES'` to work around
-this, it silently becomes `'PROPERTIES'` instead and costs the user their
-viewport. A UI change needs the user's own eyes; ask for a screenshot rather
-than trying to force a capture.
 
 
 ## Architecture
@@ -215,19 +224,40 @@ rebuilds every pie's `Menu` class and keymap items from scratch. This is
 simple but means `unregister_pie_menus()` must be genuinely thorough —
 see the next point.
 
+**Code that writes several settings at once holds rebuilds**
+(`utils.holding_rebuilds()`), then calls `register_pie_menus()` once itself.
+Each rebuild refreshes the keyconfigs three times, and every pie setting
+carries `update=update_pie_menu`, so a preset import used to rebuild once per
+field: 415 rebuilds and 2.1 s for 24 pies, against 1 rebuild and 0.03 s since
+1.13.0. It was also a correctness bug, not only a slow one: a rebuild half-way
+through writing a pie read it half-written — Duplicate came back scoped to
+Window as well as its own editor, because a rebuild after the name was set
+seeded a `WINDOW` scope before the real ones were copied. `_apply_pie_dict`
+holds on its own; any new writer of more than one field should hold too.
+`ensure_keymap_scopes()` holds as well, since it runs from inside
+`register_pie_menus()` and from draw code, where a rebuild would tear down the
+pies it is in the middle of registering or drawing.
+
+**Anything that reorders `prefs.pie_menus` must rebuild.** Each pie's `Menu`
+class draws from the stored pie it was built from (a closure over that
+`PropertyGroup`), and a Quick Tap item carries its pie's collection index. A
+`.move()` or `.remove()` moves the data under both. Until 1.13.0 the ▲/▼
+buttons did not rebuild, so after a move the moved pie's shortcut drew its
+neighbour's menu and its tap ran the neighbour's direction.
+
 **The Pie Menus list is grouped into sections by editor, display-only.**
 `pie_menu_groups()` (`utils.py`) buckets pies by scope — one section per
 editor, plus a "Multiple Editors" section for any pie with more than one
 scope — and `draw_left_column()` (`preferences.py`) draws each section as a
-heading label followed by its *own* `template_list`. Each section's list is a
-generated `UIList` subclass (`GROUP_UILISTS` in `ui/lists.py`, one per key in
-`utils.GROUP_KEYS`) whose `filter_items` shows only that section's pies and
-never permutes order. Two things here are non-negotiable, both learned by
+collapsible heading followed by that section's pies as plain rows
+(`draw_pie_row()` in `ui/lists.py`). Not a `template_list` per section: that
+widget always draws inside a box, and six stacked boxes read as six panels
+rather than one list. Two things here are non-negotiable, both learned by
 breaking them: the stored collection is **never** reordered to match the
 display (doing it with `.move()` corrupted stored pies), and a section
-heading is **never** drawn inside `draw_item` (it becomes part of the first
-pie's row, stealing that row's click and selection highlight). Storage order
-and display order are independent by design, which is also why the ▲/▼
+heading is **never** drawn inside a `UIList.draw_item` (it becomes part of the
+first pie's row, stealing that row's click and selection highlight). Storage
+order and display order are independent by design, which is also why the ▲/▼
 reorder buttons can look off near a section boundary.
 
 
@@ -240,21 +270,26 @@ from a *previous* load can still be sitting in Blender's keyconfig.
 silently across reloads. `unregister_pie_menus()` therefore sweeps every
 keymap CocoPies could have touched (`KEYMAP_CONFIG` scopes ∪
 `WINDOW_MODE_KEYMAPS`; the latter is where "Window (Global)" registered before
-it moved to the real `Window` keymap, kept only so old items still get swept) for any `wm.call_menu_pie` item whose `properties.name`
-starts with `COCOPIE_MT_`, or any `cocopie.hold_or_tap` item, and removes
-them directly — regardless of what `registered_keymaps` says. Any *new*
-CocoPies-owned keymap idname added in the future must be added to this sweep,
-or it will orphan the exact same way.
+it moved to the real `Window` keymap, kept only so old items still get swept)
+for any `wm.call_menu_pie` item whose `properties.name` starts with
+`COCOPIE_MT_`, or any item running an operator in `COCOPIE_KEYMAP_IDNAMES`,
+and removes them directly — regardless of what `registered_keymaps` says. Any
+*new* CocoPies-owned keymap idname must be added to that set, and a retired one
+stays in it (`cocopie.hold_or_tap` is one: its class was removed in 1.13.0,
+its idname was not). The `registered_keymaps` pass that follows is not
+redundant: a pie's idname is the user's to edit, and the sweep's
+`COCOPIE_MT_` test does not recognise one renamed to `VIEW3D_MT_something`.
 
-**Hold vs. tap on one keyboard key** (`COCOPIE_OT_hold_or_tap` in
-`operators/pies.py`) is hand-timed with a modal operator + `event_timer_add`,
-not a native Blender event value. `CLICK_DRAG` requires the mouse to actually
-move (it's built for mouse-button drags); `RELEASE` fires identically
-regardless of hold duration. Neither can distinguish "held the key" from
-"tapped it" on its own. When a pie's `tap_toggle` is on, this operator
-replaces the pie's own `wm.call_menu_pie` keymap item entirely (bound to
-`PRESS`); the pie's `event_value` field becomes cosmetic (forced to
-`CLICK_DRAG`/"Drag" for UI honesty, but unused by the actual dispatch).
+**Quick Tap is a `CLICK_DRAG` / `CLICK` pair on one key**
+(`keymaps._add_keymap_item`): `CLICK_DRAG` opens the pie, `CLICK` runs the tap
+action (`cocopie.tap_toggle_direction`, or `cocopie.execute_command` with the
+tap command). Blender resolves the two natively, so the pie opens the moment
+the drag threshold is crossed; holding the key still without moving opens
+nothing, which is what `CLICK_DRAG` means everywhere in Blender. It replaced a
+hand-timed modal (`cocopie.hold_or_tap`, 0.2 s timer) in 1.10.6; the class
+was removed in 1.13.0. When `tap_toggle` is on, the pie's `event_value` is
+cosmetic (forced to `CLICK_DRAG`/"Drag" for UI honesty, and not read by the
+dispatch).
 
 **The addon's identity is its module name, not a constant.** `ADDON_ID =
 __package__` (`utils.py`) — Blender stores `AddonPreferences` keyed by the
@@ -299,21 +334,19 @@ in Preferences and so impossible to repair.
 `default_pie_definitions(script_paths)`, `bundled_script_paths()`,
 `sync_starter_pies()`, `ensure_default_pies()`. `presets.py`:
 `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer
-used by starters, presets and imports alike. `utils.py`: `get_prefs()`,
+used by starters, presets, imports and Duplicate alike — and its inverse
+`pie_to_dict(pie)`. `utils.py`: `get_prefs()`, `holding_rebuilds()`,
 `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`,
-`ensure_slot_items()`, `slot_is_used()`. `ui/lists.py`:
-`COCOPIE_UL_pie_menus`, `GROUP_UILISTS`.
+`ensure_slot_items()`, `slot_is_used()`, `unused_pie_name()` /
+`unused_pie_idname()`. `ui/lists.py`: `draw_pie_row()`.
 
 **Headless stand-in for `AddonPreferences`.** Anything taking `prefs` only
 touches `pie_menus`, `active_pie_index` and `seeded_starters`, so a scratch
 `bpy.types.Scene` carrying those three properties under those exact names can
-be passed straight into `sync_starter_pies()`, `pie_menu_groups()`,
-`filter_items()` and friends — no `addon_enable` needed. Combined with the
-unique-module-name loader above, that covers most verification without a live
-session. A `UIList` method can be called as
-`SomeUIList.filter_items(fake_self, context, data, "pie_menus")` where
-`fake_self` is a `types.SimpleNamespace` carrying `bitflag_filter_item` and
-whatever class attributes the method reads.
+be passed straight into `sync_starter_pies()`, `pie_menu_groups()` and friends
+— no `addon_enable` needed. Combined with the unique-module-name loader above,
+that covers the pure logic; anything touching keymaps wants the isolated
+profile instead.
 
 
 **Commands are `exec()`'d Python**, not a restricted DSL
@@ -328,9 +361,10 @@ never reaches the redo panel. 1.12.4's Gridify slot lost its panel that way,
 from an `'x' in get_rna_type().properties` version check. So a keyword the
 installed operator does not define is **skipped** on the native button
 (`prop_name not in op.bl_rna.properties`), not treated as a reason to fall
-back — that is what lets one starter command pass Mio3 UV 2.x options that
-the 1.5.x on 4.5 lacks. Write version differences as extra keywords, never
-as a conditional expression.
+back — it was written so one starter could pass Mio3 UV 2.x options the 1.5.x
+on Blender 4.5 lacked, and still keeps a slot working across an addon version
+that drops an option. Write version differences as extra keywords, never as a
+conditional expression.
 
 **Decide native vs fallback before drawing.** A layout cannot take a button
 back, so the old "draw the native button, setattr, add the fallback on
@@ -347,8 +381,9 @@ absolute path baked into a starter pie does not survive moving between
 machines or Blender versions.
 
 **Bundled scripts vs. inline commands**: `CocoPies/scripts/workspaces/` are a
-worked example of the `execute_script()` slot form; `CocoPies/scripts/uv/`
-exists only for the few operations Blender genuinely has no operator for.
+worked example of the `execute_script()` slot form; `CocoPies/scripts/delete/`
+holds the one operation Blender genuinely has no operator for (Mesh Delete's
+tap, which branches on the select mode).
 Prefer a real `bpy.ops` command over a bundled script whenever one exists —
 scripts are a last resort, not the default, and a script that turns out to
 duplicate a real operator (this has happened) should be deleted along with
@@ -373,10 +408,14 @@ There are **two** ways out of that menu and they must not diverge:
 drawn even when no pie exists yet, since it is the only entry useful in that
 state). Both turn the capture into a command through `_write_capture()` — keep
 it that way rather than inlining either copy; the two conflict checks in
-`keymaps.py` are the cautionary tale of what drifting apart costs. The new-pie
-path names itself through `_unused_pie_name()` / `_unused_pie_idname()`, which
-scan what is taken instead of counting the collection: deleting a pie frees its
-number, so `cocopie.add_pie_menu`'s `len(pie_menus)` naming does collide.
+`keymaps.py` are the cautionary tale of what drifting apart costs. The new pie
+gets no shortcut (`key = ""`) — the property's default is Q, and until 1.13.0
+every pie made this way was bound to Q in Window (Global), taking Blender's
+Quick Favorites, while the report said it had no shortcut. Every way of making
+a pie (New Pie Menu, Duplicate, this) names it through `utils.unused_pie_name()`
+/ `unused_pie_idname()`, which scan what is taken instead of counting the
+collection: deleting a pie frees its number, and two pies sharing an idname
+leave only one registered — which is what two Duplicates of one pie used to do.
 
 **An operator that can run from the viewport must not carry `REGISTER`.**
 `REGISTER` is what puts an operator in the redo stack, which draws the
@@ -386,10 +425,10 @@ not just clutter: re-tweaking `position` in that panel re-ran the assignment
 against a different slot, skipping the overwrite confirmation `invoke()` gives.
 `UNDO` is a separate question and cuts the other way — an operator writing
 `AddonPreferences` should not have it (preferences are not on the undo stack,
-so the step it pushes rolls back the previous *scene* edit instead), while both
-operators that `exec()` a slot's command should, since a slot editing data
-directly rather than calling a `bpy.ops` operator pushes no undo step of its
-own.
+so the step it pushes rolls back the previous *scene* edit instead; Set Command
+and Pick Script lost theirs in 1.13.0), while both operators that `exec()` a
+slot's command should, since a slot editing data directly rather than calling
+a `bpy.ops` operator pushes no undo step of its own.
 
 ## Keymap gotchas (learned the expensive way, 2026-09-02)
 
@@ -510,6 +549,15 @@ per register therefore concludes the user disabled it by hand and declines to
 restore -- leaving the key dead after CocoPies is removed. `record_prior_state`
 runs at ticking time only; `apply_suppressions` must never touch that flag.
 
+**A binding `record_prior_state` cannot find counts as on.** The delete
+starters' suppressions are recorded while `register()` seeds them, before
+Blender has filled the user keyconfig, so on a fresh install the lookup found
+nothing and stored `restore_on_unregister = False`. From then on neither
+unticking the box nor disabling CocoPies gave Blender's X delete menu back —
+measured on a fresh 5.2 profile, fixed in 1.13.0. Configurations whose flag
+was already written `False` keep it; the user's own was `True` (checked live
+2026-09-28), so nothing was migrated.
+
 ## Blender UI layout gotchas (learned the expensive way)
 
 - An icon-only button **collapses to its content** instead of filling its
@@ -564,6 +612,11 @@ runs at ticking time only; `apply_suppressions` must never touch that flag.
   does not work either — Blender does not guarantee the same Python instance
   serves both calls in one redraw, so the stash comes back empty. Use one
   `template_list` per section with headings as plain labels between them.
-- `UIList.list_id` exists on 4.5 and 5.2, but what it holds at filter time
-  can't be confirmed headlessly — prefer a registered subclass per list over
-  branching on it.
+- `UIList.list_id` exists, but what it holds at filter time can't be confirmed
+  headlessly — prefer a registered subclass per list over branching on it.
+- **A dynamic `EnumProperty` callback's strings must outlive the call.**
+  Blender keeps only pointers to them, so Python has to hold the list or the
+  dropdown can read freed memory. The Quick Tap direction pickers keep one list
+  per pie (`properties._tap_direction_items`) and hand the same object back
+  while the labels are unchanged, so the two pickers drawn side by side never
+  free each other's strings.
