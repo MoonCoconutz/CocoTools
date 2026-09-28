@@ -158,6 +158,14 @@ them in Edit Mode). Islands that only touch along an edge do not count as
 overlapping. Like the heatmap, the overlays hide while you edit and come back
 updated a moment after you stop.
 
+### In a pie menu
+
+Every CocoUVs button is its own command, so it can go in a
+[CocoPies](../CocoPies/README.md) pie (right-click it > **Add to CocoPies**)
+and does the same there as in the sidebar: the Flipped row's arrow becomes
+`bpy.ops.cocouvs.select_flipped()`, labelled "Select Flipped". The Debug row
+toggles themselves are not offered.
+
 ## Preferences
 
 **Sidebar Tab** sets the name of the sidebar tab the panels are in. Clear it

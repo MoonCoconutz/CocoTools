@@ -46,8 +46,8 @@ class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
         side.operator("cocouvs.uv_add", text="", icon='ADD')
         side.operator("cocouvs.uv_remove", text="", icon='REMOVE')
         side.separator()
-        side.operator("cocouvs.uv_move", text="", icon='TRIA_UP').direction = 'UP'
-        side.operator("cocouvs.uv_move", text="", icon='TRIA_DOWN').direction = 'DOWN'
+        side.operator("cocouvs.uv_move_up", text="", icon='TRIA_UP')
+        side.operator("cocouvs.uv_move_down", text="", icon='TRIA_DOWN')
         side.separator()
         # A popover opens anchored under the button, like CocoBackup's menu.
         side.popover("COCOUVS_PT_rename", text="", icon='GREASEPENCIL')
@@ -87,8 +87,8 @@ class COCOUVS_PT_texel_density(_CocoUVsPanel, Panel):
         label = row.row()
         label.ui_units_x = 3.0
         label.label(text="Apply")
-        row.operator("cocouvs.assign_density", text="Islands").method = 'ISLAND'
-        row.operator("cocouvs.assign_density", text="Average").method = 'AVERAGE'
+        row.operator("cocouvs.assign_density_per_island", text="Islands")
+        row.operator("cocouvs.assign_density_average", text="Average")
 
         layout.separator()
         wm = context.window_manager
@@ -134,8 +134,8 @@ class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
         side.operator("cocouvs.trim_remove", text="", icon='REMOVE')
         side.operator("cocouvs.trim_clear", text="", icon='TRASH')
         side.separator()
-        side.operator("cocouvs.trim_move", text="", icon='TRIA_UP').direction = 'UP'
-        side.operator("cocouvs.trim_move", text="", icon='TRIA_DOWN').direction = 'DOWN'
+        side.operator("cocouvs.trim_move_up", text="", icon='TRIA_UP')
+        side.operator("cocouvs.trim_move_down", text="", icon='TRIA_DOWN')
         side.separator()
         side.operator("cocouvs.trim_export", text="", icon='EXPORT')
         side.operator("cocouvs.trim_import", text="", icon='IMPORT')
@@ -152,11 +152,11 @@ class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
 
         col = layout.column(align=True)
         row = col.row(align=True)
-        row.operator("cocouvs.trim_fit", text="Fit + Tile").method = 'TILE'
-        row.operator("cocouvs.trim_fit", text="Fit Inside").method = 'FIT'
+        row.operator("cocouvs.trim_fit_tile", text="Fit + Tile")
+        row.operator("cocouvs.trim_fit_inside", text="Fit Inside")
         row = col.row(align=True)
-        row.operator("cocouvs.trim_fit", text="Fill").method = 'FILL'
-        row.operator("cocouvs.trim_fit", text="Move").method = 'MOVE'
+        row.operator("cocouvs.trim_fill", text="Fill")
+        row.operator("cocouvs.trim_move_islands", text="Move")
         row = layout.row()
         settings = context.scene.cocouvs
         row.prop(settings, "trim_rotate")
@@ -172,8 +172,8 @@ class COCOUVS_PT_debug(_CocoUVsPanel, Panel):
         wm = context.window_manager
 
         row = layout.row(align=True)
-        row.operator("cocouvs.done_mark", text="Add Done", icon='ADD').action = 'ADD'
-        row.operator("cocouvs.done_mark", text="Remove Done", icon='REMOVE').action = 'REMOVE'
+        row.operator("cocouvs.add_done", text="Add Done", icon='ADD')
+        row.operator("cocouvs.remove_done", text="Remove Done", icon='REMOVE')
 
         col = layout.column(align=True)
         for kind in debug.FACE_KINDS:
@@ -185,10 +185,10 @@ class COCOUVS_PT_debug(_CocoUVsPanel, Panel):
                 if n is not None:
                     text = f"{label}  ({n})"
             row = col.row(align=True)
-            row.operator("cocouvs.debug_select", text="", icon='RESTRICT_SELECT_OFF').kind = kind
+            row.operator(debug.SELECT_OPERATORS[kind], text="", icon='RESTRICT_SELECT_OFF')
             row.prop(wm, prop, text=text, toggle=True, icon=icon)
         row = col.row(align=True)
-        row.operator("cocouvs.debug_select", text="", icon='RESTRICT_SELECT_OFF').kind = 'EDGES'
+        row.operator(debug.SELECT_OPERATORS['EDGES'], text="", icon='RESTRICT_SELECT_OFF')
         row.prop(wm, "cocouvs_debug_edges", text="Seams / Crease / Sharp / Bevel", toggle=True, icon='EDGESEL')
 
 

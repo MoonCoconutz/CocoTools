@@ -26,7 +26,7 @@ import bmesh
 import bpy
 import gpu
 import numpy as np
-from bpy.props import BoolProperty, EnumProperty
+from bpy.props import BoolProperty
 from bpy.types import Operator
 from gpu_extras.batch import batch_for_shader
 
@@ -391,27 +391,15 @@ def found(kind):
 
 # --- Operators -----------------------------------------------------------------
 
-class COCOUVS_OT_debug_select(Operator):
-    bl_idname = "cocouvs.debug_select"
-    bl_label = "Select"
+class _DebugSelect:
+    """The select arrow on each Debug row. One operator per kind, never one
+    operator with a kind setting: CocoPies' "Add to CocoPies" (and anything
+    else that takes a button's operator) keeps only the operator's name, so
+    every arrow became "select done"."""
     bl_options = {'REGISTER', 'UNDO'}
+    kind = 'DONE'
 
-    kind: EnumProperty(items=[
-        ('DONE', "Done", ""), ('FLIPPED', "Flipped", ""), ('OVERLAP', "Overlapping", ""),
-        ('SELF', "Self-Intersecting", ""), ('EDGES', "Seams / Crease / Sharp / Bevel", ""),
-    ])
     extend: BoolProperty(name="Extend", description="Add to the current selection", default=False)
-
-    @classmethod
-    def description(cls, context, properties):
-        what = {
-            'DONE': "UV islands marked as done",
-            'FLIPPED': "flipped (mirrored) UV islands",
-            'OVERLAP': "UV islands that overlap another island",
-            'SELF': "faces that overlap another face of their own island",
-            'EDGES': "edges with a seam, crease, sharp mark or bevel weight",
-        }[properties.kind]
-        return f"Select the {what}. Shift-click to add to the current selection"
 
     @classmethod
     def poll(cls, context):
@@ -494,18 +482,54 @@ def _select_loop_edges(part, marks, sync, extend):
     return len(selected)
 
 
-class COCOUVS_OT_done_mark(Operator):
-    bl_idname = "cocouvs.done_mark"
-    bl_label = "Mark Done"
+_SHIFT = ". Shift-click to add to the current selection"
+
+
+class COCOUVS_OT_select_done(_DebugSelect, Operator):
+    bl_idname = "cocouvs.select_done"
+    bl_label = "Select Done"
+    bl_description = "Select the UV islands marked as done" + _SHIFT
+    kind = 'DONE'
+
+
+class COCOUVS_OT_select_flipped(_DebugSelect, Operator):
+    bl_idname = "cocouvs.select_flipped"
+    bl_label = "Select Flipped"
+    bl_description = "Select the flipped (mirrored) UV islands" + _SHIFT
+    kind = 'FLIPPED'
+
+
+class COCOUVS_OT_select_overlapping(_DebugSelect, Operator):
+    bl_idname = "cocouvs.select_overlapping"
+    bl_label = "Select Overlapping"
+    bl_description = "Select the UV islands that overlap another island" + _SHIFT
+    kind = 'OVERLAP'
+
+
+class COCOUVS_OT_select_self_intersecting(_DebugSelect, Operator):
+    bl_idname = "cocouvs.select_self_intersecting"
+    bl_label = "Select Self-Intersecting"
+    bl_description = "Select the faces that overlap another face of their own island" + _SHIFT
+    kind = 'SELF'
+
+
+class COCOUVS_OT_select_marked_edges(_DebugSelect, Operator):
+    bl_idname = "cocouvs.select_marked_edges"
+    bl_label = "Select Seams / Crease / Sharp / Bevel"
+    bl_description = "Select the edges with a seam, crease, sharp mark or bevel weight" + _SHIFT
+    kind = 'EDGES'
+
+
+SELECT_CLASSES = (COCOUVS_OT_select_done, COCOUVS_OT_select_flipped, COCOUVS_OT_select_overlapping,
+                  COCOUVS_OT_select_self_intersecting, COCOUVS_OT_select_marked_edges)
+# kind -> the select operator the panel draws for it
+SELECT_OPERATORS = {cls.kind: cls.bl_idname for cls in SELECT_CLASSES}
+
+
+class _DoneMark:
+    """Add Done / Remove Done: two operators for the same reason as _DebugSelect."""
     bl_options = {'REGISTER', 'UNDO'}
-
-    action: EnumProperty(items=[('ADD', "Add", ""), ('REMOVE', "Remove", "")])
-
-    @classmethod
-    def description(cls, context, properties):
-        if properties.action == 'ADD':
-            return "Mark the selected UV islands as done (on the active UV map)"
-        return "Remove the selected UV islands from done (on the active UV map)"
+    add = True
 
     @classmethod
     def poll(cls, context):
@@ -514,7 +538,7 @@ class COCOUVS_OT_done_mark(Operator):
     def execute(self, context):
         from . import texel
 
-        add = self.action == 'ADD'
+        add = self.add
         # Create the attribute first: adding a layer re-allocates face data.
         for obj in common.edit_objects(context):
             active = obj.data.uv_layers.active
@@ -541,7 +565,21 @@ class COCOUVS_OT_done_mark(Operator):
         return {'FINISHED'}
 
 
-classes = (COCOUVS_OT_debug_select, COCOUVS_OT_done_mark)
+class COCOUVS_OT_add_done(_DoneMark, Operator):
+    bl_idname = "cocouvs.add_done"
+    bl_label = "Add Done"
+    bl_description = "Mark the selected UV islands as done (on the active UV map)"
+    add = True
+
+
+class COCOUVS_OT_remove_done(_DoneMark, Operator):
+    bl_idname = "cocouvs.remove_done"
+    bl_label = "Remove Done"
+    bl_description = "Remove the selected UV islands from done (on the active UV map)"
+    add = False
+
+
+classes = (*SELECT_CLASSES, COCOUVS_OT_add_done, COCOUVS_OT_remove_done)
 
 _TOGGLES = {
     'done': "Show UV islands marked as done",

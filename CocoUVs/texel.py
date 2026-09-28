@@ -2,7 +2,7 @@
 
 import bmesh
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty
+from bpy.props import BoolProperty, FloatProperty
 from bpy.types import Operator
 
 from . import common
@@ -69,27 +69,12 @@ class COCOUVS_OT_calculate(_EditModeOperator):
         return {'FINISHED'}
 
 
-class COCOUVS_OT_assign(_EditModeOperator):
-    bl_idname = "cocouvs.assign_density"
-    bl_label = "Assign Texel Density"
+class _Assign:
+    """Apply: Islands / Average. One operator per method, not a method
+    setting: a button added to a pie keeps only the operator's name (see
+    debug._DebugSelect)."""
     bl_options = {'REGISTER', 'UNDO'}
-
-    method: EnumProperty(
-        name="Method",
-        items=[
-            ('ISLAND', "Per Island", "Scale each selected island on its own so each one gets the density"),
-            ('AVERAGE', "Average", "Scale every selected island by the same amount so their average "
-             "gets the density, keeping their sizes relative to each other"),
-        ],
-        default='ISLAND',
-    )
-
-    @classmethod
-    def description(cls, context, properties):
-        if properties.method == 'AVERAGE':
-            return ("Scale the selected islands together, as one block, so their average texel density "
-                    "matches the field; their relative sizes and layout are kept")
-        return "Scale each selected island separately so each one matches the texel density in the field"
+    method = 'ISLAND'
 
     def execute(self, context):
         target = context.scene.cocouvs.density_ppm
@@ -137,6 +122,21 @@ class COCOUVS_OT_assign(_EditModeOperator):
         if skipped:
             self.report({'WARNING'}, f"Skipped {skipped} island(s) with no UV or surface area")
         return {'FINISHED'}
+
+
+class COCOUVS_OT_assign_per_island(_Assign, _EditModeOperator):
+    bl_idname = "cocouvs.assign_density_per_island"
+    bl_label = "Assign Texel Density per Island"
+    bl_description = "Scale each selected island separately so each one matches the texel density in the field"
+    method = 'ISLAND'
+
+
+class COCOUVS_OT_assign_average(_Assign, _EditModeOperator):
+    bl_idname = "cocouvs.assign_density_average"
+    bl_label = "Assign Average Texel Density"
+    bl_description = ("Scale the selected islands together, as one block, so their average texel density "
+                      "matches the field; their relative sizes and layout are kept")
+    method = 'AVERAGE'
 
 
 class COCOUVS_OT_select_by_density(_EditModeOperator):
@@ -193,7 +193,8 @@ class COCOUVS_OT_select_by_density(_EditModeOperator):
         return {'FINISHED'}
 
 
-classes = (COCOUVS_OT_calculate, COCOUVS_OT_assign, COCOUVS_OT_select_by_density)
+classes = (COCOUVS_OT_calculate, COCOUVS_OT_assign_per_island, COCOUVS_OT_assign_average,
+           COCOUVS_OT_select_by_density)
 
 
 def register():

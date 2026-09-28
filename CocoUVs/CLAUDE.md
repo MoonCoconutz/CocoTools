@@ -26,7 +26,7 @@ A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
 - `texel.py`: `selected_islands()`, Calculate and Assign.
 - `heatmap.py`: cache, GPU batches and the two draw handlers.
 - `debug.py`: the Debug overlays (analysis, draw handlers), the select
-  operator and Add/Remove Done.
+  operators (one per kind, `SELECT_OPERATORS`) and Add/Remove Done.
 - `checker.py`: the Checker Map toggle, material swap, image and Alt+T keymap.
 - `trims.py`: trim areas per material, the fit operator, draw mode (modal)
   and the area overlay.
@@ -34,6 +34,40 @@ A **CocoUVs** tab in the UV Editor sidebar (`IMAGE_EDITOR` / `UI`, panels poll
 - `ui.py`: the five panels, in the user's order (UV Maps, Texel Density,
   Checker Map, Trims, Debug: registration order is sidebar order) and
   their registration under the tab name.
+
+## One operator per button
+
+A panel button never passes a setting (`.kind = ...`, `.method = ...`):
+each button is its own operator, and what it does is in the name. CocoPies'
+right-click "Add to CocoPies" keeps only the operator's name
+(`context.button_operator.bl_rna.identifier`), so before 1.2.0 every Debug
+arrow became `bpy.ops.cocouvs.debug_select()` labelled "Debug Select", and
+it selected Done (user report, 2026-09-28). The same held for Add/Remove Done,
+Islands/Average, the four trim fits and both lists' up/down arrows.
+
+- The shared code is a **mixin** (a plain class: `_DebugSelect`, `_DoneMark`,
+  `_Assign`, `_TrimFit`, `_TrimMove`, `_UVMove`) with the variant as a class
+  attribute (`kind`, `add`, `method`, `step`). Each button is a small subclass
+  `(Mixin, Operator)`. Settings in the mixin's annotations are registered on
+  every subclass (checked: Extend on the selects, Auto-rotate/Randomize/Seed
+  on the fits).
+- **Name the idname for its CocoPies label.** CocoPies title-cases the part
+  after the dot: `cocouvs.select_flipped` -> "Select Flipped". The `cocouvs.`
+  prefix is this add-on's namespace and never shows in a pie.
+- What is a real setting stays a property and shows in the redo panel
+  (Extend, Auto-rotate, Randomize, Seed). The method of a fit or of Assign is
+  the button, so the redo panel no longer switches it.
+- One exception: Trims' `+` passes `toggle=False` to `trim_draw`. In a pie it
+  becomes the Draw Areas toggle, which is harmless.
+- WindowManager toggles (the Debug rows, Show Heatmap) get no "Add to
+  CocoPies" entry at all. Seen in a real window: the Flipped toggle's menu
+  has no entry. CocoPies skips a property whose owner gives no data path.
+- Verified on 5.2 (2026-09-28): `split_checks` draws every panel into a
+  recording layout and fails on any button that sets a property, runs each
+  operator through CocoPies' own `_write_capture` (command and label), and
+  checks each variant reaches the right code path. In a real window,
+  right-clicking the Flipped arrow captured `COCOUVS_OT_select_flipped`,
+  added it to a new pie, and picking that slot ran it.
 
 ## UV maps act on every selected mesh, by name
 
@@ -228,7 +262,8 @@ selected mesh). Now 0.6 ms (2026-09-28).
   map in Blender's own panel orphans it.
 - **Adding a BMesh layer invalidates the Python BMFace references you already
   hold** (`ReferenceError: BMesh data of type BMFace has been removed`, seen on
-  5.2). `done_mark` therefore creates the layer before collecting islands.
+  5.2). Add Done (`_DoneMark`) therefore creates the layer before collecting
+  islands.
 - Edge selection sets the edge's UV corners directly (`uv_select_edge_set`
   plus both vertices), with no flush. It switches face select mode to edge
   mode, otherwise nothing would show.

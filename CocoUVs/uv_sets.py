@@ -315,13 +315,12 @@ class COCOUVS_OT_uv_remove(Operator):
         return {'FINISHED'}
 
 
-class COCOUVS_OT_uv_move(Operator):
-    bl_idname = "cocouvs.uv_move"
-    bl_label = "Move UV Map"
-    bl_description = "Move the selected UV map up or down on every selected mesh that has it"
+class _UVMove:
+    """The list's up/down arrows. One operator per direction, not a direction
+    setting: a button added to a pie keeps only the operator's name (see
+    debug._DebugSelect)."""
     bl_options = {'REGISTER', 'UNDO'}
-
-    direction: EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
+    step = -1
 
     @classmethod
     def poll(cls, context):
@@ -329,7 +328,7 @@ class COCOUVS_OT_uv_move(Operator):
 
     def execute(self, context):
         name = current_name(context)
-        step = -1 if self.direction == 'UP' else 1
+        step = self.step
         moved = 0
         for me in common.target_meshes(context):
             i = me.uv_layers.find(name)
@@ -343,6 +342,20 @@ class COCOUVS_OT_uv_move(Operator):
             return {'CANCELLED'}
         sync_list(context)
         return {'FINISHED'}
+
+
+class COCOUVS_OT_uv_move_up(_UVMove, Operator):
+    bl_idname = "cocouvs.uv_move_up"
+    bl_label = "Move UV Map Up"
+    bl_description = "Move the selected UV map up on every selected mesh that has it"
+    step = -1
+
+
+class COCOUVS_OT_uv_move_down(_UVMove, Operator):
+    bl_idname = "cocouvs.uv_move_down"
+    bl_label = "Move UV Map Down"
+    bl_description = "Move the selected UV map down on every selected mesh that has it"
+    step = 1
 
 
 RENAME_BASE = "map"   # By Index with an empty box: map1, map2, ...
@@ -535,7 +548,8 @@ classes = (
     COCOUVS_PT_rename,
     COCOUVS_OT_uv_add,
     COCOUVS_OT_uv_remove,
-    COCOUVS_OT_uv_move,
+    COCOUVS_OT_uv_move_up,
+    COCOUVS_OT_uv_move_down,
     COCOUVS_OT_uv_rename,
     COCOUVS_OT_uv_map_mismatch,
     COCOUVS_UL_uv_maps,

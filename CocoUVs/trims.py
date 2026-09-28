@@ -423,24 +423,37 @@ class COCOUVS_OT_trim_clear(_TrimOperator):
         return {'FINISHED'}
 
 
-class COCOUVS_OT_trim_move(_TrimOperator):
-    bl_idname = "cocouvs.trim_move"
-    bl_label = "Move Trim Area"
-    bl_description = "Move the picked trim area up or down the list"
+class _TrimMove:
+    """The list's up/down arrows. One operator per direction, like every
+    button here that used to differ only by a setting: a button added to a
+    pie keeps only the operator's name (see debug._DebugSelect)."""
     bl_options = {'REGISTER', 'UNDO'}
-
-    direction: EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
+    step = -1
 
     def execute(self, context):
         mat = material(context)
         index = mat.cocouvs_trim_index
-        other = index - 1 if self.direction == 'UP' else index + 1
+        other = index + self.step
         if not (0 <= index < len(mat.cocouvs_trims) and 0 <= other < len(mat.cocouvs_trims)):
             return {'CANCELLED'}
         mat.cocouvs_trims.move(index, other)
         mat.cocouvs_trim_index = other
         record_change()
         return {'FINISHED'}
+
+
+class COCOUVS_OT_trim_move_up(_TrimMove, _TrimOperator):
+    bl_idname = "cocouvs.trim_move_up"
+    bl_label = "Move Trim Area Up"
+    bl_description = "Move the picked trim area up the list"
+    step = -1
+
+
+class COCOUVS_OT_trim_move_down(_TrimMove, _TrimOperator):
+    bl_idname = "cocouvs.trim_move_down"
+    bl_label = "Move Trim Area Down"
+    bl_description = "Move the picked trim area down the list"
+    step = 1
 
 
 FIT_METHODS = [
@@ -452,25 +465,24 @@ FIT_METHODS = [
 ]
 
 
-class COCOUVS_OT_trim_fit(Operator):
-    bl_idname = "cocouvs.trim_fit"
-    bl_label = "Move to Trim"
-    bl_options = {'REGISTER', 'UNDO'}
+def _fit_description(method):
+    return next(desc for key, _name, desc in FIT_METHODS if key == method) + (
+        ". Several islands are lined up side by side")
 
-    method: EnumProperty(name="Method", items=FIT_METHODS, default='TILE')
+
+class _TrimFit:
+    """Fit + Tile, Fit Inside, Fill, Move: one operator per method (see
+    _TrimMove). Auto-rotate, Randomize and Seed stay settings, in the redo
+    panel."""
+    bl_options = {'REGISTER', 'UNDO'}
+    method = 'TILE'
+
     rotate: BoolProperty(name="Auto-rotate",
                          description="Turn islands 90 degrees when needed so their long side runs along the trim")
     randomize: BoolProperty(name="Randomize",
                             description="Shift each island a random amount along a repeating trim, "
                                         "so repeated pieces show different parts of it")
     seed: IntProperty(name="Seed", description="Change it for a different random layout", default=0, min=0)
-
-    @classmethod
-    def description(cls, context, properties):
-        for key, _name, desc in FIT_METHODS:
-            if key == properties.method:
-                return desc + ". Several islands are lined up side by side"
-        return ""
 
     @classmethod
     def poll(cls, context):
@@ -502,6 +514,34 @@ class COCOUVS_OT_trim_fit(Operator):
         n = len(islands)
         self.report({'INFO'}, f"Moved {n} island{'s' if n != 1 else ''} to {area.name}")
         return {'FINISHED'}
+
+
+class COCOUVS_OT_trim_fit_tile(_TrimFit, Operator):
+    bl_idname = "cocouvs.trim_fit_tile"
+    bl_label = "Fit + Tile to Trim"
+    bl_description = _fit_description('TILE')
+    method = 'TILE'
+
+
+class COCOUVS_OT_trim_fit_inside(_TrimFit, Operator):
+    bl_idname = "cocouvs.trim_fit_inside"
+    bl_label = "Fit Inside Trim"
+    bl_description = _fit_description('FIT')
+    method = 'FIT'
+
+
+class COCOUVS_OT_trim_fill(_TrimFit, Operator):
+    bl_idname = "cocouvs.trim_fill"
+    bl_label = "Fill Trim"
+    bl_description = _fit_description('FILL')
+    method = 'FILL'
+
+
+class COCOUVS_OT_trim_move_islands(_TrimFit, Operator):
+    bl_idname = "cocouvs.trim_move_islands"
+    bl_label = "Move to Trim"
+    bl_description = _fit_description('MOVE')
+    method = 'MOVE'
 
 
 class COCOUVS_OT_trim_export(_TrimOperator):
@@ -1093,8 +1133,12 @@ classes = (
     COCOUVS_OT_trim_add_selection,
     COCOUVS_OT_trim_remove,
     COCOUVS_OT_trim_clear,
-    COCOUVS_OT_trim_move,
-    COCOUVS_OT_trim_fit,
+    COCOUVS_OT_trim_move_up,
+    COCOUVS_OT_trim_move_down,
+    COCOUVS_OT_trim_fit_tile,
+    COCOUVS_OT_trim_fit_inside,
+    COCOUVS_OT_trim_fill,
+    COCOUVS_OT_trim_move_islands,
     COCOUVS_OT_trim_export,
     COCOUVS_OT_trim_import,
     COCOUVS_OT_trim_draw,
