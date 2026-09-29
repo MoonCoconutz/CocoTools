@@ -41,19 +41,22 @@ Both sides let you choose what to include: **Shortcuts**, **Preferences**,
 
 Importing the same file twice changes nothing the second time.
 
-Shortcuts end up **exactly** as in the backup: a shortcut you changed after
-exporting is put back to stock, and listed. Untick **Undo shortcut changes not
-in the backup** in the import dialog to keep this machine's own changes and
-only add the backup's.
+Shortcuts end up **exactly** as in the backup: the backup's keymap preset
+(your MyPreset, say) is installed and used, and a shortcut you changed after
+exporting is put back to stock, and listed. If this machine already had a
+different copy of that preset, it is kept next to it as
+`MyPreset.old-<date>.py`. Untick **Undo shortcut changes not in the backup** in
+the import dialog to keep this machine's own preset and changes and only add
+the backup's.
 
 ## What is included
 
 | Section | Included | Left out |
 | --- | --- | --- |
-| Shortcuts | Every shortcut you moved, switched off, removed or added, and the options you changed on one (Delete without confirmation). The keymap settings too (select with left/right, Spacebar action) | Switched-off copies a keymap preset carried, since they do nothing |
-| Preferences | Interface, Editing, Input, Navigation, Keymap, File Paths options | Every file and folder path, the asset libraries and script folders, the external animation player and text editor, System (GPU, memory), Extensions repositories, Experimental: these belong to the machine. Also the keymap preset in use: the shortcut changes already carry what it changes |
+| Shortcuts | Every shortcut you moved, switched off, removed or added, and the options you changed on one (Delete without confirmation). The keymap settings too (select with left/right, Spacebar action), and the keymap preset you use, with its file when it is your own | Switched-off copies a keymap preset carried, since they do nothing |
+| Preferences | Interface, Editing, Input, Navigation, Keymap, File Paths options | Every file and folder path, the asset libraries and script folders, the external animation player and text editor, System (GPU, memory), Extensions repositories, Experimental: these belong to the machine |
 | Themes | Your theme presets and the theme in use. Missing presets are installed; different ones are only replaced if you tick them | Nothing |
-| Add-on Settings | The preferences of every enabled add-on, CocoPies menus included | Nothing |
+| Add-on Settings | The preferences of every enabled add-on, CocoPies menus included. Paths inside them are moved to where the same folder is on the new machine (the add-on's own folder, Blender's, your home); a path that does not exist there leaves that machine's value alone | What belongs to the machine: Cycles render devices (your GPUs) and UV Packmaster's engine detection |
 
 ## Autosave to a Backup folder
 
@@ -82,6 +85,12 @@ not.
   there before the import, and Revert puts that back. Anything it cannot
   place is listed as skipped, with the reason.
 - Backups made with CocoBackup 1.0 import fine, but did not record options
-  changed on a shortcut (Delete's confirmation, say). Export a new one.
+  changed on a shortcut (Delete's confirmation, say). Backups made before 1.2
+  do not carry the keymap preset: imported, the shortcuts are rebuilt on
+  Blender's own keymap instead, which works the same but leaves your preset
+  behind. Export a new one.
 - Some add-ons read their settings only at startup. If one does not look right
   after importing, Save Preferences and restart Blender.
+- Do not switch an add-on off and on again in Preferences to fix it: Blender
+  forgets that add-on's settings when you do. Import the backup again
+  instead.

@@ -21,9 +21,19 @@ pairing (_pair): every user item is matched with the stock or add-on item it
 is a version of. Import pairs this machine's items the same way and edits the
 one paired with the backup's stock item, so it is found whatever this machine
 did to it, and the report can say what it was here before.
+
+The keymap preset in use travels too (export_preset / apply_preset), file
+included: a restoring import makes it the one in use here before the diff
+is applied, so both machines build their shortcuts on the same base. On top
+of another machine's older preset the diff left dozens of that preset's
+items alive, and the pairing could not tell its copies from the add-ons'.
 """
 
+import ast
 import json
+import os
+import shutil
+from datetime import date
 
 import bpy
 
@@ -248,9 +258,10 @@ def _changes(kcs, km):
 
 
 def export_keymaps():
-    """Return the diff of every keymap, plus the keyconfig preferences."""
+    """Return the diff of every keymap, the keyconfig preferences and the
+    keymap preset in use."""
     kcs = bpy.context.window_manager.keyconfigs
-    out = {"keymaps": [], "keyconfig_prefs": {}}
+    out = {"keymaps": [], "keyconfig_prefs": {}, "preset": export_preset()}
 
     kc_prefs = kcs.default.preferences
     if kc_prefs is not None:
@@ -299,6 +310,147 @@ def item_owner(idname, props):
     if parts[0] in {"bl_ui", "bl_operators", "bpy"}:
         return ""
     return parts[2] if parts[0] == "bl_ext" and len(parts) > 2 else parts[0]
+
+
+# ---------------------------------------------------------------------------
+# The keymap preset
+
+def _preset_folder(create=False):
+    return bpy.utils.user_resource('SCRIPTS', path=os.path.join("presets", "keyconfig"), create=create)
+
+
+def export_preset():
+    """The keymap preset in use, by name, plus its file when it is the user's
+    own (Blender's own presets exist on every machine)."""
+    name = bpy.context.window_manager.keyconfigs.active.name
+    out = {"name": name}
+    path = bpy.utils.preset_find(name, "keyconfig")
+    folder = _preset_folder()
+    if path and folder and os.path.normcase(os.path.dirname(os.path.abspath(path))) == \
+            os.path.normcase(os.path.abspath(folder)):
+        try:
+            with open(path, encoding="utf-8") as f:
+                out["text"] = f.read()
+            out["file"] = os.path.basename(path)
+        except OSError:
+            pass
+    return out
+
+
+# What the loader block of an exported keymap preset may do: import these,
+# call these, and nothing that runs code another way.
+_PRESET_IMPORTS = {("bpy.app", "version"), ("bl_keymap_utils.io", "keyconfig_import_from_data"), (None, "os")}
+_PRESET_CALLS = {"keyconfig_import_from_data", "os.path.splitext", "os.path.basename"}
+_PRESET_BANNED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.With, ast.AsyncWith,
+                  ast.Try, ast.For, ast.AsyncFor, ast.While, ast.Global, ast.Nonlocal, ast.Delete,
+                  ast.Await, ast.Yield, ast.YieldFrom)
+
+
+def _is_keymap_preset(text):
+    """True for the shape Blender's keymap export writes, and nothing else: a
+    backup's preset file is run by Blender on import and at every start, so
+    it may only hold keyconfig_version and keyconfig_data as plain values
+    and the usual `if __name__ == "__main__":` block that loads them."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return False
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                ast.literal_eval(node.value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                return False
+            names.add(node.targets[0].id)
+        elif isinstance(node, ast.If) and ast.unparse(node.test).replace("'", '"') == '__name__ == "__main__"':
+            for sub in ast.walk(node):
+                if isinstance(sub, _PRESET_BANNED):
+                    return False
+                if isinstance(sub, ast.Call) and ast.unparse(sub.func) not in _PRESET_CALLS:
+                    return False
+                if isinstance(sub, ast.ImportFrom) and any(
+                        (sub.module, a.name) not in _PRESET_IMPORTS
+                        or (a.name == "keyconfig_import_from_data" and a.asname) for a in sub.names):
+                    return False
+                if isinstance(sub, ast.Import) and any((None, a.name) not in _PRESET_IMPORTS or a.asname
+                                                       for a in sub.names):
+                    return False
+        elif not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)):
+            return False
+    return "keyconfig_data" in names
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except (OSError, TypeError):
+        return None
+
+
+def _keep_copy(path):
+    """Copy a preset about to be replaced to <name>.old-<date>.py next to it,
+    the way the user keeps old copies of their own preset."""
+    stem, ext = os.path.splitext(path)
+    kept, n = f"{stem}.old-{date.today():%Y-%m-%d}{ext}", 2
+    while os.path.exists(kept):
+        kept, n = f"{stem}.old-{date.today():%Y-%m-%d}-{n}{ext}", n + 1
+    shutil.copyfile(path, kept)
+    return os.path.basename(kept)
+
+
+def apply_preset(preset, restore=True):
+    """Make the backup's keymap preset the one in use here, installing its file
+    first when the backup carries one. Returns lines for the report.
+
+    Only a restoring import switches: merging keeps this machine's preset and
+    says so. Must run before import_keymaps, which pairs against the result.
+    """
+    kcs = bpy.context.window_manager.keyconfigs
+    name, text = preset.get("name") or "", preset.get("text")
+    here = kcs.active.name
+    if not restore:
+        if here != name:
+            return [f"KEPT      keymap preset {here}: this machine's, the backup was made with {name}"]
+        if text is not None and _read(bpy.utils.preset_find(here, "keyconfig")) != text:
+            return [f"KEPT      keymap preset {here}: this machine's copy, which differs from the backup's"]
+        return []
+    lines, changed = [], False
+    if text is None:
+        path = bpy.utils.preset_find(name, "keyconfig")
+        if not path:
+            return [f"SKIPPED   keymap preset {name}: not on this machine, and the backup has no copy of it"]
+    else:
+        filename = preset.get("file") or f"{name}.py"
+        if os.path.basename(filename) != filename or not filename.endswith(".py") \
+                or not _is_keymap_preset(text):
+            return [f"SKIPPED   keymap preset {name}: the backup's copy is not a keymap preset file"]
+        path = os.path.join(_preset_folder(create=True), filename)
+        kept = None
+        try:
+            with open(path, encoding="utf-8") as f:
+                changed = f.read() != text
+            if changed:
+                kept = _keep_copy(path)
+        except FileNotFoundError:
+            changed = True
+        except OSError as e:
+            return [f"FAILED    keymap preset {filename}: {e}"]
+        if changed:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except OSError as e:
+                return [f"FAILED    keymap preset {filename}: {e}"]
+            lines.append(f"INSTALLED keymap preset {filename}"
+                         + (f" (this machine's own kept as {kept})" if kept else ""))
+    if here != name or changed:
+        if not bpy.utils.keyconfig_set(path):
+            lines.append(f"FAILED    keymap preset {name}: Blender could not load it (see the system console)")
+        elif here != name:
+            lines.append(f"CHANGED   keymap preset in use: {here} -> {name}")
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -424,11 +576,16 @@ def _not_here(spec):
 
 
 def _take_base(bases, spec, taken):
+    """The stock or add-on item a backup spec names. On/off counts only
+    second: an add-on that switches a stock item off writes it into the base
+    keyconfig itself (CocoPies' suppressions, with no preset loaded), and it
+    is still the same item."""
     ident = _spec_identity(spec)
-    for b in bases:
-        if id(b) not in taken and b.ident == ident and _key_equal(b.key, spec["key"]):
-            taken.add(id(b))
-            return b
+    for same in (_key_equal, _same_key_but_active):
+        for b in bases:
+            if id(b) not in taken and b.ident == ident and same(b.key, spec["key"]):
+                taken.add(id(b))
+                return b
     return None
 
 

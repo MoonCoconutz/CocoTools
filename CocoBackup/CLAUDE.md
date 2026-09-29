@@ -15,20 +15,26 @@ APIs directly; do not test on 4.5.
 
 ## What it is
 
-One JSON file (format 3) with four optional sections: `keymaps` (a diff),
-`preferences`, `themes` and `addons`. Exported and imported from the save-icon
-button in the 3D Viewport header or File ▸ Export / Import. Also an optional
-autosave that writes to a `Backup` folder next to the .blend.
+One JSON file (format 4) with four optional sections: `keymaps` (a diff, plus
+the keymap preset in use), `preferences`, `themes` and `addons`, and a small
+`machine` block (home, Blender user and install folders). Exported and
+imported from the save-icon button in the 3D Viewport header or File ▸ Export
+/ Import. Also an optional autosave that writes to a `Backup` folder next to
+the .blend.
 
 Format 3 added a shortcut's own settings edits (`new_props`) and nested
-operator settings. Format 2 (1.0.x) backups import unchanged; format 1 existed
+operator settings. Format 4 (1.2.0) added `machine`, each add-on's folder
+(`dir`) and `keymaps.preset`. Formats 2 and 3 import unchanged (their paths
+are moved by guessing, see below, and they carry no preset); format 1 existed
 only during development and is no longer read.
 
 ## Layout
 
-- `keymap_diff.py` — `export_keymaps()` / `import_keymaps()` / `apply_undo()`.
+- `keymap_diff.py` — `export_keymaps()` / `import_keymaps()` / `apply_undo()`,
+  and the keymap preset: `export_preset()` / `apply_preset()`.
 - `prefs_io.py` — a generic RNA walker, `dump()` / `load()`, plus the section
-  choices in `export_preferences()` / `export_addons()`.
+  choices in `export_preferences()` / `export_addons()`, and moving paths
+  between machines (`path_moves()` / `relocate()`).
 - `themes_io.py` — theme presets and the active theme, as whole themes.
 - `addons_resolve.py` — which missing add-ons can be enabled or installed.
 - `autosave.py` — the autosave timer and its rotation.
@@ -103,17 +109,98 @@ it for every add-on, ready to be written back on another machine.
 they are not paths: `filepaths.asset_libraries` and `script_directories` (a
 collection written by position renamed the other machine's libraries), the
 player preset and editor arguments that go with their skipped paths, the
-online-access question, and `keymap.active_keyconfig` (the shortcut diff
-already carries what a preset changes).
+online-access question, and `keymap.active_keyconfig` (the preset travels with
+the shortcuts instead, file included: see "The keymap preset travels").
 
 `_load_collection` leaves an unchanged add-on collection alone. Clearing and
 re-adding fires every update callback: CocoPies re-registers all its pies,
 644 times for the user's settings (5.6 s of a 20 s import; switching CocoPies
 on took the other 14 s).
 
-Import order is preferences, add-on settings, keymaps. An add-on may rebuild its
-shortcuts when its settings change (CocoPies does, and its X suppressions come
-back on until its deferred pass runs), and the keymap diff has to land last.
+Import order is add-on settings, preferences, themes, the keymap preset
+(`_run_settings`), then the keymap diff `KEYMAP_DELAY` (0.5 s) later from a
+timer (`_finish_run`, which also opens the report). An add-on may rebuild its
+shortcuts when its settings change, and the diff has to land after that work,
+deferred work included. CocoPies rebuilding its pies (any change to them, and
+an import from another machine always changes their script paths) first
+switches its X suppressions back **on** in `keyconfigs.active` and `user`, and
+off again from a 0.2 s timer. Diffed in between, the user's "X delete menu
+off" was stored against a stock X that was on; when the timer switched the
+base's X off, Blender re-applied that diff and, finding no exact match, took
+the first item with the same operator, properties and on/off on *any* key
+(`wm_keymap_patch` in `wm_keymap.cc`, read at v5.2.0), and deleted the
+**Delete-key** menu instead. Measured on 5.2 with the user's MyPreset and with
+stock; gone with the delay. Timers fire in order of when they are due, so
+0.5 s after is after.
+
+## Add-on settings from another machine
+
+Measured by importing the user's real backup into an isolated profile whose
+add-ons sit at other paths (2026-09-29): every path in add-on settings pointed
+at the export machine. CocoPies' starter scripts
+(`execute_script("C:/Users/<them>/.../CocoPies/scripts/...")`) failed;
+MESHmachine's `assetspath` made its `register()` crash at the next start, so
+its menu (Y) drew 18 unknown operators and its shortcuts (Alt+X symmetrize,
+Alt+LMB select) were gone; Zen UV lost its checker images, Hard Ops its
+folders.
+
+- **Paths move.** Export records each add-on's folder (`dir`) and the
+  machine's home, Blender user and install folders (`machine`).
+  `path_moves()` pairs each with this machine's, and `relocate()` rewrites any
+  string starting with one of them (quoted inside a command too), longest
+  first, one regex pass, keeping the string's own slash style. Older backups
+  have neither: the add-on's folder is guessed from a path in its own
+  settings running through a folder named after it, the rest from the usual
+  `Users\<name>\AppData\Roaming\Blender Foundation\Blender\<ver>` shapes.
+- **A path still missing here is not written** (`load(keep_missing=True)`, a
+  KEPT row): this machine's value stays. Only a setting that *is* a path;
+  a missing path quoted inside a longer string (a CocoPies command) is
+  written anyway, since there is nothing of this machine's to keep, and
+  listed as MISSING.
+- **Settings about the machine never travel** (`MACHINE_ADDON`, fnmatch
+  patterns per add-on id, dropped both on export and from older backups):
+  all of Cycles (its render devices, shown under System: the user's two
+  GPUs arrived as the other machine's device list) and UV Packmaster's engine
+  detection, feature flags, thread count and per-device settings (imported,
+  they said "engine not detected" and its operators stayed off until a
+  restart).
+
+Switching an add-on off and on in Preferences drops its settings (Blender's
+`addon_disable` passes `default_set=True`): the user did that after the broken
+import and lost them. Say so if an add-on misbehaves after an import; a second
+import is the fix.
+
+## The keymap preset travels
+
+`export_preset()` stores the active keyconfig's name and, when the preset
+file is the user's own (in `scripts/presets/keyconfig`), its text. A restoring
+import (`use_reset_shortcuts`, the default) runs `apply_preset()` before the
+diff: it writes the file (a differing one first copied to
+`<name>.old-<YYYY-MM-DD>.py`, the user's own convention for MyPreset), then
+`bpy.utils.keyconfig_set()`. Blender's own presets travel by name. A merging
+import keeps this machine's preset and says so. A backup from before 1.2
+names no preset; its diff is against Blender's own keymap, so a restoring
+import of one switches to "Blender" (measured: then it matches too, only
+without the user's preset file).
+
+Why: the diff is relative to stock + add-ons, but the target's own preset is
+its base. With the user's other machine running an older MyPreset, the
+restoring import left 17 live bindings that differ from the source (4.x
+`object.subdivision_set` without `ensure_modifier`, Ctrl+S without its 5.x
+option, a removed select brought back by the reset pass pairing it with the
+stock item) and 65 to 94 dead ones, and could not tell that preset's baked
+add-on copies from the add-ons' own. With the same preset on both, the result
+matches item for item.
+
+The file is run by Blender (now and at every start), so `_is_keymap_preset()`
+only accepts the shape Blender's keymap export writes: `keyconfig_version` and
+`keyconfig_data` as literals and the `if __name__ == "__main__":` loader
+calling nothing but `keyconfig_import_from_data` and `os.path` helpers. The
+user's 5.2 MyPreset and both older ones pass; Blender's own `Blender.py` does
+not (it is code), which is fine, since those travel by name.
+
+A revert row puts an item back to its state after the preset switch, not
+before it; the switch itself is a report line, not revertable.
 
 ## Testing
 
@@ -150,12 +237,38 @@ setting):
   the user had deleted come back because the test restores to the preset;
   a stock-relative diff cannot remove what is not in stock.
 
-Known interaction, not a CocoBackup bug: CocoPies writes suppressions into
-`keyconfigs.active`, which is `keyconfigs.default` when no preset is loaded.
-Seconds after an import that switches CocoPies on, it switches off the stock
-Mesh X delete menu; Blender re-patches the user diff onto the changed stock
-keymap and deletes the Delete-key menu. A second import brings it back and it
-stays. Flagged as a separate CocoPies task.
+Known interaction: CocoPies writes suppressions into `keyconfigs.active`,
+which is `keyconfigs.default` when no preset is loaded, and on every rebuild
+switches them back on and off again 0.2 s later. A user diff made in between
+is re-applied by Blender onto the changed base with its fallback, and the
+Delete-key menu went. The import now waits for it (`KEYMAP_DELAY`, above);
+CocoPies writing into the base keyconfig at all is its own bug, still open.
+
+Checked on 5.2, 2026-09-29, simulating the user's other machine: an isolated
+profile with the user's 30 add-ons copied to other paths, their real backup
+rewritten as if made under another Windows user, targets running stock, the
+user's current MyPreset and two older ones (4.5 and 2023), each imported,
+saved, restarted and compared binding by binding (command, settings, key,
+on/off, live or dead) with the user's own live keyconfig:
+
+- 1.1.0: MESHmachine failed at start (its menu full of unknown operators,
+  Alt+X symmetrize gone), paths pointed at the other user's folders, Cycles
+  got the other machine's GPUs, UV Packmaster read "engine not detected", the
+  Delete-key menu went, and with an older MyPreset 17 live and up to 94 dead
+  bindings differed.
+- 1.2.0, new backup: every target (stock, current MyPreset, both older ones,
+  and the 4.5 one with four hand edits of its own) ends with the same live
+  bindings as the source; the one difference is CocoPies' Quick Tap command,
+  whose script path is now this machine's. No duplicates, no dead items, all
+  menus draw, MESHmachine registers, the Delete-key menu stays. The hand
+  edits come back as four RESET rows.
+- 1.2.0, the user's old (format 3) backup into the 4.5 target: paths guessed
+  right, the preset switched to "Blender", same live bindings as the source.
+- a second import changes no shortcut; Revert Selected undoes two added rows;
+  a merging import keeps the target's MyPreset and says it differs.
+
+The harness (profiles, dumps, the binding-by-binding comparison) lived in the
+session's scratchpad; rebuild it from the description above if needed.
 
 ## The header button
 

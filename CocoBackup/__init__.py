@@ -11,8 +11,18 @@ from . import addons_resolve, autosave, keymap_diff, prefs_io, themes_io, ui
 
 FORMAT = "CocoBackup"
 # 3: a shortcut's own settings edits ("new_props") and nested operator
-# settings travel too. Format 2 backups import unchanged.
-FORMAT_VERSION = 3
+# settings travel too.
+# 4: where the machine keeps things ("machine") and each add-on's folder
+# ("dir"), so paths move on import, and the keymap preset in use with its
+# file. Format 2 and 3 backups import unchanged.
+FORMAT_VERSION = 4
+
+# Shortcuts are applied this long after everything else, once other add-ons
+# have done the keymap work their new settings queued. CocoPies rebuilding
+# its pies switches the stock X delete menu back on, then off again 0.2 s
+# later; shortcuts written in between left Blender a diff which, re-applied
+# after the second switch, deleted the Delete-key menu instead (measured).
+KEYMAP_DELAY = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +107,7 @@ class COCOBACKUP_OT_export(Operator, ExportHelper, _Sections):
             "format_version": FORMAT_VERSION,
             "blender": bpy.app.version_string,
             "created": datetime.now().isoformat(timespec="seconds"),
+            "machine": prefs_io.export_machine(),
         }
         if self.use_keymaps:
             data["keymaps"] = keymap_diff.export_keymaps()
@@ -125,8 +136,9 @@ class COCOBACKUP_OT_import(Operator, ImportHelper, _Sections):
 
     use_reset_shortcuts: BoolProperty(
         name="Undo shortcut changes not in the backup", default=True,
-        description="Put back to stock any shortcut changed on this machine that the backup "
-                    "does not contain, so the shortcuts end up exactly as in the backup")
+        description="Use the backup's keymap preset and put back to stock any shortcut changed "
+                    "on this machine that the backup does not contain, so the shortcuts end up "
+                    "exactly as in the backup")
 
     filename_ext = ".json"
     filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
@@ -181,6 +193,7 @@ class COCOBACKUP_OT_import(Operator, ImportHelper, _Sections):
                 job["addon_lines"].append(f"FAILED    {m['id']}: {error}" if error else f"{verb:<9} {m['id']}")
                 if not error:
                     job["auto_enabled"].append(m["id"])
+        job["window"] = context.window
         _state["job"] = job
         _run_and_show(job)
         return {'FINISHED'}
@@ -197,10 +210,13 @@ _state = {}
 TITLES = ("Add-ons / Extensions", "Shortcuts", "Add-on shortcuts", "Preferences", "Themes")
 PUT_BACK = "Changed here after the export, put back as in the backup"
 FROM_BACKUP = "Applied from the backup"
+PRESET = "Keymap preset"
 
 
-def _run(job):
-    """Apply the backup once. Returns (groups, summary) for what changed.
+def _run_settings(job):
+    """Apply everything but the shortcut diff: add-ons, their settings,
+    preferences, themes and the keymap preset. Returns (groups, summary) for
+    what changed; _run_shortcuts adds the shortcuts to both.
 
     Lines for things that were already as in the backup are never returned:
     on a machine that already matched, listing them buried the one answer
@@ -221,7 +237,7 @@ def _run(job):
         if done:
             summary.append("Add-ons set up: " + ", ".join(done))
     if job["use_addons"] and "addons" in data:
-        r = prefs_io.import_addons(data["addons"])
+        r = prefs_io.import_addons(data["addons"], data.get("machine"))
         per_addon = {}
         for line in r["log"]:
             word, _sep, rest = line.partition(" ")
@@ -255,6 +271,23 @@ def _run(job):
             summary.append("Themes: " + ", ".join(f"{n} {w}" for w, n in counts.items()))
             groups[TITLES[4]] = [(None, theme_lines)]
 
+    # The preset before the diff: the diff is paired against what it builds.
+    # A backup from before 1.2 names no preset, and its diff is against
+    # Blender's own keymap, so a restoring import builds on that.
+    preset = data.get("keymaps", {}).get("preset")
+    if job["use_keymaps"] and "keymaps" in data and (preset or job["use_reset_shortcuts"]):
+        preset = preset or {"name": "Blender"}
+        preset_lines = keymap_diff.apply_preset(preset, restore=job["use_reset_shortcuts"])
+        if preset_lines:
+            groups[TITLES[1]] = [(PRESET, preset_lines)]
+            if any(line.split()[0] in {"INSTALLED", "CHANGED"} for line in preset_lines):
+                summary.append(f"Keymap preset: {preset['name']}")
+    return groups, summary
+
+
+def _run_shortcuts(job, groups, summary):
+    """Apply the shortcut diff, adding its rows to what _run_settings returned."""
+    data = job["data"]
     if job["use_keymaps"] and "keymaps" in data:
         entries = keymap_diff.import_keymaps(data["keymaps"], reset_extra=job["use_reset_shortcuts"])
         blender_rows, addon_rows = [], {}
@@ -277,7 +310,7 @@ def _run(job):
                 parts.append((FROM_BACKUP, applied))
             if reset:
                 parts.append((PUT_BACK, reset))
-            groups[TITLES[1]] = parts
+            groups.setdefault(TITLES[1], []).extend(parts)
         counted = {k: sum(1 for e in v if e["word"] not in {"SKIPPED", "FAILED"}) for k, v in addon_rows.items()}
         counted = {k: n for k, n in counted.items() if n}
         if counted:
@@ -295,15 +328,41 @@ def _run(job):
         if skipped:
             summary.append(f"Shortcuts skipped: {skipped} (the list says why)")
 
-    bpy.context.preferences.is_dirty = True
-    return groups, summary
-
 
 def _run_and_show(job):
-    job["runs"].append(_run(job))
-    job["addon_lines"] = []
-    _build_report(job)
-    bpy.ops.cocobackup.show_report('INVOKE_DEFAULT')
+    """Apply the backup: everything else now, the shortcuts KEYMAP_DELAY later
+    (see there), then the report."""
+    job["pending"] = _run_settings(job)
+    if bpy.app.timers.is_registered(_finish_run):
+        bpy.app.timers.unregister(_finish_run)
+    bpy.app.timers.register(_finish_run, first_interval=KEYMAP_DELAY)
+
+
+def _finish_run():
+    job = _state.get("job")
+    if not job or "pending" not in job:
+        return None
+    groups, summary = job.pop("pending")
+    try:
+        _run_shortcuts(job, groups, summary)
+    finally:
+        job["runs"].append((groups, summary))
+        job["addon_lines"] = []
+        bpy.context.preferences.is_dirty = True
+        _build_report(job)
+        _show_report(job.pop("window", None))
+    return None
+
+
+def _show_report(window):
+    """Open the report in the window the import ran from (a timer has none)."""
+    wm = bpy.context.window_manager
+    if window not in wm.windows[:]:
+        window = wm.windows[0] if len(wm.windows) else None
+    if window is None:
+        return
+    with bpy.context.temp_override(window=window, screen=window.screen):
+        bpy.ops.cocobackup.show_report('INVOKE_DEFAULT')
 
 
 def _redraw(context):
@@ -362,7 +421,7 @@ def _build_report(job):
         for subtitle, lines in parts:
             if subtitle:
                 sub = _report_add(wm, "SUBHEADER", subtitle)
-                sub.word = {FROM_BACKUP: 'IMPORT', PUT_BACK: 'LOOP_BACK'}.get(
+                sub.word = {FROM_BACKUP: 'IMPORT', PUT_BACK: 'LOOP_BACK', PRESET: 'PRESET'}.get(
                     subtitle, 'INFO' if subtitle.startswith("Not in any") else 'PLUGIN')
             for line in lines:
                 if isinstance(line, dict):
@@ -469,7 +528,8 @@ class COCOBACKUP_ReportLine(PropertyGroup):
 _WORD_ICONS = {"DISABLED": 'CHECKBOX_DEHLT', "CHANGED": 'FILE_REFRESH', "ADDED": 'ADD', "REMOVED": 'REMOVE',
                "SKIPPED": 'CANCEL', "FAILED": 'ERROR', "REBUILT": 'FILE_REFRESH',
                "ENABLED": 'CHECKMARK', "INSTALLED": 'IMPORT', "NOT": 'INFO',
-               "OVERWROTE": 'FILE_REFRESH', "RESET": 'LOOP_BACK', "APPLIED": 'CHECKMARK', "KEPT": 'LOCKED'}
+               "OVERWROTE": 'FILE_REFRESH', "RESET": 'LOOP_BACK', "APPLIED": 'CHECKMARK', "KEPT": 'LOCKED',
+               "MISSING": 'LIBRARY_DATA_BROKEN'}
 
 
 class COCOBACKUP_UL_report(UIList):
@@ -648,6 +708,8 @@ def register():
 
 
 def unregister():
+    if bpy.app.timers.is_registered(_finish_run):
+        bpy.app.timers.unregister(_finish_run)
     autosave.unregister()
     ui.unregister()
     _state.clear()

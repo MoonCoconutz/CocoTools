@@ -39,7 +39,7 @@ deleted, it is a vault note.
 | --- | --- |
 | `CocoPies/` | Build custom pie menus from Blender's own Preferences panel. **5.2+ only.** See `CocoPies/CLAUDE.md`. |
 | `CocoSelections/` | Named object selection sets, in a Selections popover in the 3D Viewport tool header. **5.2+ only.** See `CocoSelections/CLAUDE.md`. |
-| `CocoBackup/` | Move shortcuts (as a diff), preferences, themes and add-on settings to another machine, plus an autosave. **5.2+ only.** See `CocoBackup/CLAUDE.md`. |
+| `CocoBackup/` | Move shortcuts (as a diff, with the keymap preset), preferences, themes and add-on settings to another machine, plus an autosave. **5.2+ only.** See `CocoBackup/CLAUDE.md`. |
 | `CocoUVs/` | UV map list, texel density (with a heatmap), checker map, trim sheet areas and UV debug overlays in the UV Editor sidebar. **5.2+ only.** See `CocoUVs/CLAUDE.md`. |
 
 There is no build step, no linter, and no automated test suite for any of
