@@ -280,9 +280,10 @@ there (Machin3, Hard Ops, PowerSave...), where the user asked for it. It is a
 Select, with a dropdown arrow the user decided they want. It was a
 `wm.call_panel` icon button first (no arrow), but that opens the panel wherever
 the mouse is. For no arrow, a row with `emboss = 'PULLDOWN_MENU'` draws the
-popover without it. The panel's buttons force `INVOKE_DEFAULT`: under
-`wm.call_panel` they ran with EXEC, which skipped the file browser and
-exported to an empty path.
+popover without it. Since 1.2.1 the panel holds only the autosave settings; Export /
+Import moved to the add-on preferences, where the buttons still force
+`INVOKE_DEFAULT` (under `wm.call_panel` they once ran with EXEC, which skipped
+the file browser and exported to an empty path).
 
 ## Missing add-ons: switched on first, offered to switch off
 

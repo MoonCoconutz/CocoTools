@@ -22,10 +22,12 @@ changes to add-on shortcuts travel too.
 ## Use
 
 - The **save-icon button** in the 3D Viewport header, after the View / Select /
-  Add / Object menus, opens both, plus the autosave options. Its colour tells
+  Add / Object menus, opens the autosave options. Its colour tells
   you about the open file: **red** means it was never saved anywhere, **green**
   means it is saved, **grey** means it is saved but you changed something
   since.
+- **Export Backup…** and **Import Backup…** are at the top of the add-on's
+  preferences (Edit ▸ Preferences ▸ Add-ons ▸ CocoBackup).
 - **File ▸ Export ▸ CocoBackup (.json)** saves the backup.
 - **File ▸ Import ▸ CocoBackup (.json)** applies it. A popup then lists
   exactly what changed: which preference went from what to what, and which
