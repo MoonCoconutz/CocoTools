@@ -70,6 +70,13 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     # need it backfilled once. Recorded rather than repeated, or unticking the
     # box would be undone at the next startup.
     starter_suppressions_migrated: BoolProperty(default=False, options={'HIDDEN'})
+    # One-shot: CocoPies up to 1.13.2 wrote suppressions into the keymap
+    # preset in memory as well, and switched them back *on* there when it was
+    # unregistered -- which is what an in-session update does. The first
+    # suppression pass of a later version re-reads the preset from its file
+    # once, so its edit is not recorded against that leftover.
+    # See keymaps._reread_keymap_preset_once.
+    keymap_preset_reread: BoolProperty(default=False, options={'HIDDEN'})
 
     # Section keys the user has collapsed in the Pie Menus list, as a JSON
     # list. Stored rather than kept in memory so the panel opens the way it

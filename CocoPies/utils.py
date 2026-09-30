@@ -881,8 +881,7 @@ def merged_keyconfig():
     loaded it contains no CocoPies keymap items at all, and the pies still
     open.
 
-    Writing is the opposite case and still goes through live_keyconfigs() --
-    see there.
+    Writing goes to `user` as well, and only there -- see _iter_matching_items.
     """
     kcs = getattr(bpy.context.window_manager, 'keyconfigs', None)
     if kcs is None:
@@ -890,44 +889,50 @@ def merged_keyconfig():
     return getattr(kcs, 'user', None) or getattr(kcs, 'active', None)
 
 
-def live_keyconfigs():
-    """The keyconfigs a suppression has to be *written* into.
+def _iter_matching_items(identities):
+    """Walk the user keyconfig, yielding (identity, kmi) for wanted bindings.
 
-    Reading is merged_keyconfig()'s job, and only writing needs this list.
-    `keyconfigs.user` is NOT reliably the one a write has to land in. Selecting a keymap preset makes
-    it `keyconfigs.active` while "Blender user" stays in the list untouched --
-    so on a machine running a preset (this one runs "MyPreset"), everything
-    read from or written to `user` describes a keyconfig Blender is not
-    dispatching from. Suppression aimed there switched off an item nobody was
-    consulting, and left the real one enabled and still stealing the key.
+    Only `user`, never `active` (the preset, or `default` when there is none)
+    and never `default` or `addon`. Blender dispatches from `user`
+    (WM_keymap_active returns the user keymap), so switching an item off there
+    is all a suppression needs. Writing the base as well is what broke things
+    up to 1.13.2: `user` is saved as a diff against the base and re-applied by
+    content, and when the base item it was taken against has changed,
+    re-applying falls back to the first item with the same operator,
+    properties and on/off on *any* key (wm_keymap_patch, wm_keymap.cc, read at
+    v5.2.0). A saved "X delete menu off" then landed on the Delete-key menu
+    and deleted it -- measured on 5.2 with the stock keymap and with a preset,
+    after an edit made while CocoPies had switched the base X back on.
 
-    Both are returned, deduplicated: `active` is what counts, and `user` is the
-    same object whenever no preset is loaded.
+    No fallback when there is no `user`: a write into the base is the bug
+    above, so nothing is written at all.
     """
     kcs = getattr(bpy.context.window_manager, 'keyconfigs', None)
-    if kcs is None:
-        return []
-    found = []
-    for name in ('active', 'user'):
-        kc = getattr(kcs, name, None)
-        if kc is not None and not any(kc == seen for seen in found):
-            found.append(kc)
-    return found
+    kc = getattr(kcs, 'user', None) if kcs is not None else None
+    if kc is None:
+        return
+    for km in kc.keymaps:
+        for kmi in list(km.keymap_items):
+            identity = binding_identity(kmi, km.name)
+            if identity in identities:
+                yield identity, kmi
 
 
-def _iter_matching_items(identities):
-    """Walk the live keyconfigs, yielding (identity, kmi) for wanted bindings.
+def settle_user_keyconfig():
+    """Run Blender's pending keyconfig update now.
 
-    `default` and `addon` are deliberately not walked: they are the templates
-    the active keyconfig is built from, and switching an item off in either
-    changes nothing about what fires.
+    Called on both sides of every write into the user keyconfig. Blender
+    records a user keymap edit by pairing each item with the base item that
+    has the same internal id, and it does that at the next update, against
+    whatever the base holds by then; an add-on item's id comes from its place
+    in the add-on keymap. An edit left pending while add-on items are added or
+    removed is therefore paired with the wrong items. Updating first builds
+    `user` from the current base, updating after records the edit against that
+    same base.
     """
-    for kc in live_keyconfigs():
-        for km in kc.keymaps:
-            for kmi in list(km.keymap_items):
-                identity = binding_identity(kmi, km.name)
-                if identity in identities:
-                    yield identity, kmi
+    kcs = getattr(bpy.context.window_manager, 'keyconfigs', None)
+    if kcs is not None:
+        kcs.update()
 
 
 def record_prior_state(prefs, entry):
@@ -965,21 +970,30 @@ def apply_suppressions(prefs):
     if not len(prefs.suppressed_bindings):
         return 0
     wanted = {suppression_identity(e) for e in prefs.suppressed_bindings}
+    settle_user_keyconfig()
     touched = 0
     for _identity, kmi in _iter_matching_items(wanted):
         if kmi.active:
             kmi.active = False
             touched += 1
+    if touched:
+        settle_user_keyconfig()
     return touched
 
 
 def restore_suppressions(prefs):
     """Switch back on everything apply_suppressions switched off.
 
-    Called from unregister, so disabling or uninstalling CocoPies hands the
-    user's keymap back exactly as it was found. Note this restores the running
-    session only: an `active = False` that reached userpref.blend via Save
-    Preferences stays there until preferences are saved again afterwards.
+    Called when CocoPies is really unregistered (disabled, uninstalled,
+    reloaded) and when a box is unticked -- not on the rebuild every setting
+    change runs, which re-applied everything 0.2 s later anyway and left the
+    native binding live in between. Disabling CocoPies hands the key back.
+
+    The switched-off item is an ordinary user keymap edit, so Save Preferences
+    keeps it and the next start has it off from the outset. Switching it back
+    on here removes that edit again, or, where the preset itself has the item
+    off, records "on" as the user's edit; either way the key stays given back
+    once preferences are saved.
     """
     if not len(prefs.suppressed_bindings):
         return 0
@@ -987,11 +1001,14 @@ def restore_suppressions(prefs):
               for e in prefs.suppressed_bindings if e.restore_on_unregister}
     if not wanted:
         return 0
+    settle_user_keyconfig()
     touched = 0
     for _identity, kmi in _iter_matching_items(set(wanted)):
         if not kmi.active:
             kmi.active = True
             touched += 1
+    if touched:
+        settle_user_keyconfig()
     return touched
 
 

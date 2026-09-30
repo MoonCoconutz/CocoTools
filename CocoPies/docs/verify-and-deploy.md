@@ -162,6 +162,33 @@ profiles with `resolve_preset_conflict(mode='REPLACE')` after staging it in
 To count rebuilds, wrap `keymaps.unregister_pie_menus` in the probe:
 `register_pie_menus()` calls it through the module global on every rebuild.
 
+For anything touching shortcut suppression (1.13.3 was verified this way):
+
+- **Drive the keys, measure the mesh.** In Edit Mode on a fresh cube with one
+  vertex selected, a tap on X (press, release) dissolves it (8 verts / 6 faces
+  → 7 / 4), a drag to the NW slot of the Mesh Delete pie deletes it (→ 7 / 3),
+  and Blender's own X or Delete menu changes nothing until picked (→ 8 / 6,
+  screenshot the menu, then `ESC`). Curve: a 3-point Bézier with two points
+  selected, tap → 2 points, West slot → 1. Old and new must give the same
+  numbers.
+- **Dump every item of every `user` keymap**, not only X and Delete: the bug
+  class here removes an *unrelated* item. Keep the X/Delete items of
+  `keyconfigs.active` and `default` too — the old code edited those.
+- **The edit-in-rebuild-window case**: `bpy.ops.cocopie.refresh_menus()` and,
+  in the same timer step, write the user X item's `active`, then wait for the
+  deferred pass and rebuild once more.
+- **Preset switches** need the Keymap section drawn so the watcher fires:
+  `bpy.ops.screen.userpref_show(section='KEYMAP')` first, then
+  `bpy.utils.keyconfig_set(bpy.utils.preset_find(name, "keyconfig"))`. Copy
+  MyPreset into every profile's `scripts/presets/keyconfig`.
+- **An in-session update** is what Blender's extension updater does:
+  `addon_utils.disable(module, default_set=False)`, copy the new files over the
+  repository folder, drop the package from `sys.modules`,
+  `addon_utils.enable(module, default_set=False)`. Then Save Preferences and
+  restart; the damage it can cause only shows after the restart.
+- **Disabling for good**: `addon_utils.disable(module, default_set=True)`,
+  save, restart — in a throwaway profile only, since it drops the pies.
+
 ## 4. The user's eyes
 
 The Preferences window opens as a **second OS window** and cannot be

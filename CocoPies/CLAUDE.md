@@ -330,7 +330,8 @@ in Preferences and so impossible to repair.
 **Entry points worth not re-grepping for.** `menus.py`:
 `create_pie_menu_class(pie_data)` (note: *create_*, not build_),
 `execute_script()`, `_parse_bpy_ops_call()`. `keymaps.py`:
-`register_pie_menus()` / `unregister_pie_menus()`. `defaults.py`:
+`register_pie_menus()` / `unregister_pie_menus()`, `_apply_suppressions_deferred()`,
+`_repair_after_preset_switch()`. `defaults.py`:
 `default_pie_definitions(script_paths)`, `bundled_script_paths()`,
 `sync_starter_pies()`, `ensure_default_pies()`. `presets.py`:
 `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer
@@ -338,7 +339,8 @@ used by starters, presets, imports and Duplicate alike — and its inverse
 `pie_to_dict(pie)`. `utils.py`: `get_prefs()`, `holding_rebuilds()`,
 `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`,
 `ensure_slot_items()`, `slot_is_used()`, `unused_pie_name()` /
-`unused_pie_idname()`. `ui/lists.py`: `draw_pie_row()`.
+`unused_pie_idname()`, `apply_suppressions()` / `restore_suppressions()`,
+`settle_user_keyconfig()`. `ui/lists.py`: `draw_pie_row()`.
 
 **Headless stand-in for `AddonPreferences`.** Anything taking `prefs` only
 touches `pie_menus`, `active_pie_index` and `seeded_starters`, so a scratch
@@ -448,8 +450,9 @@ because of the `PRESS` rule above — measured here with CocoPies at `Mesh[9]`
 and `Mesh[10]` losing to Blender's native X delete at `Mesh[112]`. Switching
 the other item off is the only fix available.
 
-**Read and write `keyconfigs.user`.** `merged_keyconfig()` (reading) and
-`live_keyconfigs()` (writing) are separate functions on purpose.
+**Read and write `keyconfigs.user`, and only `user`.** Reading goes through
+`merged_keyconfig()`, writing through `_iter_matching_items()` (`utils.py`),
+which has no fallback: with no `user` it writes nothing.
 
 The conflict *scan* went on reading `active` anyway until 2026-09-04, and it
 failed three ways at once, all measured live under "MyPreset" (16 keymaps /
@@ -460,8 +463,65 @@ showed against the Mesh Delete pie. It **invented** dead ones, reporting a
 with a checkbox offering to switch off something that was not running. And it
 **mislabelled** what it did find, calling a stock Object Mode binding a custom
 3D View one, because the preset's copy is what got compared against `default`.
-Reading now goes through `merged_keyconfig()` and writing still through
-`live_keyconfigs()` — those two are separate functions on purpose.
+
+Suppressions went on being *written* into `active` as well until 1.13.2
+(`live_keyconfigs()`, now gone), on the theory that `user` is not what
+dispatches under a preset. It is (`WM_keymap_active` returns the user keymap;
+measured again 2026-09-29, below). With no preset loaded, `active` *is*
+`default`, so CocoPies was editing the base that `user` is rebuilt from, under
+the user's saved edits. How Blender stores and re-applies those edits (vault
+note, "How saved edits are stored and re-applied") makes that a bug: an edit
+saved against the base's X-on was re-applied onto the **Delete-key** menu once
+CocoPies switched the base X off, and the Delete key did nothing, for good
+once preferences were saved.
+
+**Suppressions are restored by a real unregister only.** Up to 1.13.2
+`unregister_pie_menus()` restored them first on every call, so every rebuild
+(any change to any pie) switched the native X menus back on, and the deferred
+pass switched them off 0.2 s later. The set of suppressions does not change
+with the pies, so nothing needed that, and the gap was the trigger for the bug
+above: an edit recorded in it (CocoBackup importing "X off") was stored
+against X-on. Now only `unregister_pie_menus(restore_suppressed=True)`, from
+`__init__.unregister()`, restores, plus `toggle_suppress_binding` when a box
+is unticked. Measured on 5.2, 2026-09-29, old against new in isolated
+profiles (stock and a MyPreset copy): with the old code a user X edit made in
+the rebuild window removed the Delete-key menu in Mesh and Curve, with both
+bases, and it was still gone after Save Preferences + restart; with the new
+code it stays, and every other user keymap item and every pie screenshot is
+identical between the two.
+
+**Settle the keyconfig on both sides of every write to `user`**
+(`utils.settle_user_keyconfig()`, called inside `apply_suppressions`,
+`restore_suppressions`, the deferred pass and the repair below). Blender
+records a pending user edit at the next update by pairing items **by id**, and
+an addon item's id comes from its position in the addon keymap. Measured in
+plain Blender 5.2 (2026-09-29): addon items A then B in Mesh, a pending user
+edit, A removed, update — B vanished from `user` and a user-modified copy of
+the removed A stayed; updating before removing A was correct. The old
+per-rebuild restore did exactly that (a pending write, then the addon sweep),
+so it could also mis-pair other addons' Mesh/Curve items whenever theirs came
+after CocoPies' in the addon keymap. It is consistent with the register-time
+loss described under "Never write `kmi.active` during `register()`" below;
+that one was not re-measured.
+
+A suppression is now an ordinary user keymap edit, the same as unticking the
+item in Preferences ▸ Keymap: Save Preferences keeps it, the next start has X
+off from the outset, and CocoBackup's shortcut export sees it. Where the
+preset already has the item off (MyPreset has both X menus off), nothing is
+written at all. Disabling CocoPies switches it back on; under such a preset
+that records "on" as the user's edit, so X stays given back after a restart
+(the old code switched the preset's own item on in memory, which a restart
+undid).
+
+**The first suppression pass re-reads the keymap preset once**
+(`_reread_keymap_preset_once`, `prefs.keymap_preset_reread`). An older
+CocoPies left the in-memory preset switched on where it had suppressed (its
+unregister restored into `active`), and Blender's extension updater
+unregisters the old version and registers the new one in the same session.
+Measured: updated in-session under MyPreset, the new code recorded its "X off"
+against that leftover, and after a restart the Delete-key menu was gone. With
+the re-read (`bpy.utils.keyconfig_set` on the active preset's file) it stays.
+Stock ("Blender") is skipped: the old restore left it as stock.
 
 **The two conflict checks must share their rules.** `find_external_conflicts`
 (pie vs everyone else) and `find_shortcut_conflicts` (pie vs pie) drifted
@@ -532,15 +592,39 @@ keymap stays stuck until Blender restarts. `keymaps.py` defers the suppression
 pass to a `bpy.app.timers` callback for exactly this reason -- do not "simplify"
 it back into `register_pie_menus`.
 
-**Switching keymap preset wipes suppressions and mirrors.** It rebuilds
-`keyconfigs.user`, so every `active = False` and every mirrored item is gone
-while the panel still shows the suppression ticked. `_watch_keyconfig_preset`
-is appended to `USERPREF_PT_keymap`'s draw and re-queues the deferred pass
-when `keyconfigs.active.name` changes. No polling timer, on purpose (the user
-did not want one): the check costs nothing unless the Keymap section is on
-screen, which is the only place a preset can be picked. Verified GUI on 4.5
-and 5.2 (2026-09-24), including that nothing is re-applied without that panel
-open.
+**Switching keymap preset rebuilds `user`, and re-applies the saved edits
+onto the new preset.** A suppression comes back by itself where the new
+preset has the item on, as the old base did. Where the old base had it off
+nothing was saved, and the native binding is live again while the panel still
+shows the box ticked; `_watch_keyconfig_preset` is appended to
+`USERPREF_PT_keymap`'s draw and re-queues the deferred pass when
+`keyconfigs.active.name` changes. No polling timer, on purpose (the user did
+not want one): the check costs nothing unless the Keymap section is on screen,
+which is the only place a preset can be picked. Verified GUI on 4.5 and 5.2
+(2026-09-24), including that nothing is re-applied without that panel open,
+and again on 5.2 (2026-09-29) after suppressions moved to `user`: MyPreset →
+Blender comes back with X off.
+
+**The other direction needs `_repair_after_preset_switch`.** An edit saved
+against X-on, re-applied onto a preset whose X is already off, lands on the
+first item with the same operator, properties and on/off on any key. Measured
+on 5.2, stock → MyPreset: the Mesh and Curve Delete-key menus were gone until
+switching back, and would have stayed gone once any edit of those keymaps
+recorded the loss. The watcher remembers the preset it switched *from*; the
+next deferred pass, for each suppression that was on in the old base and is
+not on in the new one, looks for switched-on items with the same operator and
+menu that `user` lacks against preset + addon items. If that loss is the only
+difference in the keymap, `KeyMap.restore_to_default()` brings the preset's
+own copy back, so Delete is not shown as user-added and no edit is left
+behind (the user's choice, 2026-09-29). Otherwise the user's other edits are
+kept and the lost item is put back with `new_from_item`, which the keymap
+editor shows as added. Both measured: after the switch the Mesh keymap was
+unmodified with Delete present, or kept its Loop Cut edit with Delete added;
+X tap, pie and Delete worked, and the result survived Save Preferences +
+restart. It needs the Keymap section drawn after the switch, like the
+re-apply; CocoBackup's import switches preset from code and brings missing
+items back itself. A user who deleted such an item on purpose gets it back
+after such a switch.
 
 **"Was it on before we touched it" can only be asked once.** Suppression turns
 an item off, Save Preferences writes that into `userpref.blend`, and from the

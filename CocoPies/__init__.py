@@ -178,7 +178,9 @@ def unregister():
         print(f"CocoPies: could not remove the right-click entry: {e}")
 
     unregister_keyconfig_watcher()
-    unregister_pie_menus()
+    # The one caller that hands suppressed shortcuts back; every other caller
+    # is a rebuild, which keeps them
+    unregister_pie_menus(restore_suppressed=True)
 
     # Keep going if one class will not unregister. A class can already be gone
     # -- a second copy of the addon registering the same bl_idnames makes

@@ -2,11 +2,13 @@
 
 import bpy
 import traceback
+from collections import Counter
 from .items import KEYMAP_CONFIG, WINDOW_MODE_KEYMAPS
 from .utils import (
     get_prefs, format_shortcut, _debug,
     COCOPIE_KEYMAP_IDNAMES, invalidate_external_shortcut_index,
-    apply_suppressions, restore_suppressions,
+    apply_suppressions, restore_suppressions, settle_user_keyconfig,
+    binding_identity, suppression_identity, _kmi_menu_name,
     pie_scope_types,
 )
 from .menus import create_pie_menu_class
@@ -231,6 +233,34 @@ def _sweep_user_keyconfig():
     return removed
 
 
+def _reread_keymap_preset_once(prefs):
+    """Load the active keymap preset from its file again, once per config.
+
+    Up to 1.13.2 CocoPies also wrote suppressions into `keyconfigs.active`, the
+    loaded preset, and switched them back on there when unregistered. Blender's
+    extension updater unregisters the old version and registers the new one in
+    the same session, so the new one found MyPreset's X delete menu on in
+    memory although the file has it off, and recorded its "X off" against
+    that. After a restart the preset's X was off again, Blender's fallback put
+    the saved edit on the Delete-key menu instead, and the Delete key did
+    nothing -- measured on 5.2 in an isolated profile. Re-reading the file puts
+    the preset back as it is on disk before anything is recorded.
+
+    Nothing to do for "Blender" itself: the old restore left stock switched on,
+    which is what stock is.
+    """
+    if prefs.keymap_preset_reread:
+        return
+    prefs.keymap_preset_reread = True
+    kcs = bpy.context.window_manager.keyconfigs
+    active = kcs.active
+    if active is None or active == kcs.default:
+        return
+    path = bpy.utils.preset_find(active.name, "keyconfig")
+    if path:
+        bpy.utils.keyconfig_set(path)
+
+
 def _apply_suppressions_deferred():
     """Timer callback: finish the keymap work once the keyconfig has settled.
 
@@ -243,7 +273,32 @@ def _apply_suppressions_deferred():
     ghosted shortcut stayed dead for the whole session while the same code
     repaired it perfectly on any later rebuild. Measured exactly that way
     before this was moved here.
+
+    Both write into the user keyconfig, so both run between two keyconfig
+    updates (utils.settle_user_keyconfig): this one, and the one
+    apply_suppressions ends with.
+
+    After a keymap preset switch the pass first puts back what the switch
+    removed by mistake (_repair_after_preset_switch), before any edit of that
+    keymap can make the loss permanent.
     """
+    global _switch_pending
+    prefs = get_prefs()
+    try:
+        if prefs is not None:
+            _reread_keymap_preset_once(prefs)
+    except Exception as e:
+        print(f"CocoPies: could not re-read the keymap preset: {e}")
+    try:
+        settle_user_keyconfig()
+        if _switch_pending and prefs is not None:
+            _switch_pending = False
+            repaired = _repair_after_preset_switch(prefs, _switched_from)
+            if repaired:
+                print(f"CocoPies: restored {repaired} shortcut(s) the keymap "
+                      f"preset switch removed")
+    except Exception as e:
+        print(f"CocoPies: could not repair after the keymap preset switch: {e}")
     try:
         repaired = _mirror_missing_items()
         if repaired:
@@ -251,7 +306,6 @@ def _apply_suppressions_deferred():
     except Exception as e:
         print(f"CocoPies: could not place skipped shortcuts: {e}")
     try:
-        prefs = get_prefs()
         if prefs is not None:
             suppressed = apply_suppressions(prefs)
             if suppressed:
@@ -283,15 +337,22 @@ def _cancel_scheduled_suppressions():
 
 
 # ---------------------------------------------------------------------------
-# Re-applying after a keymap preset switch.
+# After a keymap preset switch.
 #
 # Picking another preset in Preferences > Keymap rebuilds `keyconfigs.user`
-# from scratch: addon items come back through the merge, but every
-# `active = False` a suppression wrote is gone, and so is anything
-# _mirror_missing_items placed there by hand. The native binding is live again
-# and steals the pie's key, while the panel still shows the suppression ticked
-# (it draws from prefs, not from the keymap). Measured headless 2026-09-24:
-# Mesh's X delete read True again after Industry Compatible -> Blender.
+# from the new preset plus the addon items, then re-applies the user's saved
+# edits. A suppression is one of those edits, so it comes back by itself where
+# the new preset has the binding switched on as the old base did. Where the
+# old base had it off (MyPreset has X off) nothing was saved, the new preset
+# may have it on, and the native binding is live again, stealing the pie's key
+# while the panel still shows the box ticked. So the deferred pass runs again.
+#
+# The other direction needs a repair. Blender re-applies a saved edit by
+# content, and when the new preset has no switched-on copy of the item the
+# edit was taken against, it falls back to the first item with the same
+# operator, properties and on/off on any key. Measured on 5.2, stock ->
+# MyPreset: the saved "X delete menu off" took the Delete-key menu in Mesh
+# and in Curve, which stayed gone until switching back.
 #
 # Blender has no handler for a preset switch, and polling on a timer for
 # something only the Keymap section can do was not wanted. So the check rides
@@ -300,10 +361,14 @@ def _cancel_scheduled_suppressions():
 # only queues the usual deferred pass, which then runs outside the draw.
 
 _last_keyconfig_name = None
+# Set by the watcher, read by the next deferred pass: a switch happened, and
+# from which preset
+_switch_pending = False
+_switched_from = None
 
 
 def _watch_keyconfig_preset(self, context):
-    global _last_keyconfig_name
+    global _last_keyconfig_name, _switch_pending, _switched_from
     try:
         active = context.window_manager.keyconfigs.active
         name = active.name if active is not None else None
@@ -312,11 +377,132 @@ def _watch_keyconfig_preset(self, context):
     if name == _last_keyconfig_name:
         return
     first_look = _last_keyconfig_name is None
+    previous = _last_keyconfig_name
     _last_keyconfig_name = name
     if first_look:
         return
+    _switch_pending = True
+    _switched_from = previous
     invalidate_external_shortcut_index()
     _schedule_suppressions()
+
+
+def _props_key(props):
+    """An operator's set properties as a comparable tuple"""
+    if props is None:
+        return ()
+    out = []
+    for prop in props.bl_rna.properties:
+        ident = prop.identifier
+        if ident == 'rna_type':
+            continue
+        try:
+            if not props.is_property_set(ident):
+                continue
+            value = getattr(props, ident)
+        except Exception:
+            continue
+        if prop.type == 'POINTER':
+            # A macro keeps each step's settings in a nested group
+            value = _props_key(value)
+        elif prop.type == 'COLLECTION':
+            value = len(value)
+        elif isinstance(value, set):
+            value = tuple(sorted(value))
+        elif hasattr(value, '__len__') and not isinstance(value, str):
+            value = tuple(value)
+        out.append((ident, value))
+    return tuple(out)
+
+
+def _content(kmi):
+    """Everything that makes two keymap items the same shortcut doing the
+    same thing, for comparing a user keymap with what it was built from"""
+    return (kmi.idname, kmi.map_type, kmi.type, kmi.value, kmi.any,
+            kmi.shift, kmi.ctrl, kmi.alt, kmi.oskey, kmi.hyper,
+            kmi.key_modifier, kmi.direction, kmi.repeat, kmi.active,
+            _props_key(kmi.properties))
+
+
+def _base_keymap(kcs, km, kc):
+    """km's counterpart in the base keyconfig kc, or in stock where kc has
+    none -- the same choice Blender makes when it builds `user`"""
+    for source in (kc, kcs.default):
+        if source is None:
+            continue
+        found = source.keymaps.find(
+            km.name, space_type=km.space_type, region_type=km.region_type)
+        if found is not None:
+            return found
+    return None
+
+
+def _repair_after_preset_switch(prefs, previous_name):
+    """Put back what a preset switch removed in place of a suppressed item.
+
+    Returns how many items were put back -- normally none.
+    """
+    kcs = bpy.context.window_manager.keyconfigs
+    previous = kcs.get(previous_name) if previous_name else None
+    repaired = 0
+    for entry in prefs.suppressed_bindings:
+        identity = suppression_identity(entry)
+        for km_user in [km for km in kcs.user.keymaps if km.name == identity[0]]:
+            repaired += _repair_keymap(kcs, km_user, identity, previous)
+    if repaired:
+        settle_user_keyconfig()
+    return repaired
+
+
+def _repair_keymap(kcs, km_user, identity, previous):
+    def switched_on(km):
+        return km is not None and any(
+            k.active and binding_identity(k, km_user.name) == identity
+            for k in km.keymap_items)
+
+    # Only an edit saved against a base with the item on can land elsewhere,
+    # and only when the new base has no such item on for it to find
+    if previous is not None and not switched_on(_base_keymap(kcs, km_user, previous)):
+        return 0
+    km_base = _base_keymap(kcs, km_user, kcs.active)
+    if km_base is None or switched_on(km_base):
+        return 0
+
+    # What `user` would hold with no edits at all: the preset's items and the
+    # addon items. CocoPies' own are left out; the deferred pass re-places
+    # any of those that go missing.
+    expected = [k for k in km_base.keymap_items if not _is_cocopie_item(k)]
+    km_addon = kcs.addon.keymaps.find(
+        km_user.name, space_type=km_user.space_type, region_type=km_user.region_type)
+    if km_addon is not None:
+        expected += [k for k in km_addon.keymap_items if not _is_cocopie_item(k)]
+    have = Counter(_content(k) for k in km_user.keymap_items if not _is_cocopie_item(k))
+    want = Counter(_content(k) for k in expected)
+    missing = want - have
+
+    # The fallback's victims: switched-on items running the same operator and
+    # menu on another key
+    _km, idname, _type, _value, menu = identity[:5]
+    lost, budget = [], Counter(missing)
+    for k in expected:
+        key = _content(k)
+        if budget[key] > 0 and k.active and k.idname == idname and _kmi_menu_name(k) == menu:
+            lost.append(k)
+            budget[key] -= 1
+    if not lost:
+        return 0
+
+    if not (have - want) and not (missing - Counter(_content(k) for k in lost)):
+        # Nothing but the loss sets this keymap apart from the preset, so its
+        # own copy loses nothing: Delete comes back as the preset's item, not
+        # as one the user added, and no edit is left behind
+        km_user.restore_to_default()
+    else:
+        # Other edits live here too. Keep them and put the lost item back, as
+        # an item the keymap editor shows as added
+        for k in lost:
+            km_user.keymap_items.new_from_item(k)
+    return len(lost)
 
 
 def _scrub_keyconfig_watchers():
@@ -457,8 +643,12 @@ def register_pie_menus():
     _schedule_suppressions()
 
 
-def unregister_pie_menus():
+def unregister_pie_menus(restore_suppressed=False):
     """Unregister all pie menus and keymaps.
+
+    restore_suppressed is for a real unregister only (__init__.unregister):
+    it switches back on what CocoPies switched off. A rebuild leaves the
+    suppressions alone; see the comment below.
 
     Sweeps every keymap CocoPies could have touched for any wm.call_menu_pie
     item that points at one of our menus, or any item running a CocoPies
@@ -479,18 +669,30 @@ def unregister_pie_menus():
     """
     global registered_pie_classes, registered_keymaps
 
-    # Before anything else: whatever CocoPies switched off, it switches back
-    # on. A user disabling the addon gets their keymap as they left it, which
-    # is the whole reason suppression is stored here instead of applied for
-    # good. Failing this must not stop the rest of the teardown, or a bad
-    # restore would also leak keymap items.
     _cancel_scheduled_suppressions()
-    try:
-        prefs = get_prefs()
-        if prefs is not None:
-            restore_suppressions(prefs)
-    except Exception as e:
-        print(f"CocoPies: Could not restore suppressed shortcuts: {e}")
+
+    # On a real unregister, before anything else: whatever CocoPies switched
+    # off, it switches back on. A user disabling the addon gets their keymap
+    # as they left it, which is the whole reason suppression is stored here
+    # instead of applied for good. Failing this must not stop the rest of the
+    # teardown, or a bad restore would also leak keymap items.
+    #
+    # Not on a rebuild. Up to 1.13.2 every rebuild (any change to any pie)
+    # switched the native X delete menus back on here and off again from the
+    # deferred pass 0.2 s later. Nothing needed that -- the set of suppressions
+    # does not change with the pies -- and the gap was harmful: X opened
+    # Blender's menu in it, and an edit made in it (CocoBackup importing
+    # shortcuts, measured) was recorded against the switched-on item, which
+    # Blender then re-applied onto the Delete-key menu. restore_suppressions
+    # settles the keyconfig before and after its writes, so they are recorded
+    # before the addon sweep below changes the addon keymap.
+    if restore_suppressed:
+        try:
+            prefs = get_prefs()
+            if prefs is not None:
+                restore_suppressions(prefs)
+        except Exception as e:
+            print(f"CocoPies: Could not restore suppressed shortcuts: {e}")
 
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon

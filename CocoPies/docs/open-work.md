@@ -106,8 +106,26 @@ unaffected, since the Local Repository reads this working tree.
   Blender's X delete menu back. The user's own configuration had `True`
   (checked live 2026-09-28), so nothing was migrated.
 
+## 5. Old "ghosted" shortcuts may have had one cause
+
+Measured 2026-09-29 (see `../CLAUDE.md`, "Settle the keyconfig"): a user
+keymap edit left pending while addon items are removed is paired with the
+wrong items, removing a live addon item from `user` and keeping a removed one.
+Up to 1.13.2 every rebuild did that in Mesh and Curve (the restore, then the
+addon sweep). That may be where the ghosted Zen UV and Mesh Flatten bindings
+and the register-time loss of Mesh/Curve addon items came from. **Not
+verified** — nobody reproduced those from this cause. If a ghost turns up
+again, check for a pending `user` write next to an addon keymap change first.
+
 ## Recently closed, for context
 
+- **1.13.3** (2026-09-29): suppressions are written into `keyconfigs.user`
+  only and restored only on a real unregister, not on every rebuild; the
+  Delete-key menu no longer vanishes after an edit made while CocoPies
+  rebuilt (CocoBackup's import did that). A stock → MyPreset switch puts back
+  the Delete menu Blender's re-apply took, and an in-session update from an
+  older version re-reads the preset first. Checked old against new in
+  isolated profiles, stock and MyPreset.
 - **1.13.0** (2026-09-28): 5.2+ only, and a clean-up checked old against new
   in isolated profiles (identical pies, keymaps and screenshots, the user's
   real pies included). Fixed: Add Editor raised on every click; moving a pie
