@@ -168,8 +168,10 @@ For anything touching shortcut suppression (1.13.3 was verified this way):
   vertex selected, a tap on X (press, release) dissolves it (8 verts / 6 faces
   → 7 / 4), a drag to the NW slot of the Mesh Delete pie deletes it (→ 7 / 3),
   and Blender's own X or Delete menu changes nothing until picked (→ 8 / 6,
-  screenshot the menu, then `ESC`). Curve: a 3-point Bézier with two points
-  selected, tap → 2 points, West slot → 1. Old and new must give the same
+  screenshot the menu, then `ESC`). Curve: a 3-point Bézier with the first two
+  points selected, counted as [splines, points]: the tap deletes the segment
+  between them ([1, 3] → [2, 3]), the West slot deletes both points
+  (→ [1, 1]), Delete opens the menu (→ [1, 3]). Old and new must give the same
   numbers.
 - **Dump every item of every `user` keymap**, not only X and Delete: the bug
   class here removes an *unrelated* item. Keep the X/Delete items of
@@ -188,6 +190,26 @@ For anything touching shortcut suppression (1.13.3 was verified this way):
   restart; the damage it can cause only shows after the restart.
 - **Disabling for good**: `addon_utils.disable(module, default_set=True)`,
   save, restart — in a throwaway profile only, since it drops the pies.
+- **The user's own saved shortcuts** can be replayed without touching them.
+  This is how the one-time repair in 1.13.3 was checked. Copy their
+  `config/userpref.blend`, their keymap preset
+  (`scripts/presets/keyconfig/`) and the installed CocoPies folder into a
+  profile, under the same repository module name
+  (`extensions/<repo_module>/CocoPies`), and launch with `--offline-mode`.
+  Before copying:
+  - Check every repository's `use_custom_directory` in the live Blender. One
+    with a custom directory would point the copy at the real install.
+  - Leave CocoBackup out: its autosave writes outside the profile.
+  - Make the probe check that the module's `__file__` is inside the profile
+    before swapping any files.
+
+  Their preferences keep the splash screen on, and the splash eats the first
+  simulated keys, so the first test fails whatever the code does. Close it
+  with a simulated `ESC` first.
+- **Windows' 260-character path limit** applies to Blender. A repository deep
+  under the scratchpad went past it: the in-session copy failed and brush
+  icons would not load. Point `BLENDER_USER_RESOURCES` at a short directory
+  junction (`New-Item -ItemType Junction`) to the profiles folder instead.
 
 ## 4. The user's eyes
 

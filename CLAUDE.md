@@ -136,6 +136,12 @@ is missing**. A run whose copy step failed pointed `BLENDER_USER_RESOURCES` at
 an empty folder, and Blender loaded the user's own add-on list (2026-09-28;
 nothing was written, since the probe set `use_preferences_save = False` first).
 
+Keep the profile's path short. Blender is bound by Windows' 260-character
+limit, and an extension folder deep under the session scratchpad went past
+it (2026-09-30): copying files into it failed and icons would not load. A
+directory junction at a short path (`New-Item -ItemType Junction`) pointing
+at the profiles folder avoids it.
+
 **Two such profiles make an old-against-new comparison**, the strongest check
 for a refactor: one repository folder holding the committed copy of the
 extension, one holding the working copy, the same GUI probe run against both,

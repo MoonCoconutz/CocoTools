@@ -124,8 +124,10 @@ again, check for a pending `user` write next to an addon keymap change first.
   Delete-key menu no longer vanishes after an edit made while CocoPies
   rebuilt (CocoBackup's import did that). A stock → MyPreset switch puts back
   the Delete menu Blender's re-apply took, and an in-session update from an
-  older version re-reads the preset first. Checked old against new in
-  isolated profiles, stock and MyPreset.
+  older version re-reads the preset first. The first start also puts back,
+  once, a Delete menu an older version already deleted (the user's Curve one
+  was). Checked old against new in isolated profiles, stock and MyPreset, and
+  on a copy of the user's own saved preferences.
 - **1.13.0** (2026-09-28): 5.2+ only, and a clean-up checked old against new
   in isolated profiles (identical pies, keymaps and screenshots, the user's
   real pies included). Fixed: Add Editor raised on every click; moving a pie

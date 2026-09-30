@@ -278,9 +278,11 @@ def _apply_suppressions_deferred():
     updates (utils.settle_user_keyconfig): this one, and the one
     apply_suppressions ends with.
 
-    After a keymap preset switch the pass first puts back what the switch
-    removed by mistake (_repair_after_preset_switch), before any edit of that
-    keymap can make the loss permanent.
+    The first pass in a configuration also puts back what an older CocoPies
+    removed (_restore_lost_shortcuts_once). After a keymap preset switch the
+    pass first puts back what the switch removed by mistake
+    (_repair_after_preset_switch), before any edit of that keymap can make the
+    loss permanent.
     """
     global _switch_pending
     prefs = get_prefs()
@@ -291,6 +293,14 @@ def _apply_suppressions_deferred():
         print(f"CocoPies: could not re-read the keymap preset: {e}")
     try:
         settle_user_keyconfig()
+        if prefs is not None:
+            repaired = _restore_lost_shortcuts_once(prefs)
+            if repaired:
+                print(f"CocoPies: restored {repaired} shortcut(s) an older "
+                      f"version removed")
+    except Exception as e:
+        print(f"CocoPies: could not restore removed shortcuts: {e}")
+    try:
         if _switch_pending and prefs is not None:
             _switch_pending = False
             repaired = _repair_after_preset_switch(prefs, _switched_from)
@@ -444,17 +454,17 @@ def _repair_after_preset_switch(prefs, previous_name):
     """
     kcs = bpy.context.window_manager.keyconfigs
     previous = kcs.get(previous_name) if previous_name else None
+    suppressed = {suppression_identity(e) for e in prefs.suppressed_bindings}
     repaired = 0
-    for entry in prefs.suppressed_bindings:
-        identity = suppression_identity(entry)
+    for identity in suppressed:
         for km_user in [km for km in kcs.user.keymaps if km.name == identity[0]]:
-            repaired += _repair_keymap(kcs, km_user, identity, previous)
+            repaired += _repair_keymap(kcs, km_user, identity, previous, suppressed)
     if repaired:
         settle_user_keyconfig()
     return repaired
 
 
-def _repair_keymap(kcs, km_user, identity, previous):
+def _repair_keymap(kcs, km_user, identity, previous, suppressed):
     def switched_on(km):
         return km is not None and any(
             k.active and binding_identity(k, km_user.name) == identity
@@ -467,6 +477,51 @@ def _repair_keymap(kcs, km_user, identity, previous):
     km_base = _base_keymap(kcs, km_user, kcs.active)
     if km_base is None or switched_on(km_base):
         return 0
+    return _restore_lost_items(kcs, km_user, km_base, identity, suppressed)
+
+
+def _restore_lost_shortcuts_once(prefs):
+    """Put back, once, what CocoPies up to 1.13.2 deleted from the user keymap.
+
+    Those versions edited the preset under the user's saved edits, and Blender
+    then re-applied a saved "X delete menu off" onto the Delete-key menu
+    (see utils._iter_matching_items). Save Preferences kept that as an
+    ordinary "remove", so fixing the cause brings nothing back: the user's
+    Curve Delete key was dead in their own saved preferences on 2026-09-30.
+
+    Once per configuration, like the preset re-read, so a shortcut the user
+    removes on purpose later stays removed. Not marked done while `user` is
+    still empty, which it can be this early in Blender's startup.
+    """
+    if prefs.lost_shortcuts_restored:
+        return 0
+    kcs = bpy.context.window_manager.keyconfigs
+    if kcs.user is None or not len(kcs.user.keymaps):
+        return 0
+    prefs.lost_shortcuts_restored = True
+    suppressed = {suppression_identity(e) for e in prefs.suppressed_bindings}
+    repaired = 0
+    for identity in suppressed:
+        for km_user in [km for km in kcs.user.keymaps if km.name == identity[0]]:
+            km_base = _base_keymap(kcs, km_user, kcs.active)
+            if km_base is not None:
+                repaired += _restore_lost_items(
+                    kcs, km_user, km_base, identity, suppressed)
+    if repaired:
+        settle_user_keyconfig()
+    return repaired
+
+
+def _restore_lost_items(kcs, km_user, km_base, identity, suppressed):
+    """Put back switched-on items with identity's operator and menu that
+    km_user lacks against km_base plus the addon items. Returns how many."""
+    def key(k):
+        # A suppressed item's on/off is CocoPies' edit, re-applied right after
+        # this, so it neither counts as a user edit nor as something lost
+        content = _content(k)
+        if binding_identity(k, km_user.name) in suppressed:
+            content = content[:13] + (None,) + content[14:]
+        return content
 
     # What `user` would hold with no edits at all: the preset's items and the
     # addon items. CocoPies' own are left out; the deferred pass re-places
@@ -476,8 +531,8 @@ def _repair_keymap(kcs, km_user, identity, previous):
         km_user.name, space_type=km_user.space_type, region_type=km_user.region_type)
     if km_addon is not None:
         expected += [k for k in km_addon.keymap_items if not _is_cocopie_item(k)]
-    have = Counter(_content(k) for k in km_user.keymap_items if not _is_cocopie_item(k))
-    want = Counter(_content(k) for k in expected)
+    have = Counter(key(k) for k in km_user.keymap_items if not _is_cocopie_item(k))
+    want = Counter(key(k) for k in expected)
     missing = want - have
 
     # The fallback's victims: switched-on items running the same operator and
@@ -485,14 +540,16 @@ def _repair_keymap(kcs, km_user, identity, previous):
     _km, idname, _type, _value, menu = identity[:5]
     lost, budget = [], Counter(missing)
     for k in expected:
-        key = _content(k)
-        if budget[key] > 0 and k.active and k.idname == idname and _kmi_menu_name(k) == menu:
+        k_key = key(k)
+        if (budget[k_key] > 0 and k.active and k.idname == idname
+                and _kmi_menu_name(k) == menu
+                and binding_identity(k, km_user.name) not in suppressed):
             lost.append(k)
-            budget[key] -= 1
+            budget[k_key] -= 1
     if not lost:
         return 0
 
-    if not (have - want) and not (missing - Counter(_content(k) for k in lost)):
+    if not (have - want) and not (missing - Counter(key(k) for k in lost)):
         # Nothing but the loss sets this keymap apart from the preset, so its
         # own copy loses nothing: Delete comes back as the preset's item, not
         # as one the user added, and no edit is left behind

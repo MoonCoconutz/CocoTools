@@ -9,7 +9,7 @@ two disagree, `CLAUDE.md` is right.
 | File | What lives there |
 |---|---|
 | `menus.py` | `create_pie_menu_class(pie_data)` (note: *create_*, not build_), `execute_script()`, `_parse_bpy_ops_call()` |
-| `keymaps.py` | `register_pie_menus()` / `unregister_pie_menus()` (restores suppressions only with `restore_suppressed=True`, a real unregister); `_watch_keyconfig_preset` (draw hook on `USERPREF_PT_keymap`: after a keymap preset switch, the deferred pass repairs what the switch took with `_repair_after_preset_switch` and re-applies suppressions) |
+| `keymaps.py` | `register_pie_menus()` / `unregister_pie_menus()` (restores suppressions only with `restore_suppressed=True`, a real unregister); `_watch_keyconfig_preset` (draw hook on `USERPREF_PT_keymap`: after a keymap preset switch, the deferred pass repairs what the switch took with `_repair_after_preset_switch` and re-applies suppressions); `_restore_lost_shortcuts_once` (first pass per config: puts back Delete menus an older version deleted) |
 | `defaults.py` | `default_pie_definitions(script_paths)`, `bundled_script_paths()`, `sync_starter_pies()`, `ensure_default_pies()` |
 | `presets.py` | `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer used by starters, presets, imports and Duplicate alike — and its inverse `pie_to_dict(pie)` |
 | `utils.py` | `get_prefs()`, `holding_rebuilds()`, `unused_pie_name()` / `unused_pie_idname()`, `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`, `ensure_slot_items()`, `slot_is_used()`, `normalized_scope()`; `apply_suppressions()` / `restore_suppressions()`, which write `keyconfigs.user` only, between two `settle_user_keyconfig()` calls |

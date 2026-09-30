@@ -331,7 +331,8 @@ in Preferences and so impossible to repair.
 `create_pie_menu_class(pie_data)` (note: *create_*, not build_),
 `execute_script()`, `_parse_bpy_ops_call()`. `keymaps.py`:
 `register_pie_menus()` / `unregister_pie_menus()`, `_apply_suppressions_deferred()`,
-`_repair_after_preset_switch()`. `defaults.py`:
+`_restore_lost_shortcuts_once()`, `_repair_after_preset_switch()` (both through
+`_restore_lost_items()`). `defaults.py`:
 `default_pie_definitions(script_paths)`, `bundled_script_paths()`,
 `sync_starter_pies()`, `ensure_default_pies()`. `presets.py`:
 `_apply_pie_dict(pie, definition)` — the shared "dict → stored pie" writer
@@ -523,6 +524,28 @@ against that leftover, and after a restart the Delete-key menu was gone. With
 the re-read (`bpy.utils.keyconfig_set` on the active preset's file) it stays.
 Stock ("Blender") is skipped: the old restore left it as stock.
 
+**The first pass also puts back, once, what older versions deleted**
+(`_restore_lost_shortcuts_once`, `prefs.lost_shortcuts_restored`). Fixing the
+cause brings nothing back: Save Preferences had recorded the lost Delete-key
+menu as an ordinary "remove", and the user's own Curve Delete key was dead in
+their Blender 5.2 on 2026-09-30. For each suppression it looks, against
+preset + addon items, for switched-on items with the same operator and menu
+that `user` lacks, and puts them back the same way as after a preset switch
+(below, shared `_restore_lost_items`): `restore_to_default()` when that loss
+is the only difference, `new_from_item` otherwise. The suppressed item's own
+on/off is left out of that comparison, since it is CocoPies' edit and is
+re-applied straight after; without that, stock (X on in the base, off in
+`user`) would never qualify for the clean reset. Once per configuration, so a
+shortcut removed on purpose later stays removed, and not marked done while
+`user` has no keymaps yet. Measured 2026-09-30 on 5.2:
+- A copy of the user's own saved preferences, with MyPreset and the installed
+  1.13.2: Delete in Curve did nothing. Updated in-session: "restored 1
+  shortcut(s)", the Curve keymap unmodified, and Delete opened the menu.
+  Across all 280 keymaps and 3369 items that was the only difference. It all
+  held after Save Preferences + restart.
+- Stock and MyPreset profiles damaged by 1.13.2, then saved: the update
+  restored both Delete menus and they held after a restart.
+
 **The two conflict checks must share their rules.** `find_external_conflicts`
 (pie vs everyone else) and `find_shortcut_conflicts` (pie vs pie) drifted
 apart, and the weaker one was the one covering the pies the user can actually
@@ -613,7 +636,8 @@ switching back, and would have stayed gone once any edit of those keymaps
 recorded the loss. The watcher remembers the preset it switched *from*; the
 next deferred pass, for each suppression that was on in the old base and is
 not on in the new one, looks for switched-on items with the same operator and
-menu that `user` lacks against preset + addon items. If that loss is the only
+menu that `user` lacks against preset + addon items (`_restore_lost_items`,
+shared with the one-time repair above). If that loss is the only
 difference in the keymap, `KeyMap.restore_to_default()` brings the preset's
 own copy back, so Delete is not shown as user-added and no edit is left
 behind (the user's choice, 2026-09-29). Otherwise the user's other edits are

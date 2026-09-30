@@ -77,6 +77,12 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     # once, so its edit is not recorded against that leftover.
     # See keymaps._reread_keymap_preset_once.
     keymap_preset_reread: BoolProperty(default=False, options={'HIDDEN'})
+    # One-shot: the same versions could delete the Delete-key menus outright
+    # (Mesh, Curve), and saved preferences kept them deleted. A later version
+    # puts back, once, what went missing that way. Once only, so a shortcut
+    # the user removes afterwards stays removed.
+    # See keymaps._restore_lost_shortcuts_once.
+    lost_shortcuts_restored: BoolProperty(default=False, options={'HIDDEN'})
 
     # Section keys the user has collapsed in the Pie Menus list, as a JSON
     # list. Stored rather than kept in memory so the panel opens the way it
