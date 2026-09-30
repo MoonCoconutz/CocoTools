@@ -18,8 +18,9 @@ APIs directly; do not test on 4.5.
 One JSON file (format 4) with four optional sections: `keymaps` (a diff, plus
 the keymap preset in use), `preferences`, `themes` and `addons`, and a small
 `machine` block (home, Blender user and install folders). Exported and
-imported from the save-icon button in the 3D Viewport header or File ▸ Export
-/ Import. Also an optional autosave that writes to a `Backup` folder next to
+imported from the add-on's Preferences or File ▸ Export / Import (the
+save-icon header panel holds only the autosave settings, the user's choice of
+2026-09-30). Also an optional autosave that writes to a `Backup` folder next to
 the .blend.
 
 Format 3 added a shortcut's own settings edits (`new_props`) and nested

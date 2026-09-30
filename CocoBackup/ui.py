@@ -78,14 +78,7 @@ class COCOBACKUP_PT_menu(Panel):
         layout = self.layout
         layout.label(text="CocoBackup", icon_value=panel_icon())
 
-        col = layout.column(align=True)
-        col.scale_y = 1.3
-        # Buttons in a panel opened by wm.call_panel run with EXEC by default:
-        # the operator would skip the file browser and get no path at all.
-        col.operator_context = 'INVOKE_DEFAULT'
-        col.operator("cocobackup.export_backup", text="Export Backup…", icon='EXPORT')
-        col.operator("cocobackup.import_backup", text="Import Backup…", icon='IMPORT')
-
+        # Export / Import live in the add-on's preferences; this is autosave only.
         addon = context.preferences.addons.get(__package__)
         if addon is None:
             return

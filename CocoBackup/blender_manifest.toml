@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoBackup"
 name = "CocoBackup"
-version = "1.2.0"
+version = "1.2.1"
 tagline = "Move shortcuts, preferences and add-on settings to another PC"
 maintainer = "MoonCoconutz"
 type = "add-on"

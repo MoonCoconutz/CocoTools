@@ -47,6 +47,12 @@ class COCOBACKUP_Preferences(AddonPreferences):
 
     def draw(self, _context):
         layout = self.layout
+        row = layout.row(align=True)
+        row.scale_y = 1.3
+        row.operator_context = 'INVOKE_DEFAULT'
+        row.operator("cocobackup.export_backup", text="Export Backup…", icon='EXPORT')
+        row.operator("cocobackup.import_backup", text="Import Backup…", icon='IMPORT')
+        layout.separator()
         layout.prop(self, "use_autosave")
         col = layout.column()
         col.active = self.use_autosave
