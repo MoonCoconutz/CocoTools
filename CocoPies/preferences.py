@@ -196,6 +196,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         row = preset_box.row(align=True)
         row.scale_y = 1.15
         row.operator("cocopie.restore_defaults", text="Restore Starter Pies", icon='RECOVER_LAST')
+        row.operator("cocopie.remove_all_pie_menus", text="", icon='TRASH')
 
         # Refresh
         layout.separator(factor=0.8)

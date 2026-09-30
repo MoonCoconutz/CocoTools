@@ -114,7 +114,9 @@ with no edit needed.
 Starter pies are recorded once given, so one you delete or rename never comes
 back on the next startup — while a starter added by an update still appears on
 its own. **Restore Starter Pies**, under Presets, adds back any that are
-missing and leaves everything else alone.
+missing and leaves everything else alone. The bin beside it deletes every
+pie at once, after asking; the keys the pies took (Blender's X delete menus)
+are given back.
 
 ### The bundled example scripts
 

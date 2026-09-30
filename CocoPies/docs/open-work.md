@@ -119,6 +119,11 @@ again, check for a pending `user` write next to an addon keymap change first.
 
 ## Recently closed, for context
 
+- **1.13.4** (2026-09-30): a bin beside Restore Starter Pies deletes every pie
+  after a confirmation, handing back the suppressed X delete menus; starters
+  stay recorded, so they do not return at startup. Checked in an isolated
+  5.2 profile: 24 pies to 0, no CocoPies keymap item left, X menus on, then
+  Restore Starter Pies brought back 24 pies and both suppressions.
 - **1.13.3** (2026-09-29): suppressions are written into `keyconfigs.user`
   only and restored only on a real unregister, not on every rebuild; the
   Delete-key menu no longer vanishes after an edit made while CocoPies

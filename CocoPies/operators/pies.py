@@ -302,6 +302,55 @@ class COCOPIE_OT_remove_pie_menu(Operator):
         return {'FINISHED'}
 
 
+class COCOPIE_OT_remove_all_pie_menus(Operator):
+    """Delete every pie menu. Asks first; Restore Starter Pies or Import
+    brings pies back"""
+    bl_idname = "cocopie.remove_all_pie_menus"
+    bl_label = "Delete All Pies"
+    bl_options = {'INTERNAL'}
+
+    @classmethod
+    def poll(cls, context):
+        prefs = get_prefs(context)
+        return prefs is not None and len(prefs.pie_menus) > 0
+
+    def invoke(self, context, event):
+        count = len(get_prefs(context).pie_menus)
+        return context.window_manager.invoke_confirm(
+            self, event,
+            title="Delete All Pies",
+            message=f"Delete all {count} pie menus? Export a preset first "
+                    f"to keep them.",
+            confirm_text="Delete All",
+            icon='WARNING',
+        )
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs is None:
+            return {'CANCELLED'}
+        try:
+            count = len(prefs.pie_menus)
+            unregister_pie_menus()
+            # With no pie left, nothing needs the keys the pies took: hand
+            # them back (Blender's X delete menus) before forgetting them, as
+            # unticking a box does. Restore Starter Pies records them again.
+            restore_suppressions(prefs)
+            prefs.suppressed_bindings.clear()
+            prefs.pie_menus.clear()
+            prefs.active_pie_index = 0
+            # Starters stay recorded as seeded, so the next start does not
+            # bring them back
+            register_pie_menus()
+            invalidate_external_shortcut_index()
+            self.report({'INFO'}, f"Deleted {count} pie menu(s)")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to delete pies: {e}")
+            traceback.print_exc()
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
 class COCOPIE_OT_duplicate_pie_menu(Operator):
     """Duplicate the selected pie menu"""
     bl_idname = "cocopie.duplicate_pie_menu"
