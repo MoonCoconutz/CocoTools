@@ -378,20 +378,48 @@ Existing seams are replaced.
   areas) under a new number and writes that number to the first vertex of
   the active edit mesh in a hidden int attribute `.cocouvs_trims_undo`,
   which the undo step does store. `_undo_post` (also on redo) reads it back
-  and `_restore`s that snapshot. The mesh's first change also stores the
-  state before it (`_last_seen`, taken on every UV Editor redraw outside a
-  drag) under `_base`, for undoing past the step that added the attribute.
-  Property updates record through `_index_changed` (the UI then pushes its
-  own step); list operators record at the end of `execute`; draw mode, which
-  has no undo flag, calls `commit()` on release and on X (`ed.undo_push`).
-  Nothing is recorded mid-drag. `add_area()` sets its fields under `_quiet`
-  and its caller records once: each field's update used to record, 26
-  snapshots of every material for an import of five areas.
-  `_last_seen` (the redraw snapshot) is taken only in Edit Mode, and only
-  while the edit mesh has no undo attribute yet; before, every UV Editor
-  redraw copied every material's areas, in any mode. Snapshots are Python-only, so after
-  reopening a file undo only reaches steps made since. Object Mode needs
-  none of it (memfile undo holds materials). The attribute stays on the mesh.
+  and `_restore`s that snapshot. List operators record at the end of
+  `execute`; draw mode, which has no undo flag, calls `commit()` on release
+  and on X (`ed.undo_push`). Nothing is recorded mid-drag. Internal writes
+  (`add_area()`, `_restore`, an operator setting the picked index) go through
+  `_quietly()` so they record nothing; the caller records once (each field's
+  update used to record: 26 snapshots of every material for an import of
+  five areas). Snapshots are Python-only, so after reopening a file undo only
+  reaches steps made since (`_load_post` clears them). Object Mode needs none
+  of it (memfile undo holds materials). The attribute stays on the mesh.
+- **Every undo step must carry the number of the areas as they were when it
+  was pushed.** Two ways it did not, found 2026-09-30 when every renamed
+  area came back as "Trim 1, 2, 3 ..." (user report; both reproduced in a
+  real window with real Ctrl+click renames):
+  - **In Edit Mode Blender pushes no undo step for a panel change to
+    material data** (`ED_undo_is_legacy_compatible_for_property` skips an ID
+    whose type differs from the edit object's data). A rename, a tiling
+    change or a row click was recorded, but joined the *next* step, so
+    undoing that step went back to the areas before them. One Ctrl+Z after
+    a Fit, or ticking Auto-rotate in its redo panel (an undo plus a re-run),
+    renamed every area back, and after the redo panel even Ctrl+Shift+Z could
+    not bring the names back. The property updates (`_changed`) now call
+    `ed.undo_push` themselves in Edit Mode, synchronously, so typing a name
+    and clicking Fit still gives two steps. The colour picker updates on
+    every mouse move, so colour (`_color_changed`) pushes once, `PUSH_DELAY`
+    after the last change; `_undo_pre` cancels a push still waiting (it would
+    cut off the redo steps). In Object Mode the UI pushes its own step.
+  - **Areas changed in Object Mode leave the mesh with the number of its
+    last Edit Mode change**, and the step that enters Edit Mode carries it.
+    Undoing back to that step restored the older areas. `_depsgraph_post`
+    notices the active mesh entering Edit Mode (`_check_entered`) and
+    `_entered` points that number at the areas as they are now, or, on a
+    mesh without the attribute, stores them in `_base`. It replaced
+    `_last_seen`, a copy of every material's areas taken on UV Editor
+    redraws. Numbers start at a random point per session (`_next`): the
+    attribute is saved with the file, and a number left by an earlier
+    session must not name one of this session's.
+  - Snapshots are keyed by `session_uid`, not the material name, and a
+    material missing from a snapshot (made after it) is left alone;
+    `_restore` rewrites only materials whose areas differ.
+  - Undoing back across Object Mode steps into an earlier Edit Mode session
+    can restore that session's steps with later areas (the entry number is
+    repointed). That errs towards the newer names, never the older.
 - **Areas from Selection is one area per selected face** (its UV bounding
   box), skipping boxes equal to another new one or an existing area, sorted
   top to bottom, left to right (the user's choice over one area around the
@@ -401,6 +429,17 @@ Existing seams are replaced.
   the grid, Ctrl-snap a top edge to a vertex beside the area, Ctrl-align a
   move, click to pick, X to remove, Ctrl+Z / Ctrl+Shift+Z, a drag over the
   sidebar left alone, Esc to exit.
+- Rename test (2026-09-30, UV Editing workspace, CocoUVs tab clicked open):
+  **Ctrl+click** a row's name, Ctrl+A, type (`event_simulate(..., unicode=ch)`),
+  Enter. `event_simulate` refuses `DOUBLE_CLICK`, so double-click cannot be
+  simulated. Checked: renames then Fit then Ctrl+Z; renames in Object Mode,
+  Tab, Fit, Ctrl+Z; ticking Auto-rotate in the Fit's redo panel (click its
+  header to open it first); one Ctrl+Z per rename, pick, remove and colour;
+  draw mode. The committed 1.2.0 lost every name in the first, second and
+  redo-panel cases. Do not call `bpy.ops.ed.undo_redo()` from a timer
+  without a `region` in the override: it crashes (`ED_undo_operator_repeat`).
+  Called from Python it also does not push the re-run's step, so it is no
+  stand-in for the redo panel.
 
 ## Sidebar tab name
 

@@ -10,6 +10,7 @@ corners to resize it and its inside to move it; Ctrl snaps to texture pixels
 """
 
 import colorsys
+import contextlib
 import json
 import math
 import os
@@ -54,12 +55,6 @@ def _redraw(context=None):
         pass
 
 
-def _index_changed(self, context):
-    if _state["drag"] is None and not _quiet[0]:
-        record_change()
-    _redraw(context)
-
-
 # --- Undo in Edit Mode ----------------------------------------------------------
 # Areas are material data, and an Edit Mode undo step stores only the mesh, so
 # Ctrl+Z would not bring them back. Each change therefore stores a snapshot of
@@ -68,68 +63,180 @@ def _index_changed(self, context):
 # does store. After an undo or redo, the number found on the mesh says which
 # snapshot to put back. Object Mode needs none of this: its undo steps store
 # the whole file, materials included.
+#
+# That only holds while every undo step carries the number of the areas as
+# they were when it was pushed. Two ways it did not, and each undid renames:
+# - In Edit Mode Blender pushes no undo step for a change to material data
+#   (a rename, a row click), so the change joined the next step, and undoing
+#   that step (a Fit, say) went back to the areas from before the renames.
+#   Such a change now pushes its own step (_changed).
+# - Changes made in Object Mode leave the mesh with the number of its last
+#   Edit Mode change, and the step that enters Edit Mode carries it. On
+#   entering Edit Mode that number is pointed at the areas as they are now
+#   (_entered).
 
 UNDO_LAYER = ".cocouvs_trims_undo"
+PUSH_DELAY = 0.5        # seconds of quiet before a colour change gets its undo step
 _snapshots = {}         # number -> state
-_base = {}              # mesh pointer -> number of the state before its first change
-_next = [1]
+_base = {}              # mesh pointer -> state on entering Edit Mode, while it has no number
+# Numbers start at a random point: the attribute is saved with the file, and a
+# number left there by an earlier session must not name one of this session's.
+_next = [random.SystemRandom().randrange(1 << 20, 1 << 30)]
 _quiet = [False]        # writes that must not record a change (restoring, building an area)
-_last_seen = [None]     # state at the last redraw: "before" for a mesh's first change
+_editing = [None]       # pointer of the mesh last seen in Edit Mode
+_pending = [None]       # (message, number) of a colour change waiting for its undo step
+
+
+@contextlib.contextmanager
+def _quietly():
+    previous = _quiet[0]
+    _quiet[0] = True
+    try:
+        yield
+    finally:
+        _quiet[0] = previous
 
 
 def _snapshot():
-    return {m.name: ([(a.name, tuple(a.rect), a.tiling, tuple(a.color)) for a in m.cocouvs_trims],
-                     m.cocouvs_trim_index)
-            for m in bpy.data.materials if len(m.cocouvs_trims)}
+    # Keyed by session_uid, which survives renames and undo: keyed by name, a
+    # restore emptied any material renamed since the snapshot.
+    return {m.session_uid: ([(a.name, tuple(a.rect), a.tiling, tuple(a.color)) for a in m.cocouvs_trims],
+                            m.cocouvs_trim_index)
+            for m in bpy.data.materials}
 
 
 def _edit_mesh():
-    obj = bpy.context.view_layer.objects.active
-    if obj is None or obj.type != 'MESH' or obj.mode != 'EDIT':
+    view_layer = bpy.context.view_layer
+    obj = view_layer.objects.active if view_layer is not None else None
+    if obj is None or obj.type != 'MESH' or obj.mode != 'EDIT' or not obj.data.is_editmode:
         return None
     return obj.data
 
 
+def _first_vert(bm):
+    return next(iter(bm.verts), None)
+
+
+def _number(me):
+    """The number on the edit mesh, or None when it has none."""
+    bm = bmesh.from_edit_mesh(me)
+    layer = bm.verts.layers.int.get(UNDO_LAYER)
+    vert = _first_vert(bm)
+    if layer is None or vert is None:
+        return None
+    return vert[layer]
+
+
+def _entered(me):
+    """The active mesh just went into Edit Mode: the step that did it carries
+    the mesh's number, so that number must mean the areas as they are now."""
+    state = _snapshot()
+    number = _number(me)
+    if number is None:
+        _base[me.as_pointer()] = state
+    elif _snapshots.get(number) != state:
+        _snapshots[number] = state
+
+
+def _check_entered():
+    me = _edit_mesh()
+    pointer = me.as_pointer() if me is not None else None
+    if pointer != _editing[0]:
+        _editing[0] = pointer
+        if me is not None:
+            _entered(me)
+
+
 def record_change():
-    """Call after any change to the areas while in Edit Mode."""
+    """Call after any change to the areas while in Edit Mode. True when it
+    recorded one (in Edit Mode, on a mesh with vertices)."""
     if _quiet[0]:
-        return
+        return False
     me = _edit_mesh()
     if me is None:
-        return
+        return False
+    _check_entered()
     bm = bmesh.from_edit_mesh(me)
     if not len(bm.verts):
-        return
+        return False
     layer = bm.verts.layers.int.get(UNDO_LAYER)
     if layer is None:
-        number = _next[0]
-        _next[0] += 1
-        _snapshots[number] = _last_seen[0] if _last_seen[0] is not None else _snapshot()
-        _base[me.as_pointer()] = number
+        # Steps from before the attribute existed restore the state on entry.
+        _base.setdefault(me.as_pointer(), _snapshot())
         layer = bm.verts.layers.int.new(UNDO_LAYER)
     number = _next[0]
     _next[0] += 1
     _snapshots[number] = _snapshot()
-    bm.verts.ensure_lookup_table()
-    bm.verts[0][layer] = number
+    _first_vert(bm)[layer] = number
+    return True
+
+
+def _push(message):
+    try:
+        bpy.ops.ed.undo_push(message=message)
+    except RuntimeError:
+        pass
+
+
+def _changed(message):
+    """Update for a property the panel edits. In Edit Mode Blender pushes no
+    undo step for material data, so the change gets its own here."""
+    def update(self, context):
+        if _state["drag"] is None and not _quiet[0] and record_change():
+            _push(message)
+        _redraw(context)
+    return update
+
+
+def _color_changed(self, context):
+    # The colour picker updates on every mouse move: one step once it settles.
+    if _state["drag"] is None and not _quiet[0] and record_change():
+        _pending[0] = ("Trim Area Colour", _number(_edit_mesh()))
+        if bpy.app.timers.is_registered(_push_pending):
+            bpy.app.timers.unregister(_push_pending)
+        bpy.app.timers.register(_push_pending, first_interval=PUSH_DELAY)
+    _redraw(context)
+
+
+def _push_pending():
+    pending, _pending[0] = _pending[0], None
+    window = next(iter(bpy.context.window_manager.windows), None)
+    if pending is None or window is None:
+        return None
+    with bpy.context.temp_override(window=window):
+        me = _edit_mesh()
+        # Anything that recorded since has pushed a step holding the colour too.
+        if me is not None and _number(me) == pending[1]:
+            _push(pending[0])
+    return None
 
 
 def _restore(state):
-    _quiet[0] = True
-    try:
-        for mat in bpy.data.materials:
-            areas, index = state.get(mat.name, ([], -1))
-            if not len(mat.cocouvs_trims) and not areas:
-                continue
+    """Put back the areas of every material in `state` that differ from it. A
+    material made after the snapshot is left as it is."""
+    current = _snapshot()
+    changed = [mat for mat in bpy.data.materials
+               if mat.session_uid in state and current[mat.session_uid] != state[mat.session_uid]]
+    if not changed:
+        return
+    with _quietly():
+        for mat in changed:
+            areas, index = state[mat.session_uid]
             mat.cocouvs_trims.clear()
             for name, rect, tiling, color in areas:
                 a = mat.cocouvs_trims.add()
                 a.name, a.rect, a.tiling, a.color = name, rect, tiling, color
             mat.cocouvs_trim_index = index
-    finally:
-        _quiet[0] = False
-    _last_seen[0] = state
     _redraw()
+
+
+@bpy.app.handlers.persistent
+def _undo_pre(*_args):
+    # A colour change still waiting for its step would push after the undo
+    # and cut off the redo steps.
+    _pending[0] = None
+    if bpy.app.timers.is_registered(_push_pending):
+        bpy.app.timers.unregister(_push_pending)
 
 
 @bpy.app.handlers.persistent
@@ -139,39 +246,49 @@ def _undo_post(*_args):
         return
     bm = bmesh.from_edit_mesh(me)
     layer = bm.verts.layers.int.get(UNDO_LAYER)
+    vert = _first_vert(bm)
     if layer is None:
-        number = _base.get(me.as_pointer())
-    elif len(bm.verts):
-        bm.verts.ensure_lookup_table()
-        number = bm.verts[0][layer]
+        state = _base.get(me.as_pointer())
+    elif vert is not None:
+        state = _snapshots.get(vert[layer])
     else:
-        number = None
-    state = _snapshots.get(number)
-    if state is not None and state != _snapshot():
+        state = None
+    if state is not None:
         _restore(state)
+
+
+@bpy.app.handlers.persistent
+def _depsgraph_post(*_args):
+    _check_entered()
+
+
+@bpy.app.handlers.persistent
+def _load_post(*_args):
+    # A new file comes with a new undo history.
+    _snapshots.clear()
+    _base.clear()
+    _editing[0] = None
+    _pending[0] = None
 
 
 def commit(message):
     """Record a change made outside an operator's own undo step (draw mode)."""
     record_change()
-    try:
-        bpy.ops.ed.undo_push(message=message)
-    except RuntimeError:
-        pass
+    _push(message)
 
 
 class COCOUVS_TrimArea(PropertyGroup):
-    name: StringProperty(name="Name", default="Trim", update=_index_changed)
+    name: StringProperty(name="Name", default="Trim", update=_changed("Rename Trim Area"))
     rect: FloatVectorProperty(
         name="Area", size=4, default=(0.0, 0.0, 1.0, 0.25), precision=4,
         description="The area's UV rectangle: left, bottom, right, top",
-        update=_index_changed,
+        update=_changed("Resize Trim Area"),
     )
     tiling: EnumProperty(name="Tiling", items=TILING_ITEMS, default='HORIZONTAL',
-                         description="Which way the trim repeats", update=_index_changed)
+                         description="Which way the trim repeats", update=_changed("Trim Area Tiling"))
     color: FloatVectorProperty(name="Colour", subtype='COLOR_GAMMA', size=3, min=0.0, max=1.0,
                                default=(0.3, 0.7, 1.0), description="Colour the area is drawn in",
-                               update=_index_changed)
+                               update=_color_changed)
 
 
 def material(context=None):
@@ -212,8 +329,7 @@ def add_area(mat, rect, name=None, tiling=None, color=None):
     if color is None:
         hue = ((len(areas) + 1) * 0.618034) % 1.0
         color = colorsys.hsv_to_rgb(hue, 0.6, 1.0)
-    _quiet[0] = True
-    try:
+    with _quietly():
         name = name or _unique_name(areas)
         area = areas.add()
         area.name = name
@@ -221,8 +337,6 @@ def add_area(mat, rect, name=None, tiling=None, color=None):
         area.tiling = tiling
         area.color = color
         mat.cocouvs_trim_index = len(areas) - 1
-    finally:
-        _quiet[0] = False
     return area
 
 
@@ -390,7 +504,8 @@ class COCOUVS_OT_trim_remove(_TrimOperator):
         if not 0 <= index < len(mat.cocouvs_trims):
             return {'CANCELLED'}
         mat.cocouvs_trims.remove(index)
-        mat.cocouvs_trim_index = min(index, len(mat.cocouvs_trims) - 1)
+        with _quietly():
+            mat.cocouvs_trim_index = min(index, len(mat.cocouvs_trims) - 1)
         record_change()
         _redraw(context)
         return {'FINISHED'}
@@ -416,7 +531,8 @@ class COCOUVS_OT_trim_clear(_TrimOperator):
         mat = material(context)
         n = len(mat.cocouvs_trims)
         mat.cocouvs_trims.clear()
-        mat.cocouvs_trim_index = -1
+        with _quietly():
+            mat.cocouvs_trim_index = -1
         record_change()
         _redraw(context)
         self.report({'INFO'}, f"Deleted {n} trim area{'s' if n != 1 else ''}")
@@ -437,7 +553,8 @@ class _TrimMove:
         if not (0 <= index < len(mat.cocouvs_trims) and 0 <= other < len(mat.cocouvs_trims)):
             return {'CANCELLED'}
         mat.cocouvs_trims.move(index, other)
-        mat.cocouvs_trim_index = other
+        with _quietly():
+            mat.cocouvs_trim_index = other
         record_change()
         return {'FINISHED'}
 
@@ -956,7 +1073,9 @@ class COCOUVS_OT_trim_draw(Operator):
         _state["snap"] = None
         _state["preview"] = None
         if drag["kind"] != 'NEW':
-            material(context).cocouvs_trims[drag["index"]].rect = drag["orig"]
+            # Back to what was last recorded: nothing to record.
+            with _quietly():
+                material(context).cocouvs_trims[drag["index"]].rect = drag["orig"]
         _redraw(context)
 
     def modal(self, context, event):
@@ -1003,7 +1122,8 @@ class COCOUVS_OT_trim_draw(Operator):
             index = mat.cocouvs_trim_index
             if 0 <= index < len(mat.cocouvs_trims):
                 mat.cocouvs_trims.remove(index)
-                mat.cocouvs_trim_index = min(index, len(mat.cocouvs_trims) - 1)
+                with _quietly():
+                    mat.cocouvs_trim_index = min(index, len(mat.cocouvs_trims) - 1)
                 commit("Remove Trim Area")
                 _redraw(context)
             return {'RUNNING_MODAL'}
@@ -1028,12 +1148,6 @@ def _rect_lines(x0, y0, x1, y1):
 
 def _draw_overlay():
     context = bpy.context
-    if _state["drag"] is None and not _quiet[0]:
-        # The "before" state for the edit mesh's first change (record_change);
-        # only needed in Edit Mode, before the mesh carries the undo attribute.
-        me = _edit_mesh()
-        if me is not None and me.attributes.get(UNDO_LAYER) is None:
-            _last_seen[0] = _snapshot()
     if not (context.window_manager.cocouvs_trims_show or _state["running"]):
         return
     space = context.space_data
@@ -1152,20 +1266,31 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Material.cocouvs_trims = CollectionProperty(type=COCOUVS_TrimArea)
     bpy.types.Material.cocouvs_trim_index = IntProperty(name="Picked Trim Area", default=-1,
-                                                        update=_index_changed)
+                                                        update=_changed("Pick Trim Area"))
     bpy.types.WindowManager.cocouvs_trims_show = BoolProperty(
         name="Show Areas", description="Show the active material's trim areas in the UV Editor",
         default=True, update=_show_changed)
     _handle = bpy.types.SpaceImageEditor.draw_handler_add(_draw_overlay, (), 'WINDOW', 'POST_PIXEL')
+    bpy.app.handlers.undo_pre.append(_undo_pre)
+    bpy.app.handlers.redo_pre.append(_undo_pre)
     bpy.app.handlers.undo_post.append(_undo_post)
     bpy.app.handlers.redo_post.append(_undo_post)
+    bpy.app.handlers.depsgraph_update_post.append(_depsgraph_post)
+    bpy.app.handlers.load_post.append(_load_post)
 
 
 def unregister():
     global _handle
-    for handlers in (bpy.app.handlers.undo_post, bpy.app.handlers.redo_post):
-        if _undo_post in handlers:
-            handlers.remove(_undo_post)
+    for handlers, fn in ((bpy.app.handlers.undo_pre, _undo_pre), (bpy.app.handlers.redo_pre, _undo_pre),
+                         (bpy.app.handlers.undo_post, _undo_post), (bpy.app.handlers.redo_post, _undo_post),
+                         (bpy.app.handlers.depsgraph_update_post, _depsgraph_post),
+                         (bpy.app.handlers.load_post, _load_post)):
+        if fn in handlers:
+            handlers.remove(fn)
+    if bpy.app.timers.is_registered(_push_pending):
+        bpy.app.timers.unregister(_push_pending)
+    _pending[0] = None
+    _editing[0] = None
     if _handle is not None:
         bpy.types.SpaceImageEditor.draw_handler_remove(_handle, 'WINDOW')
         _handle = None

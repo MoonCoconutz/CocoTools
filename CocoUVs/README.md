@@ -134,7 +134,10 @@ are centred.
 - **Esc**, right-click or the Draw Areas button finishes. Esc or right-click
   during a drag cancels just that drag.
 - Zooming and panning work as usual; the sidebar and toolbar keep working.
-- **Ctrl+Z** undoes area changes too, in Edit Mode as in Object Mode.
+- **Ctrl+Z** undoes area changes too, in Edit Mode as in Object Mode. Each
+  change (a rename, a colour, a tiling, picking a row) is its own undo step,
+  so undoing something else, or changing a setting in the Adjust Last
+  Operation panel, never undoes it.
 
 ### Debug
 
