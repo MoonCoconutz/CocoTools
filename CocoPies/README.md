@@ -25,20 +25,27 @@ it. (This addon used to be its own single-extension repository at
 repository, same code, new home.)
 
 The editor lives in the addon's own preferences panel — expand CocoPies in
-the Add-ons list to get to it.
+the Add-ons list to get to it. The left column lists your pies, grouped in
+sections by editor; the right column edits the selected one.
+
+The toolbar above the list has **New**, **Duplicate**, **Delete**, **▲▼**
+(move the selected pie within its section) and a **Presets** menu: Export,
+Import, Restore Starter Pies, Refresh All Keymaps and Delete All Pie Menus.
+Click a pie's name to select it; click it again, or double-click, to rename
+it. The tick beside the name turns the pie on or off.
 
 ## Creating a pie menu
 
-**Add Pie Menu** creates one. Each menu has:
+**New** creates one. Each menu has:
 
 | Setting | What it does |
 | --- | --- |
 | **Name** | Title shown when the pie opens |
 | **Style** | *Pie* (eight directions) or *List* (a plain dropdown, in slot order) |
-| **Editor** | Where the shortcut is active — *Window (Global)*, a single **mode** (Object, Mesh edit, Sculpt, the paint modes, UV Editor…), or a whole **editor** (3D View, Node Editor, Sequencer…). **Add Editor** makes one pie live in several |
-| **Key** + **Any / Shift / Ctrl / Alt** | The shortcut. Letters are upper-cased automatically. Leave the key empty for a pie that is only opened from another pie |
+| **Editor** | Where the shortcut is active — *Window (Global)*, a single **mode** (Object, Mesh edit, Sculpt, the paint modes, UV Editor…), or a whole **editor** (3D View, Node Editor, Sequencer…). The **Editors** button opens a list of checkboxes, so one pie can live in several; it shows the editor's name, or *Multiple* |
+| **Key** + **Any / Shift / Ctrl / Alt** | The shortcut. Click the Key field and press it, modifiers included — the text follows live, like Blender's own keymap editor (*Alt + …*, then *Alt + R*). Esc or a mouse click cancels. A pie with no key is only opened from another pie |
 | **Trigger** | *Any*, *Press*, *Release*, *Click*, *Double Click*, *Drag*, or *Nothing* — the same set, same names, as Blender's own keymap editor |
-| **Quick Tap** | Press and drag opens the pie, a quick tap does something else instead: alternate between two chosen directions, or run a command |
+| **Quick Tap** | Press and drag opens the pie, a quick tap does something else instead: alternate between two chosen directions, or run a command. It sets the Trigger to *Drag*; turning it off puts back the Trigger you had |
 | **Enabled** | Unregisters the menu and its shortcut when off |
 
 The modifier row (**Any / Shift / Ctrl / Alt**) is the same one Blender's own
@@ -49,7 +56,7 @@ convention, `wm.keymap_items.new(any=True)` forces this in Blender itself.
 There is no Win/Cmd toggle: the operating system takes those combinations
 before Blender sees them.
 
-When a shortcut is also bound elsewhere, the editor lists who owns it. Tick a
+When a shortcut is also bound elsewhere, a yellow box lists who owns it. Tick a
 row to have CocoPies switch that binding off while CocoPies is enabled; it is
 switched back on when you untick it or disable CocoPies.
 
@@ -114,8 +121,8 @@ with no edit needed.
 Starter pies are recorded once given, so one you delete or rename never comes
 back on the next startup — while a starter added by an update still appears on
 its own. **Restore Starter Pies**, under Presets, adds back any that are
-missing and leaves everything else alone. The bin beside it deletes every
-pie at once, after asking; the keys the pies took (Blender's X delete menus)
+missing and leaves everything else alone. **Delete All Pie Menus**, in the
+same menu, deletes every pie at once, after asking; the keys the pies took (Blender's X delete menus)
 are given back.
 
 ### The bundled example scripts
@@ -259,7 +266,7 @@ the slot falls back to a blank icon rather than breaking the menu.
 
 ## Presets
 
-**Export** / **Import** write and read plain JSON, so configurations
+**Export** / **Import** (in the Presets menu) write and read plain JSON, so configurations
 are easy to share or keep in version control.
 
 Loading never wipes what you already have. If an incoming menu's name matches
@@ -281,8 +288,9 @@ override.
 warning — another enabled menu, or one of Blender's own keymaps, may already
 own that combination. `Q` in particular is taken by default in several editors.
 
-**A menu looks stale after editing.** **Refresh All Keymaps** re-registers
-everything from scratch.
+**A menu looks stale after editing.** **Refresh All Keymaps**, in the Presets
+menu, rebuilds every CocoPies shortcut from scratch — also the fix when a
+shortcut stopped working after another add-on or a keymap preset change.
 
 **Tracing registration.** Set `DEBUG = True` in `CocoPies/utils.py` to
 log every menu class and keymap as it registers. It's off by default because
@@ -306,7 +314,7 @@ CocoPies/                    the addon (a folder in the CocoTools monorepo)
   previews.py               loads CocoPies' own icons: slot arrows, sculpt brushes, custom
   preferences.py            the pie editor panel
   operators/                everything the buttons call
-  ui/                       the Pie Menus list rows
+  ui/                       list rows, the list toolbar and Presets menu, the Editors picker
   icons/                    the slot arrows, the sculpt brush icons, your custom icons
   scripts/workspaces/       the bundled example scripts
   scripts/delete/           Mesh Delete's tap, which Blender has no operator for

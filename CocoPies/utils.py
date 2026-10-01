@@ -46,21 +46,6 @@ def rebuilds_held():
     return _rebuild_hold > 0
 
 
-def addon_version_string():
-    """The addon's version as "v1.9.0", read at call time so both a legacy
-    bl_info dict and an extension's blender_manifest.toml resolve the same
-    way -- addon_utils.module_bl_info() synthesizes a bl_info-shaped dict
-    from the manifest for an extension module, and just returns the real
-    thing for a legacy one. Looked up lazily (not imported at module scope)
-    because the package __init__ imports this module, so it isn't fully
-    loaded yet at import time.
-    """
-    module = sys.modules.get(ADDON_ID)
-    info = addon_utils.module_bl_info(module) if module else None
-    version = info.get("version") if info else None
-    return "v" + ".".join(str(v) for v in version) if version else ""
-
-
 def get_prefs(context=None):
     """Return the addon preferences, or None if the addon isn't registered yet"""
     try:
@@ -270,6 +255,22 @@ def pie_menu_groups(pie_menus):
             groups.append((key, group_key_label(key), by_key[key]))
 
     return groups
+
+
+def section_neighbour(pie_menus, index, step):
+    """Stored index of the pie `step` rows away inside index's section, or None.
+
+    What the list's move arrows act on: the sections are what the user sees,
+    so moving past the edge of one would look like nothing happened (the pie
+    stays in its section whatever its stored position).
+    """
+    for _key, _label, indices in pie_menu_groups(pie_menus):
+        if index in indices:
+            position = indices.index(index) + step
+            if 0 <= position < len(indices):
+                return indices[position]
+            return None
+    return None
 
 
 def collapsed_group_keys(prefs):

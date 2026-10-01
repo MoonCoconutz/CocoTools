@@ -258,11 +258,22 @@ class COCOPIE_PieMenuData(PropertyGroup):
     # pie. The
     # Settings UI greys the Trigger dropdown out while this is on rather
     # than hiding it, so the displayed value stays honest either way.
+    # Turning Quick Tap off puts back the Trigger it replaced, which is
+    # remembered in trigger_before_tap when it turns on. A pie that was already
+    # on Quick Tap before this was remembered goes back to Press, the default.
     def _update_tap_toggle(self, context):
-        if self.tap_toggle:
-            with holding_rebuilds():
+        with holding_rebuilds():
+            if self.tap_toggle:
+                if self.event_value != 'CLICK_DRAG':
+                    self.trigger_before_tap = self.event_value
                 self.event_value = 'CLICK_DRAG'
+            elif self.event_value == 'CLICK_DRAG':
+                self.event_value = self.trigger_before_tap or 'PRESS'
         update_pie_menu(self, context)
+
+    # The Trigger Quick Tap replaced; see _update_tap_toggle. An identifier of
+    # event_value, as text: no enum number to freeze, and "" means none kept.
+    trigger_before_tap: StringProperty(default="", options={'HIDDEN'})
 
     tap_toggle: BoolProperty(
         name="Tap to Toggle",

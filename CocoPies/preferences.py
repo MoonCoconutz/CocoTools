@@ -1,6 +1,7 @@
 """The addon preferences panel -- the whole pie editor."""
 
 import traceback
+import bpy
 from bpy.props import (
     StringProperty, IntProperty, BoolProperty, CollectionProperty,
 )
@@ -8,40 +9,64 @@ from bpy.types import AddonPreferences
 from .items import (
     ITEM_ROW_UNITS,
     COL_CHECK_UNITS, COL_POS_UNITS, COL_ICON_UNITS,
-    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS, TWO_ICON_BUTTONS_UNITS,
-    SCOPE_COLUMNS,
+    COL_LABEL_SCALE, COL_CMD_SCALE, COL_TOOLS_UNITS,
 )
 from .utils import (
     ADDON_ID, format_shortcut, find_shortcut_conflicts,
-    ensure_slot_items, slot_is_used, ensure_keymap_scopes,
-    addon_version_string, find_external_conflicts, pie_menu_groups,
+    ensure_slot_items, slot_is_used,
+    find_external_conflicts, pie_menu_groups,
     collapsed_group_keys,
 )
 from .previews import slot_button_args, icon_args
 from .properties import COCOPIE_PieMenuData, COCOPIE_SuppressedBinding
-from .ui import draw_pie_row
+from .ui import draw_pie_row, draw_list_toolbar, editors_summary
+from .keymaps import _resolve_key
+# The module, not the name: capturing_pie_index is reassigned while a capture
+# runs, and a name imported once would never see that
+from .operators import pies as pie_ops
 
 
-def _equal_slots(parent, count):
-    """`count` equal-width slots across one line, filled or not.
+# Width of the label column in the pie editor's boxes
+LABEL_FACTOR = 0.15
+# Width of the Name, Style and Editors fields in the Menu box
+MENU_FIELD_UNITS = 10
+# The Menu box is half as wide as Shortcut under it, so twice the factor
+# keeps the two label columns ending at the same place
+MENU_LABEL_FACTOR = LABEL_FACTOR * 2
 
-    Blender has no layout that reserves a fixed share for a cell that may not
-    exist: grid_flow sizes itself to the cells it is actually given, so a line
-    holding fewer than `count` stretches them to fill it. Nested splits do
-    reserve it -- each split's factor is applied whether or not anything is
-    drawn into that side -- so a part-filled last line keeps its cells the same
-    width as a full line's.
 
-    Each pass splits off one slot's worth of whatever is left: 1/3 of the line,
-    then 1/2 of the remaining 2/3, and the final slot takes the rest.
+def _labelled(parent, text, factor=LABEL_FACTOR):
+    """One line with a right-aligned label column; returns the value side.
+
+    Done by hand instead of use_property_split: under the split every prop()
+    claims the whole value column, so a line holding several fields (the key
+    and its modifiers, Quick Tap) wraps them onto lines of their own.
     """
-    slots = []
-    node = parent
-    for i in range(count - 1):
-        node = node.split(factor=1.0 / (count - i), align=True)
-        slots.append(node.row(align=True))
-    slots.append(node.row(align=True))
-    return slots
+    split = parent.split(factor=factor, align=True)
+    label = split.row()
+    label.alignment = 'RIGHT'
+    label.label(text=text)
+    return split.row(align=True)
+
+
+def _key_label(key):
+    """A stored key as Blender names it: "Space Bar" for SPACE, "2" for 2"""
+    if not key:
+        return "Not set"
+    items = bpy.types.Event.bl_rna.properties['type'].enum_items
+    event = _resolve_key(key)
+    return items[event].name if event in items.keys() else key
+
+
+def _shortcut_label(pie):
+    """The whole shortcut on the key button, as the keymap editor writes it:
+    "Alt + R". Modifier order as utils.format_shortcut."""
+    if pie.any_modifier:
+        mods = ["Any"]
+    else:
+        mods = [name for name, on in (("Shift", pie.shift), ("Ctrl", pie.ctrl),
+                                      ("Alt", pie.alt)) if on]
+    return " + ".join(mods + [_key_label(pie.key)])
 
 
 class COCOPIE_AddonPreferences(AddonPreferences):
@@ -105,7 +130,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             
             # RIGHT COLUMN
             self.draw_right_column(main_split.column())
-            
+
         except Exception as e:
             box = layout.box()
             box.alert = True
@@ -116,7 +141,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
     def draw_left_column(self, layout):
         """Draw the left column with pie menu list"""
         # Header — title on the left, live count on the right
-        header = layout.box().row(align=True)
+        header = layout.row(align=True)
         header.label(text="Pie Menus", icon='MENU_PANEL')
         count = header.row(align=True)
         count.alignment = 'RIGHT'
@@ -124,13 +149,16 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         active = len([p for p in self.pie_menus if p.enabled])
         count.label(text=f"{active} of {len(self.pie_menus)} active")
 
-        layout.separator(factor=0.5)
+        # Every list action in one line above the list (ui/toolbar.py)
+        draw_list_toolbar(layout, self)
+
+        layout.separator(factor=1.0)
 
         if len(self.pie_menus) == 0:
             col = layout.box().column(align=True)
             col.scale_y = 1.4
             col.label(text="No pie menus yet", icon='INFO')
-            col.label(text="Create one with the button below.")
+            col.label(text="Create one with New above.")
         else:
             # One section per editor: a collapsible heading, then that
             # editor's pies as plain rows (ui/lists.py). Deliberately not a
@@ -140,19 +168,20 @@ class COCOPIE_AddonPreferences(AddonPreferences):
             groups = pie_menu_groups(self.pie_menus)
             for position, (key, label, indices) in enumerate(groups):
                 if position > 0:
-                    layout.separator(factor=0.35)
+                    layout.separator(factor=0.8)
 
                 is_open = key not in collapsed
 
                 # The whole heading is the toggle. Unembossed so it still
                 # reads as a heading rather than a button, with the triangle
                 # showing which way it goes -- the same idiom Blender uses for
-                # its own panel headers.
+                # its own panel headers. Not dimmed: greyed headings were too
+                # hard to read in the user's theme.
                 heading = layout.row(align=True)
                 heading.alignment = 'LEFT'
                 op = heading.operator(
                     "cocopie.toggle_group",
-                    text=f"{label.upper()}  ({len(indices)})",
+                    text=f"{label}  ·  {len(indices)}",
                     icon='TRIA_DOWN' if is_open else 'TRIA_RIGHT',
                     emboss=False)
                 op.group_key = key
@@ -165,52 +194,6 @@ class COCOPIE_AddonPreferences(AddonPreferences):
                     draw_pie_row(rows, self, self.pie_menus[index], index,
                                  index == self.active_pie_index)
 
-        # Buttons: New Pie Menu takes whatever width the reorder pair leaves,
-        # which is a fixed two icon buttons' worth
-        layout.separator(factor=0.5)
-        row = layout.row(align=True)
-        row.scale_y = 1.4
-        row.operator("cocopie.add_pie_menu", text="New Pie Menu", icon='ADD')
-
-        reorder = row.row(align=True)
-        reorder.ui_units_x = TWO_ICON_BUTTONS_UNITS
-
-        # Each arrow greys out at the end it cannot travel any further towards
-        up = reorder.row(align=True)
-        up.enabled = self.active_pie_index > 0
-        up.operator("cocopie.move_pie_menu", text="", icon='TRIA_UP').direction = 'UP'
-
-        down = reorder.row(align=True)
-        down.enabled = self.active_pie_index < len(self.pie_menus) - 1
-        down.operator("cocopie.move_pie_menu", text="", icon='TRIA_DOWN').direction = 'DOWN'
-
-        # Presets
-        layout.separator(factor=0.8)
-        preset_box = layout.box()
-        preset_box.label(text="Presets", icon='PRESET')
-        row = preset_box.row(align=True)
-        row.scale_y = 1.15
-        row.operator("cocopie.save_preset", text="Export", icon='EXPORT')
-        row.operator("cocopie.load_preset", text="Import", icon='IMPORT')
-
-        row = preset_box.row(align=True)
-        row.scale_y = 1.15
-        row.operator("cocopie.restore_defaults", text="Restore Starter Pies", icon='RECOVER_LAST')
-        row.operator("cocopie.remove_all_pie_menus", text="", icon='TRASH')
-
-        # Refresh
-        layout.separator(factor=0.8)
-        row = layout.row(align=True)
-        row.scale_y = 1.2
-        row.operator("cocopie.refresh_menus", text="Refresh All Keymaps", icon='FILE_REFRESH')
-
-        # Version footer
-        layout.separator(factor=0.5)
-        footer = layout.row(align=True)
-        footer.alignment = 'RIGHT'
-        footer.active = False
-        footer.scale_y = 0.8
-        footer.label(text=addon_version_string())
 
 
     def draw_right_column(self, layout):
@@ -224,17 +207,7 @@ class COCOPIE_AddonPreferences(AddonPreferences):
 
         pie = self.pie_menus[self.active_pie_index]
 
-        # Header — name on the left, live shortcut on the right
-        header = layout.box().row(align=True)
-        header.label(text=pie.name or "Untitled", icon='GREASEPENCIL')
-        chip = header.row(align=True)
-        chip.alignment = 'RIGHT'
-        chip.active = pie.enabled
-        chip.label(text=format_shortcut(pie), icon='KEYINGSET')
-
-        layout.separator(factor=0.5)
-
-        # Settings
+        # Settings: Menu, Shortcut, and the conflicts box only when there is one
         self.draw_pie_settings(layout, pie)
 
         layout.separator()
@@ -243,209 +216,191 @@ class COCOPIE_AddonPreferences(AddonPreferences):
         self.draw_pie_items(layout, pie)
 
     def draw_pie_settings(self, layout, pie):
-        """Draw pie menu settings"""
+        """Draw pie menu settings: Menu and Quick Tap side by side, then
+        Shortcut"""
+        top = layout.split(factor=0.5)
+        self.draw_menu_box(top.column(), pie)
+        self.draw_quick_tap_box(top.column(), pie)
+        self.draw_shortcut_box(layout, pie)
+        self.draw_external_conflicts(layout, pie)
+
+    def draw_menu_box(self, layout, pie):
+        """Name, style and the editors the pie is live in"""
         box = layout.box()
-        box.label(text="Settings", icon='PREFERENCES')
-
-        # Property split gives the native right-aligned label column
+        box.label(text="Menu", icon='GREASEPENCIL')
         col = box.column()
-        col.use_property_split = True
-        col.use_property_decorate = False
 
-        col.prop(pie, "name", text="Name")
-        # Pie or dropdown. Right under Name because it changes what every other
-        # setting below means -- slot positions become list order under List,
-        # and the eight compass directions stop being directions.
-        col.prop(pie, "menu_style", text="Style", expand=True)
+        # Name, Style and Editors share one width, packed left, so the three
+        # fields end on the same line instead of Name and Editors running to
+        # the far edge of the box
+        row = _labelled(col, "Name", MENU_LABEL_FACTOR)
+        row.alignment = 'LEFT'
+        field = row.row(align=True)
+        field.ui_units_x = MENU_FIELD_UNITS
+        field.prop(pie, "name", text="")
 
-        col.separator(factor=0.5)
+        # Pie or dropdown, side by side at a fixed width. Right under Name
+        # because it changes what every setting below means -- slot positions
+        # become list order under List, and the eight compass directions stop
+        # being directions.
+        row = _labelled(col, "Style", MENU_LABEL_FACTOR)
+        row.alignment = 'LEFT'
+        style = row.row(align=True)
+        style.ui_units_x = MENU_FIELD_UNITS
+        style.prop(pie, "menu_style", expand=True)
 
-        # Every editor this pie is live in.
-        #
-        # This block deliberately steps out of use_property_split: the label
-        # column that suits single-widget rows like Name would squeeze the grid
-        # into the right-hand ~65% and leave the dropdowns narrower than the
-        # editor names in them. "Editor" is written as a plain label on its own
-        # line instead, and the grid below spans the full width of the box.
-        #
-        # Every grid cell holds the same two widgets, dropdown then its own
-        # remove button, and Add Editor flows as the cell straight after the
-        # last one. Cell uniformity is what keeps grid_flow honest -- it lays
-        # out by cell, so an odd cell out (the + used to live in the first one)
-        # gets shuffled onto a line of its own and detaches an editor from its
-        # row.
-        scopes = ensure_keymap_scopes(pie)
-        pie_index = self.active_pie_index
+        # Every editor this pie is live in, as one button showing them all.
+        # It opens the Editors popover (ui/editors.py), a checkbox per editor,
+        # which stays open so several can be ticked in one go.
+        row = _labelled(col, "Editors", MENU_LABEL_FACTOR)
+        row.alignment = 'LEFT'
+        field = row.row(align=True)
+        field.ui_units_x = MENU_FIELD_UNITS
+        field.popover("COCOPIE_PT_editors", text=editors_summary(pie))
 
-        scope_area = col.column(align=True)
-        scope_area.use_property_split = False
+    def draw_shortcut_box(self, layout, pie):
+        """Key, modifiers, trigger and Quick Tap"""
+        box = layout.box()
+        box.label(text="Shortcut", icon='KEYINGSET')
+        col = box.column()
 
-        # Label and Add Editor share the header line, packed left.
-        # alignment='LEFT' is what keeps both to their content width instead of
-        # the button stretching across the rest of the line.
-        header = scope_area.row(align=True)
-        header.alignment = 'LEFT'
-        header.label(text="Editor")
-        header.operator("cocopie.add_keymap_scope", text="Add Editor",
-                        icon='ADD').pie_index = pie_index
-
-        # Fixed-width cells, SCOPE_COLUMNS to a line, wrapping onto a new line
-        # after that. Built from nested splits rather than grid_flow: grid_flow
-        # only creates as many columns as it has cells to put in them and then
-        # stretches those to fill the line, so two editors came out half the
-        # box wide each instead of holding a third. A split's factor sets the
-        # width whether or not anything is drawn into it, which is what lets a
-        # part-filled last line keep its cells the same size as a full one's.
-        scope_list = list(scopes)
-        for start in range(0, len(scope_list), SCOPE_COLUMNS):
-            chunk = scope_list[start:start + SCOPE_COLUMNS]
-            for offset, slot in enumerate(_equal_slots(scope_area.row(align=True),
-                                                       SCOPE_COLUMNS)):
-                if offset >= len(chunk):
-                    # Empty tail slot: the split already reserved its width, so
-                    # this only has to occupy it without drawing anything
-                    slot.label(text="")
-                    continue
-                scope_index = start + offset
-                slot.prop(chunk[offset], "keymap_type", text="")
-                remove = slot.row(align=True)
-                # The last remaining editor is not removable: a pie scoped
-                # nowhere would be registered nowhere, with nothing in the UI
-                # to get back from. Greyed rather than hidden so the cells keep
-                # their shape.
-                remove.enabled = len(scope_list) > 1
-                op = remove.operator("cocopie.remove_keymap_scope",
-                                     text="", icon='REMOVE')
-                op.pie_index = pie_index
-                op.scope_index = scope_index
-
-        col.separator(factor=0.5)
-
-        # Whole shortcut stays on one line: trigger + modifiers + key.
-        # Modifier order and grouping (Any, Shift, Ctrl, Alt, OS) matches
-        # Blender's own keymap editor exactly -- see rna_keymap_ui.py's
-        # draw_kmi(), which draws kmi.any then shift_ui/ctrl_ui/alt_ui/oskey_ui
-        # in that order.
-        row = col.row(align=True, heading="Shortcut")
-        trigger = row.row(align=True)
-        trigger.scale_x = 0.9
-        # Quick Tap binds its own drag/tap pair regardless of this setting,
-        # so it is greyed out rather than hidden -- the value is
-        # still there, ready to apply again the moment Tap to Toggle is off.
-        trigger.enabled = not pie.tap_toggle
-        trigger.prop(pie, "event_value", text="")
-        row.separator(factor=0.4)
-        row.prop(pie, "any_modifier", text="Any", toggle=True)
-        row.prop(pie, "shift", text="Shift", toggle=True)
-        row.prop(pie, "ctrl", text="Ctrl", toggle=True)
-        row.prop(pie, "alt", text="Alt", toggle=True)
+        # Whole shortcut on one line: key, modifiers, trigger. Modifier order
+        # and grouping (Any, Shift, Ctrl, Alt) matches Blender's own keymap
+        # editor -- rna_keymap_ui.py's draw_kmi() draws kmi.any then
+        # shift_ui/ctrl_ui/alt_ui in that order. Fixed widths, packed left, so
+        # the modifiers sit next to the key instead of drifting to the far edge
+        # of a wide window.
+        row = _labelled(col, "Key")
+        row.alignment = 'LEFT'
+        key = row.row(align=True)
+        key.ui_units_x = 8
+        # Click, then press the whole shortcut: cocopie.capture_key records
+        # the key with the modifiers held at that moment, so only a real key
+        # can end up here, never typed text. Blender's own capture field
+        # (prop(event=True)) cannot do this for an add-on setting -- it takes
+        # the modifiers along only on a real keymap item, so pressing Shift
+        # first recorded Shift on its own.
+        capturing = pie_ops.capturing_pie_index == self.active_pie_index
+        key.operator("cocopie.capture_key",
+                     text=pie_ops.capture_text if capturing else _shortcut_label(pie),
+                     depress=capturing).pie_index = self.active_pie_index
+        row.separator(factor=0.6)
+        mods = row.row(align=True)
+        mods.ui_units_x = 12
+        mods.prop(pie, "any_modifier", text="Any", toggle=True)
+        mods.prop(pie, "shift", text="Shift", toggle=True)
+        mods.prop(pie, "ctrl", text="Ctrl", toggle=True)
+        mods.prop(pie, "alt", text="Alt", toggle=True)
         # No Win/Cmd toggle: the OS takes those combinations before Blender
         # sees them, so a pie bound there is unreachable. See utils.clear_oskey
-        row.separator(factor=0.4)
-        key = row.row(align=True)
-        key.scale_x = 0.6
-        key.prop(pie, "key", text="")
+        row.separator(factor=0.6)
+        trigger = row.row(align=True)
+        trigger.ui_units_x = 5
+        # Quick Tap binds its own drag/tap pair regardless of this setting,
+        # so it is greyed out rather than hidden -- the value is still there,
+        # ready to apply again the moment Quick Tap is off.
+        trigger.enabled = not pie.tap_toggle
+        trigger.prop(pie, "event_value", text="")
 
         conflicts = find_shortcut_conflicts(self, pie, self.active_pie_index)
         if conflicts:
             names = ", ".join(conflicts[:3])
             if len(conflicts) > 3:
                 names += f" (+{len(conflicts) - 3} more)"
-            warn = box.row()
-            warn.label(text=f"Same shortcut as: {names}", icon='ERROR')
+            _labelled(col, "").label(text=f"Same shortcut as: {names}",
+                                     icon='ERROR')
 
-        # Shortcuts owned by Blender or another addon. Reported separately and
-        # more quietly than a CocoPies-vs-CocoPies clash: this one is usually not
-        # a mistake to fix but a fact to know about, and unlike the check above
-        # CocoPies cannot resolve it by editing its own settings.
-        external = find_external_conflicts(pie)
-        if external:
-            ext_box = box.box()
-            ext_box.scale_y = 0.8
-            header = ext_box.row()
-            header.label(
-                text=f"{format_shortcut(pie)} is also bound elsewhere "
-                     f"(tick to switch off while CocoPies is on):",
-                icon='INFO',
-            )
-            for other in external:
-                row = ext_box.row(align=True)
-                row.alignment = 'LEFT'
-                # Greyed while suppressed, so a shortcut CocoPies is holding
-                # off reads as off at a glance rather than only via its text.
-                # `active` and not `enabled`: both dim the row, but `enabled`
-                # also refuses clicks, which would leave a ticked box with no
-                # way to untick it. This is Blender's own idiom for a field
-                # dimmed by a toggle above it -- still editable.
-                row.active = not other['suppressed']
-                # Ticked means "CocoPies is holding this off for me". Drawn as
-                # an operator rather than a prop because the row is derived
-                # from a live keyconfig scan, not from stored data -- there is
-                # no property to point at until the box is ticked.
-                toggle = row.operator(
-                    "cocopie.toggle_suppress_binding",
-                    text="",
-                    icon='CHECKBOX_HLT' if other['suppressed'] else 'CHECKBOX_DEHLT',
-                    emboss=False,
-                )
-                (toggle.keymap, toggle.idname_prop, toggle.key_type,
-                 toggle.value, toggle.menu_name, toggle.any_modifier,
-                 toggle.shift, toggle.ctrl, toggle.alt,
-                 toggle.oskey) = other['identity']
-                # The detail is what the binding actually points at, and it is
-                # only carried when the label does not already say it (see
-                # _kmi_detail). Without it a tool shortcut read "Set Tool by
-                # Name", naming the operator every tool binding shares and
-                # leaving no way to tell which tool the checkbox would switch
-                # off.
-                name = other['label']
-                if other['detail']:
-                    name = f"{name}: {other['detail']}"
-                # Which addon, by name, whenever it can be worked out -- "some
-                # addon has this key" leaves the user hunting through their
-                # whole stack for it. The coarse source stays in front of it:
-                # "Custom: MACHIN3tools" is a MACHIN3tools operator the user
-                # bound by hand, which is a different thing to fix than one
-                # MACHIN3tools ships.
-                source = other['source']
-                if other['owner']:
-                    source = f"{source}: {other['owner']}"
-                label = f"{name}  ({source}, {other['keymap']})"
-                if other['suppressed']:
-                    label += "  -- disabled by CocoPies"
-                row.label(text=label)
+    def draw_quick_tap_box(self, layout, pie):
+        """Quick Tap: the switch, what a tap does, and its detail.
 
-        # Replaces the Trigger entirely when on: pressing and moving opens the
-        # pie, a quick tap runs the tap action instead. It binds its own
-        # CLICK_DRAG / CLICK pair (keymaps._add_keymap_item), whatever the
-        # Trigger says.
-        col.separator(factor=0.5)
-        tt = col.row(align=True, heading="Quick Tap")
-        tt.prop(pie, "tap_toggle", text="")
-        action = tt.row(align=True)
-        action.enabled = pie.tap_toggle
-        action.prop(pie, "tap_action", text="")
+        Replaces the Trigger entirely when on: pressing and moving opens the
+        pie, a quick tap runs the tap action instead. It binds its own
+        CLICK_DRAG / CLICK pair (keymaps._add_keymap_item), whatever the
+        Trigger says.
+        """
+        box = layout.box()
+        box.prop(pie, "tap_toggle", text="Quick Tap")
 
-        # Only one of the two tap forms has anything to configure at a time,
-        # and an empty row here would just look like something failed to draw
-        # Split by hand rather than with heading="": under use_property_split
-        # every prop() claims the value column for itself, so a second one on
-        # the same row wraps to its own line -- and a sub-row does not help,
-        # since the setting is inherited by children. Turning the split off
-        # and placing the label column explicitly is what keeps a pair of
-        # fields side by side and still aligned with the rows above.
-        # Compared against three other arrangements in a real window.
+        col = box.column()
+        col.enabled = pie.tap_toggle
+        col.prop(pie, "tap_action", text="")
+        # Only one of the two tap forms has anything to configure at a time
         detail = col.row(align=True)
-        detail.enabled = pie.tap_toggle
-        detail.use_property_split = False
-        halves = detail.split(factor=0.4)
-        halves.label(text="")
-        fields = halves.row(align=True)
         if pie.tap_action == 'COMMAND':
-            fields.prop(pie, "tap_command", text="", icon='CONSOLE')
+            detail.prop(pie, "tap_command", text="", icon='CONSOLE')
         else:
-            fields.prop(pie, "tap_toggle_a", text="")
-            fields.prop(pie, "tap_toggle_b", text="")
+            detail.prop(pie, "tap_toggle_a", text="")
+            detail.prop(pie, "tap_toggle_b", text="")
+
+        # Also evens the box up with Menu beside it, which has one line more
+        hint = box.row()
+        hint.active = False
+        hint.label(text="Tap the key for this, press and drag for the pie")
+
+    def draw_external_conflicts(self, layout, pie):
+        """Shortcuts owned by Blender or another addon, in a box of their own.
+
+        Drawn only when there is one. Separate from, and quieter than, a
+        CocoPies-vs-CocoPies clash: this one is usually not a mistake to fix
+        but a fact to know about, and unlike that one CocoPies cannot resolve
+        it by editing its own settings.
+        """
+        external = find_external_conflicts(pie)
+        if not external:
+            return
+
+        box = layout.box()
+        box.label(text=f"{format_shortcut(pie)} is also bound elsewhere",
+                  icon='ERROR')
+        col = box.column(align=True)
+        hint = col.row()
+        hint.active = False
+        hint.label(text="Tick one to switch it off while CocoPies is on")
+        for other in external:
+            row = col.row(align=True)
+            row.alignment = 'LEFT'
+            # Greyed while suppressed, so a shortcut CocoPies is holding
+            # off reads as off at a glance rather than only via its text.
+            # `active` and not `enabled`: both dim the row, but `enabled`
+            # also refuses clicks, which would leave a ticked box with no
+            # way to untick it.
+            row.active = not other['suppressed']
+            # Ticked means "CocoPies is holding this off for me". Drawn as
+            # an operator rather than a prop because the row is derived
+            # from a live keyconfig scan, not from stored data -- there is
+            # no property to point at until the box is ticked.
+            toggle = row.operator(
+                "cocopie.toggle_suppress_binding",
+                text="",
+                icon='CHECKBOX_HLT' if other['suppressed'] else 'CHECKBOX_DEHLT',
+                emboss=False,
+            )
+            (toggle.keymap, toggle.idname_prop, toggle.key_type,
+             toggle.value, toggle.menu_name, toggle.any_modifier,
+             toggle.shift, toggle.ctrl, toggle.alt,
+             toggle.oskey) = other['identity']
+            # The detail is what the binding actually points at, and it is
+            # only carried when the label does not already say it (see
+            # _kmi_detail). Without it a tool shortcut read "Set Tool by
+            # Name", naming the operator every tool binding shares and
+            # leaving no way to tell which tool the checkbox would switch
+            # off.
+            name = other['label']
+            if other['detail']:
+                name = f"{name}: {other['detail']}"
+            # Which addon, by name, whenever it can be worked out -- "some
+            # addon has this key" leaves the user hunting through their
+            # whole stack for it. The coarse source stays in front of it:
+            # "Custom: MACHIN3tools" is a MACHIN3tools operator the user
+            # bound by hand, which is a different thing to fix than one
+            # MACHIN3tools ships.
+            source = other['source']
+            if other['owner']:
+                source = f"{source}: {other['owner']}"
+            label = f"{name}  ({source}, {other['keymap']})"
+            if other['suppressed']:
+                label += "  -- switched off by CocoPies"
+            row.label(text=label)
 
     def draw_pie_items(self, layout, pie):
         """Draw the item table for the selected pie menu"""

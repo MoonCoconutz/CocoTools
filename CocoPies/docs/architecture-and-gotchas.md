@@ -15,7 +15,9 @@ two disagree, `CLAUDE.md` is right.
 | `utils.py` | `get_prefs()`, `holding_rebuilds()`, `unused_pie_name()` / `unused_pie_idname()`, `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`, `ensure_slot_items()`, `slot_is_used()`, `normalized_scope()`; `apply_suppressions()` / `restore_suppressions()`, which write `keyconfigs.user` only, between two `settle_user_keyconfig()` calls |
 | `previews.py` | all three kinds of loaded icon; `icon_args()` for icon-sized buttons, `pie_icon_args()` for pie slots |
 | `ui/lists.py` | `draw_pie_row()` — the Pie Menus list rows |
-| `preferences.py` | the whole editor: `draw_left_column`, `draw_pie_settings`, `draw_pie_items`, `draw_single_item` |
+| `ui/toolbar.py` | `draw_list_toolbar()` and the Presets menu `COCOPIE_MT_list_presets` |
+| `ui/editors.py` | the Editors popover `COCOPIE_PT_editors`, `editors_summary()` |
+| `preferences.py` | the whole editor: `draw_left_column`, `draw_right_column` → `draw_pie_settings` (Menu, Quick Tap, Shortcut boxes, `draw_external_conflicts`), `draw_pie_items`, `draw_single_item` |
 
 ## The invariants
 

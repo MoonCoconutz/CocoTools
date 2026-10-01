@@ -13,23 +13,31 @@ drag-to-resize grab handle (sections collapse instead, see
 from ..utils import format_shortcut, find_shortcut_conflicts
 
 
-# Splits shared by every row, so the columns line up down the whole list
-# regardless of how long any one pie's name is. Same proportions the
-# template_list rows used, kept so the layout did not visibly shift.
-NAME_SPLIT = 0.55
-SHORTCUT_SPLIT = 0.58
+# Splits shared by every row, so every piece of it lines up down the whole
+# list regardless of how long any one pie's name is. Splits and not a row:
+# a row shares out its width by what its items would like, so a name too long
+# for its place squeezed everything else on its line -- the indent, the
+# checkbox and the key cap all moved left, on that row only. A split's
+# factor holds whatever is drawn in it; a long name is cut short instead.
+# Duplicate and delete live in the toolbar above the list
+# (draw_list_toolbar), acting on the selected pie.
+CHECK_SPLIT = 0.1
+NAME_SPLIT = 0.62
 
 
 def draw_pie_row(layout, prefs, pie, index, is_active):
-    """One pie's row: enabled toggle, name, shortcut, duplicate and delete"""
-    row = layout.row(align=False)
+    """One pie's row: enabled toggle, name and shortcut"""
+    row = layout.split(factor=CHECK_SPLIT)
     row.scale_y = 1.2
 
-    row.prop(pie, "enabled", text="",
-             icon='CHECKBOX_HLT' if pie.enabled else 'CHECKBOX_DEHLT',
-             emboss=False)
+    # Pushed to the right of its cell, which indents it under the heading
+    check = row.row()
+    check.alignment = 'RIGHT'
+    check.prop(pie, "enabled", text="",
+               icon='CHECKBOX_HLT' if pie.enabled else 'CHECKBOX_DEHLT',
+               emboss=False)
 
-    name_shortcut_split = row.split(factor=NAME_SPLIT, align=True)
+    name_shortcut_split = row.split(factor=NAME_SPLIT)
 
     # The name doubles as the row's select button, and the selected row has
     # two states. Selected: name and shortcut are both depressed, so the row
@@ -63,10 +71,7 @@ def draw_pie_row(layout, prefs, pie, index, is_active):
         op.index = index
         op.rename_if_active = True
 
-    shortcut_actions_split = name_shortcut_split.split(factor=SHORTCUT_SPLIT,
-                                                       align=True)
-
-    shortcut_col = shortcut_actions_split.row(align=True)
+    shortcut_col = name_shortcut_split.row(align=True)
     shortcut_col.active = pie.enabled
     if find_shortcut_conflicts(prefs, pie, index):
         warn = shortcut_col.row(align=True)
@@ -80,14 +85,8 @@ def draw_pie_row(layout, prefs, pie, index, is_active):
                               text=format_shortcut(pie),
                               depress=True).index = index
     else:
-        shortcut_col.alignment = 'RIGHT'
-        shortcut_col.label(text=format_shortcut(pie))
-
-    actions_col = shortcut_actions_split.row(align=True)
-    actions_col.alignment = 'RIGHT'
-    op = actions_col.operator("cocopie.duplicate_pie_menu", text="",
-                              icon='DUPLICATE', emboss=False)
-    op.index = index
-    op = actions_col.operator("cocopie.remove_pie_menu", text="",
-                              icon='TRASH', emboss=False)
-    op.index = index
+        # A key cap: an embossed button filling the shortcut's cell, which is
+        # the same width on every row, so the caps line up down the list. A
+        # button rather than a label so it selects the row like the name does.
+        shortcut_col.operator("cocopie.select_pie",
+                              text=format_shortcut(pie)).index = index

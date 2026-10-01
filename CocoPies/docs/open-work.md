@@ -119,6 +119,17 @@ again, check for a pending `user` write next to an addon keymap change first.
 
 ## Recently closed, for context
 
+- **1.14.0** (2026-10-01): new preferences layout. The list has one toolbar
+  (New, Duplicate, Delete, ▲▼ within the section, Presets menu) and
+  split-based rows whose key caps line up. Settings are Menu, Quick Tap and
+  Shortcut boxes, with an Editors checkbox popover and a modal key capture
+  that shows modifiers live. Turning Quick Tap off restores the previous
+  Trigger. Add/Remove Editor and the per-row buttons are gone. Checked
+  old-against-new in isolated 5.2 profiles holding the user's 24 pies, also
+  after an in-Blender update from 1.13.4 and a restart. Data and every
+  keymap item matched, and a screenshot of an open pie was byte-identical.
+  The only differences were the intended Quick Tap restore and the new
+  Presets menu class.
 - **1.13.4** (2026-09-30): a bin beside Restore Starter Pies deletes every pie
   after a confirmation, handing back the suppressed X delete menus; starters
   stay recorded, so they do not return at startup. Checked in an isolated

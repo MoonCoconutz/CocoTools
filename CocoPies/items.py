@@ -55,11 +55,6 @@ TWO_ICON_BUTTONS_UNITS = 2.3
 
 COL_TOOLS_UNITS = TWO_ICON_BUTTONS_UNITS
 
-# How many editor dropdowns sit side by side on one line in Settings. Each cell
-# is a dropdown plus its remove button, so this is also how many of those pairs
-# have to fit across the Settings box.
-SCOPE_COLUMNS = 3
-
 
 # Which Blender keymap each scope registers into: id -> (keymap name, space).
 # Mode keymaps -- "Mesh", "UV Editor", "Sculpt" and friends -- are all

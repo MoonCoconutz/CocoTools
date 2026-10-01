@@ -17,7 +17,9 @@ class COCOPIE_OT_refresh_menus(Operator):
     """Refresh all pie menus"""
     bl_idname = "cocopie.refresh_menus"
     bl_label = "Refresh Menus"
-    bl_description = "Re-register all pie menus and keymaps"
+    bl_description = ("Rebuild every CocoPies shortcut from scratch. Use it if a "
+                      "CocoPies shortcut stopped working after another add-on "
+                      "or a keymap preset change")
     bl_options = {'REGISTER'}
     
     def execute(self, context):

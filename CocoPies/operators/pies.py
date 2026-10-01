@@ -4,7 +4,6 @@ import bpy
 import traceback
 from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
-from ..items import KEYMAP_TYPE_ITEMS
 from ..utils import (
     apply_suppressions, restore_suppressions, find_suppression,
     record_prior_state,
@@ -12,6 +11,7 @@ from ..utils import (
     ADDON_ID, get_prefs, get_pie, ensure_keymap_scopes,
     collapsed_group_keys, set_group_collapsed,
     holding_rebuilds, unused_pie_name, unused_pie_idname,
+    section_neighbour,
 )
 from ..menus import execute_script
 from ..keymaps import register_pie_menus, unregister_pie_menus
@@ -128,67 +128,146 @@ class COCOPIE_OT_toggle_suppress_binding(Operator):
         return {'FINISHED'}
 
 
-class COCOPIE_OT_add_keymap_scope(Operator):
-    """Register this pie in another editor as well"""
-    bl_idname = "cocopie.add_keymap_scope"
-    bl_label = "Add Editor"
-    bl_options = {'REGISTER', 'INTERNAL'}
+class COCOPIE_OT_toggle_keymap_scope(Operator):
+    """Register this pie in this editor, or stop registering it there"""
+    bl_idname = "cocopie.toggle_keymap_scope"
+    bl_label = "Toggle Editor"
+    bl_options = {'INTERNAL'}
 
     pie_index: IntProperty()
+    keymap_type: StringProperty()
 
     def execute(self, context):
         pie = get_pie(context, self.pie_index)
-        if pie is None:
+        if pie is None or not self.keymap_type:
             return {'CANCELLED'}
 
-        existing = ensure_keymap_scopes(pie)
-        # Land on something the pie is not already scoped to, so the new row is
-        # useful immediately instead of duplicating the row above it. The short
-        # list is only a preference for the editors most pies want; it falls
-        # through to every remaining scope rather than stopping there, because
-        # stopping there is what produced runs of identical "Window (Global)"
-        # rows once those few were all taken.
-        taken = {scope.keymap_type for scope in existing}
-        preferred = ('3D_VIEW', 'UV_EDITOR', 'IMAGE_EDITOR', 'NODE_EDITOR', 'WINDOW')
-        # item[0], not unpacking: real items carry a fourth field (their frozen
-        # number) and the headings do not, so no one shape fits both
-        rest = tuple(item[0] for item in KEYMAP_TYPE_ITEMS if item[0])
-        candidate = next((c for c in preferred + rest if c not in taken), None)
-        if candidate is None:
-            # Every scope CocoPies knows is already on this pie
-            self.report({'INFO'}, "This pie is already registered in every editor")
-            return {'CANCELLED'}
-
-        with holding_rebuilds():
-            existing.add().keymap_type = candidate
+        scopes = ensure_keymap_scopes(pie)
+        found = [i for i, s in enumerate(scopes)
+                 if s.keymap_type == self.keymap_type]
+        if found:
+            # Never the last one: a pie scoped nowhere would be registered
+            # nowhere, with nothing in the UI to get back from. The checkbox
+            # is greyed for it too; this is the backstop.
+            if len(scopes) - len(found) < 1:
+                return {'CANCELLED'}
+            with holding_rebuilds():
+                for i in reversed(found):
+                    scopes.remove(i)
+        else:
+            with holding_rebuilds():
+                scopes.add().keymap_type = self.keymap_type
         register_pie_menus()
         return {'FINISHED'}
 
 
-class COCOPIE_OT_remove_keymap_scope(Operator):
-    """Stop registering this pie in this editor"""
-    bl_idname = "cocopie.remove_keymap_scope"
-    bl_label = "Remove Editor"
-    bl_options = {'REGISTER', 'INTERNAL'}
+# Keys held down on their own never end a capture: they are read off the
+# event as modifiers when the real key arrives
+_MODIFIER_EVENTS = {
+    'LEFT_SHIFT', 'RIGHT_SHIFT', 'LEFT_CTRL', 'RIGHT_CTRL',
+    'LEFT_ALT', 'RIGHT_ALT', 'OSKEY', 'HYPER', 'APP',
+}
+# Nothing a person presses, or not a key (movement, timers, the scroll wheel)
+_NOT_KEYS = {
+    'NONE', 'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE', 'TEXTINPUT',
+    'WINDOW_DEACTIVATE', 'TRACKPADPAN', 'TRACKPADZOOM', 'MOUSEROTATE',
+    'MOUSESMARTZOOM', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE',
+    'WHEELOUTMOUSE', 'WHEELLEFTMOUSE', 'WHEELRIGHTMOUSE',
+}
+# Stops the capture and leaves the shortcut as it was
+_CANCEL_EVENTS = {'ESC', 'LEFTMOUSE', 'RIGHTMOUSE', 'MIDDLEMOUSE'}
+# Digits are stored the way they have always been typed ("2", not "TWO");
+# keymaps._resolve_key turns them back into event types
+_DIGITS = {'ZERO': '0', 'ONE': '1', 'TWO': '2', 'THREE': '3', 'FOUR': '4',
+           'FIVE': '5', 'SIX': '6', 'SEVEN': '7', 'EIGHT': '8', 'NINE': '9'}
+
+# The pie whose key is being captured right now, or -1, and what its button
+# says meanwhile. Read by the draw code.
+capturing_pie_index = -1
+capture_text = ""
+
+# Which modifier each modifier key is, in the order the shortcut is written
+# (utils.format_shortcut: Shift, Ctrl, Alt)
+_MODIFIER_NAMES = {
+    'LEFT_SHIFT': "Shift", 'RIGHT_SHIFT': "Shift",
+    'LEFT_CTRL': "Ctrl", 'RIGHT_CTRL': "Ctrl",
+    'LEFT_ALT': "Alt", 'RIGHT_ALT': "Alt",
+}
+_MODIFIER_ORDER = ("Shift", "Ctrl", "Alt")
+
+
+def _redraw_preferences(context):
+    for window in context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'PREFERENCES':
+                area.tag_redraw()
+
+
+class COCOPIE_OT_capture_key(Operator):
+    """Click, then press the shortcut -- modifiers and all, e.g. Shift + A.
+    Esc or a mouse click cancels"""
+    bl_idname = "cocopie.capture_key"
+    bl_label = "Set Shortcut"
+    bl_options = {'INTERNAL'}
 
     pie_index: IntProperty()
-    scope_index: IntProperty()
 
-    def execute(self, context):
+    def _show_held(self, context):
+        """Write the modifiers held so far on the button, as Blender's own
+        keymap editor does while it waits: "Alt + ...", or "Press a key..."
+        """
+        global capture_text
+        held = [m for m in _MODIFIER_ORDER if m in self._held]
+        capture_text = " + ".join(held + ["..."]) if held else "Press a key..."
+        _redraw_preferences(context)
+
+    def invoke(self, context, event):
+        global capturing_pie_index
+        if get_pie(context, self.pie_index) is None:
+            return {'CANCELLED'}
+        capturing_pie_index = self.pie_index
+        # Tracked from the modifier keys' own press and release rather than
+        # read off event.shift/ctrl/alt, so the button follows a key being let
+        # go of the moment it is
+        self._held = set()
+        context.window_manager.modal_handler_add(self)
+        self._show_held(context)
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context):
+        global capturing_pie_index, capture_text
+        capturing_pie_index = -1
+        capture_text = ""
+        _redraw_preferences(context)
+
+    def modal(self, context, event):
+        name = _MODIFIER_NAMES.get(event.type)
+        if name:
+            if event.value == 'PRESS':
+                self._held.add(name)
+            elif event.value == 'RELEASE':
+                self._held.discard(name)
+            self._show_held(context)
+            return {'RUNNING_MODAL'}
+        if event.value != 'PRESS' or event.type in _MODIFIER_EVENTS \
+                or event.type in _NOT_KEYS or event.type.startswith('TIMER'):
+            return {'RUNNING_MODAL'}
+        if event.type in _CANCEL_EVENTS:
+            self._finish(context)
+            return {'CANCELLED'}
+
         pie = get_pie(context, self.pie_index)
-        if pie is None:
-            return {'CANCELLED'}
-
-        # A pie with no scope at all would be registered nowhere and look
-        # broken with no way back, so the last row is never removable -- the
-        # UI hides its button too, this is the backstop
-        if len(pie.keymap_scopes) <= 1:
-            return {'CANCELLED'}
-        if not (0 <= self.scope_index < len(pie.keymap_scopes)):
-            return {'CANCELLED'}
-
-        pie.keymap_scopes.remove(self.scope_index)
-        register_pie_menus()
+        if pie is not None:
+            # One rebuild for the whole shortcut, not one per field. Holding
+            # modifiers means exactly these, so Any goes off.
+            with holding_rebuilds():
+                pie.key = _DIGITS.get(event.type, event.type)
+                pie.shift = event.shift
+                pie.ctrl = event.ctrl
+                pie.alt = event.alt
+                pie.any_modifier = False
+            register_pie_menus()
+        self._finish(context)
         return {'FINISHED'}
 
 
@@ -420,7 +499,7 @@ class COCOPIE_OT_remove_item(Operator):
 
 
 class COCOPIE_OT_move_pie_menu(Operator):
-    """Move this pie menu up or down the list.
+    """Move this pie menu up or down inside its section.
 
     Ordering here is cosmetic -- it changes nothing about shortcuts or
     registration, only the order the menus are listed in"""
@@ -447,9 +526,15 @@ class COCOPIE_OT_move_pie_menu(Operator):
                 return {'CANCELLED'}
 
             index = prefs.active_pie_index
-            new_index = index + (-1 if self.direction == 'UP' else 1)
-
-            if not (0 <= index < len(prefs.pie_menus)) or not (0 <= new_index < len(prefs.pie_menus)):
+            if not (0 <= index < len(prefs.pie_menus)):
+                return {'CANCELLED'}
+            # Past the neighbour in the same section, not the next stored pie,
+            # which can belong to any section. The pies stored in between are
+            # all other sections', so a single move lands it right next to its
+            # neighbour and leaves every other section's order alone.
+            new_index = section_neighbour(prefs.pie_menus, index,
+                                          -1 if self.direction == 'UP' else 1)
+            if new_index is None:
                 return {'CANCELLED'}
 
             prefs.pie_menus.move(index, new_index)

@@ -23,10 +23,10 @@ CocoPies is packaged as a **Blender Extension** (`CocoPies/blender_manifest.toml
 not a legacy add-on — there is no `bl_info` dict, and Blender will actively
 strip one and print a deprecation warning if it ever reappears in
 `__init__.py`. `id`/`name`/`version`/`blender_version_min` all come from the
-manifest now; `utils.py`'s `addon_version_string()` reads it lazily via
-`addon_utils.module_bl_info()` (works for either format, but only actually
-parses the manifest when the loaded module's name starts with `bl_ext.` —
-see the root `CLAUDE.md`'s headless-verification note).
+manifest now. Anything reading it at runtime goes through
+`addon_utils.module_bl_info()`, which only actually parses the manifest when
+the loaded module's name starts with `bl_ext.` — see the root `CLAUDE.md`'s
+headless-verification note.
 
 ## Target versions
 
@@ -257,8 +257,38 @@ breaking them: the stored collection is **never** reordered to match the
 display (doing it with `.move()` corrupted stored pies), and a section
 heading is **never** drawn inside a `UIList.draw_item` (it becomes part of the
 first pie's row, stealing that row's click and selection highlight). Storage
-order and display order are independent by design, which is also why the ▲/▼
-reorder buttons can look off near a section boundary.
+order and display order are independent by design. Since 1.14.0 the ▲/▼
+buttons move a pie only within its section: `section_neighbour()`
+(`utils.py`) finds the next pie *in the same section*, which need not be the
+next stored index, and `move_pie_menu` moves it there (and rebuilds, see
+above). Both arrows are greyed when the pie is alone in its section.
+
+**The 1.14.0 panel, and the pieces that are not obvious from it.**
+- The list rows use nested `split()`s (`CHECK_SPLIT`, `NAME_SPLIT` in
+  `ui/lists.py`), not `row(align=True)`: a row shares width by content, so a
+  long name pushed the key cap and checkbox on its own line only. The name
+  and key cap are deliberately *not* joined with `align=True` either. Measured
+  on 5.2; the general rule is in the vault, `Blender/Add-on overlays and UI
+  testing`.
+- **Editors** is a popover, `COCOPIE_PT_editors` (`ui/editors.py`): a `Panel`
+  with `bl_region_type = 'HEADER'` opened by `layout.popover`, because a Menu
+  closes on the first click. Each box is `cocopie.toggle_keymap_scope`, which
+  refuses to remove the last scope; the box is also disabled in the UI.
+  `editors_summary()` is the button text (the name, or "Multiple"). It
+  replaced the Add/Remove Editor operators, removed in 1.14.0.
+- **Key capture** is the modal `cocopie.capture_key` (`operators/pies.py`),
+  not `prop(event=True)`: that captures only the key on an add-on enum, and
+  `full_event` exists only on a real `KeyMapItem`. The module globals
+  `capturing_pie_index` / `capture_text` drive the live text, which is why
+  `preferences.py` imports the module (`pie_ops`) rather than the names.
+- **Quick Tap off restores the Trigger.** `_update_tap_toggle`
+  (`properties.py`) stores the Trigger in the hidden `trigger_before_tap`
+  when Quick Tap turns on (never `CLICK_DRAG` itself) and puts it back when
+  it turns off, or `PRESS` for a pie that predates the field.
+- The list toolbar and the Presets menu are `ui/toolbar.py`
+  (`draw_list_toolbar`, `COCOPIE_MT_list_presets`); the menu sets
+  `operator_context = 'INVOKE_DEFAULT'` so Export/Import open the file
+  browser and Delete All asks first.
 
 
 **Keymap items must be swept by content, not trusted from a Python list.**
@@ -341,7 +371,10 @@ used by starters, presets, imports and Duplicate alike — and its inverse
 `pie_scope_types()`, `keymap_names_for_pie()`, `pie_menu_groups()`,
 `ensure_slot_items()`, `slot_is_used()`, `unused_pie_name()` /
 `unused_pie_idname()`, `apply_suppressions()` / `restore_suppressions()`,
-`settle_user_keyconfig()`. `ui/lists.py`: `draw_pie_row()`.
+`settle_user_keyconfig()`, `section_neighbour()`. `ui/lists.py`:
+`draw_pie_row()`. `ui/toolbar.py`: `draw_list_toolbar()`,
+`COCOPIE_MT_list_presets`. `ui/editors.py`: `COCOPIE_PT_editors`,
+`editors_summary()`.
 
 **Headless stand-in for `AddonPreferences`.** Anything taking `prefs` only
 touches `pie_menus`, `active_pie_index` and `seeded_starters`, so a scratch
