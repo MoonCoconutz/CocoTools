@@ -31,7 +31,7 @@ that has that UV map:
 | Control | Action |
 | --- | --- |
 | **Pen icon** (under the arrows) | Opens a small panel under the button to rename UV maps on every selected object, either by position (the name you type plus 1, 2, 3 ...; empty gives map1, map2, ...) or with Find/Replace (optionally case sensitive, like Blender's batch rename). **Selected** renames only the highlighted map, **All** every map |
-| **Seams Update** (panel header) | When you pick a UV map, the seams are replaced with that map's island borders |
+| **Seams Update** (panel header) | When you pick a UV map, or remove one, the seams are replaced with the island borders of the map that is now active |
 | **Click a row** | Make that UV map active on every selected object that has it |
 | **N/total** next to a name | With several objects selected: how many of them have that UV map active |
 | **Red N/total box** | That many objects are still on this UV map because they do not have the one you clicked. Hover it for details |

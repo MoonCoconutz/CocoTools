@@ -328,12 +328,22 @@ class COCOUVS_OT_uv_remove(Operator):
 
     def execute(self, context):
         name = current_name(context)
+        removed = set()
         for me in common.target_meshes(context):
             layer = me.uv_layers.get(name)
             if layer is not None:
                 me.uv_layers.remove(layer)
                 common.remove_done_marks(me, name)
+                removed.add(me)
         set_chosen(None)
+        # With Seams Update on, the seams follow the map that is active now,
+        # as a row click would; they were left showing the removed one. A
+        # mesh left with no map keeps its seams.
+        if context.scene.cocouvs.update_seams:
+            for obj in common.unique_meshes(common.target_objects(context)):
+                active = obj.data.uv_layers.active
+                if obj.data in removed and active is not None:
+                    common.seams_from_uv_map(obj, active.name)
         sync_list(context)
         return {'FINISHED'}
 
