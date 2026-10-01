@@ -28,6 +28,9 @@ MAX_UV_MAPS = 8
 
 # The row the user last clicked (or added). Kept in Python, not saved.
 _chosen = None
+# {object: its active UV map} when last looked at, to spot a map
+# picked outside this list (see chosen_name).
+_seen = None
 _syncing = False
 
 
@@ -57,16 +60,33 @@ def active_map_counts(objects):
     return counts
 
 
+def _active_maps(objects):
+    """{object: its active UV map name} for these objects."""
+    return {obj.name_full: (obj.data.uv_layers.active.name if obj.data.uv_layers.active else None)
+            for obj in objects}
+
+
 def chosen_name(counts, objects):
-    """The row shown as selected: the one last clicked while any object still
+    """The row shown as selected: the one last picked while any object still
     has it active, otherwise the map active on the most objects (the active
-    object's map wins a tie)."""
+    object's map wins a tie).
+
+    Picking a map in Blender's own UV Maps list changes only the active
+    object, so the majority would still point at the old map and Remove would
+    delete that one. A change of the active object's map made outside this
+    list therefore counts as picking that map."""
+    global _chosen, _seen
+    current = _active_maps(objects)
+    first = current[objects[0].name_full] if objects else None
+    if _seen is not None and first is not None:
+        before = _seen.get(objects[0].name_full)
+        if before is not None and before != first:
+            _chosen = first
+    _seen = current
     if _chosen is not None and counts.get(_chosen):
         return _chosen
     if not counts:
         return None
-    first = objects[0].data.uv_layers.active if objects else None
-    first = first.name if first is not None else None
     return max(counts, key=lambda name: (counts[name], name == first))
 
 
@@ -76,8 +96,11 @@ def current_name(context=None):
 
 
 def set_chosen(name):
-    global _chosen
+    """Our own pick. The active map it leads to is not an outside change, so
+    the next chosen_name() only records it (_seen = None)."""
+    global _chosen, _seen
     _chosen = name
+    _seen = None
 
 
 def make_active(name, context=None):
@@ -151,8 +174,8 @@ def _name_update(self, context):
     for me in common.target_meshes(context):
         if me.uv_layers.get(old) is not None and me.uv_layers.get(new) is None:
             common.rename_uv_map(me, old, new)
-    if _chosen == old:
-        set_chosen(new)
+    # Also when the pick stays: a renamed active map is not a new pick.
+    set_chosen(new if _chosen == old else _chosen)
     self.stored_name = new
 
 

@@ -99,6 +99,15 @@ selected mesh). Now 0.6 ms (2026-09-28).
   `Scene.cocouvs.uv_index` is a get/set with no storage: the getter returns
   that row, and the setter (a row click) makes the name active on every mesh
   that has it (`make_active`). Remove and Move act on this name.
+- **A map picked in Blender's own UV Maps list counts as picked here.**
+  That list changes only the active object, so the majority still pointed at
+  the old map: picking map2 there and pressing our `−` deleted map1 from all
+  14 selected objects, leaving three with no UV map (user report, reproduced
+  with real clicks on the user's file, 2026-10-01). `chosen_name` keeps
+  `_seen` ({object: active map}); when the active object's map differs from
+  what it last saw, that map becomes `_chosen`. `set_chosen` clears `_seen`
+  so our own changes (row click, add, rename) are not mistaken for one.
+  Ctrl+Z restoring another active map counts too.
 - **Red rows:** a row whose map is still active on some target but is not the
   highlighted one marks objects that lack the clicked map and stayed where
   they were. Its N/total is drawn as a **solid red box**: an embossed button
