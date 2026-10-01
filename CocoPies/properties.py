@@ -284,7 +284,7 @@ class COCOPIE_PieMenuData(PropertyGroup):
         update=_update_tap_toggle,
     )
     # What a tap does. Explicit numbers because Blender stores an
-    # EnumProperty as its integer value -- see this addon's CLAUDE.md; adding
+    # EnumProperty as its integer value -- see the vault note CocoPies development; adding
     # an item above an existing one without a number repoints stored pies.
     tap_action: EnumProperty(
         name="On Tap",

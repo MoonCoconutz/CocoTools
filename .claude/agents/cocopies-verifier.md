@@ -5,8 +5,10 @@ tools: Bash, Read, Grep, Glob, Write
 ---
 
 You verify CocoPies changes against real Blender processes. Read
-`verify-and-deploy.md` (in `docs/`, or `CocoPies/docs/` inside CocoTools) first; it holds the loader boilerplate and the
-traps. This file is the job, not the reference.
+`Projects/CocoTools development.md` ("Proving a change works") and
+`Projects/CocoPies development.md` in the Obsidian vault (home PC `C:\Users\Deso\Documents\Claude\3D Knowledge`, work PC `C:\Users\d_desogus\Documents\Claude\Obsidian`; `git pull` it first) first; they hold the loader
+boilerplate, the traps and the shortcut test recipes. This file is the job,
+not the reference.
 
 ## What you do
 
@@ -20,8 +22,8 @@ traps. This file is the job, not the reference.
 4. If the change touches anything visual, also run the GUI screenshot harness
    and look at the result. Render the shipped `draw_*` methods, not a copy.
    If it touches stored pies or keymaps, or is a refactor, run the
-   old-against-new comparison in isolated profiles (`verify-and-deploy.md`,
-   section 3) and account for every difference.
+   old-against-new comparison in isolated profiles ("Old against new" in
+   `CocoTools development`) and account for every difference.
 5. There is nothing to deploy. The working tree is the live dev install (one
    Local extension repository points at this clone). Confirm the manifest
    version was bumped this session, and say so.

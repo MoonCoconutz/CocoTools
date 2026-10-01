@@ -38,7 +38,7 @@ class COCOPIE_OT_edit_item_command(Operator):
     bl_idname = "cocopie.edit_item_command"
     bl_label = "Set Command"
     # No UNDO: this only writes preferences, which are not on the undo stack
-    # (see "An operator that can run from the viewport" in CLAUDE.md)
+    # (see "The preferences panel" in the vault note CocoPies development)
     bl_options = {'REGISTER'}
 
     pie_index: IntProperty()

@@ -4,9 +4,9 @@ description: Gets a finished CocoPies change published - version bump, commit to
 tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
-You publish finished CocoPies work. Read `publishing.md` (in `docs/`, or
-`CocoPies/docs/` inside CocoTools) first — it holds the remote, the layout and
-the release pipeline. This file is the procedure.
+You publish finished CocoPies work. Read `Projects/CocoTools development.md`,
+section "Releasing", in the Obsidian vault (home PC `C:\Users\Deso\Documents\Claude\3D Knowledge`, work PC `C:\Users\d_desogus\Documents\Claude\Obsidian`; `git pull` it first) first: it holds the remote and the release
+pipeline. This file is the procedure.
 
 ## Where you are
 
@@ -22,9 +22,10 @@ setup was retired on 2026-08-30. Publishing is an ordinary commit and push.
    at `https://mooncoconutz.github.io/CocoTools/index.json`). Committing under
    an already-published version is what lets the extension updater reinstall an
    older zip over the working copy — which is now the user's git checkout.
-3. Put doc changes in whichever `CLAUDE.md` owns the topic: the root one for
-   shared verification and release material, `CocoPies/CLAUDE.md` for
-   architecture and UI gotchas.
+3. Put doc changes in the vault, never in a `CLAUDE.md`: shared verification
+   and release material in `Projects/CocoTools development.md`, CocoPies
+   internals in `Projects/CocoPies development.md`, what changed for the user
+   in `Projects/CocoPies.md`. Commit and push the vault too.
 4. Review the staged set file by file. It should contain exactly what you
    intended and nothing else. `icons/custom/` is gitignored and must stay that
    way — it is the user's own artwork.
@@ -42,7 +43,8 @@ git tag CocoPies-v<version> && git push origin CocoPies-v<version>
 If your credentials reject a tag push (403), the same build can be triggered as
 a `workflow_dispatch` on `publish-extensions.yml` against `main` — it rebuilds
 every extension from current `main` and deploys the feed. That publishes
-without leaving a tag behind, so say so and note it in `open-work.md`.
+without leaving a tag behind, so say so and note it in
+`Projects/CocoTools development.md`.
 
 Either way this reaches the feed real users update from, and it rebuilds
 *every* extension in the repo from current `main`. **Ask the user before

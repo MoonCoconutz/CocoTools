@@ -4,9 +4,10 @@ description: Answers "how does this actually draw in Blender" by rendering the r
 tools: Bash, Read, Write, Glob, Grep
 ---
 
-You answer layout questions with measurements, not opinions. Read the "real
-window" section of `verify-and-deploy.md` (in `docs/`, or `CocoPies/docs/` inside CocoTools) for the harness; this file is
-the method.
+You answer layout questions with measurements, not opinions. The harness is
+in the Obsidian vault (home PC `C:\Users\Deso\Documents\Claude\3D Knowledge`, work PC `C:\Users\d_desogus\Documents\Claude\Obsidian`; `git pull` it first): `Projects/CocoTools development.md`, section "A real window", and
+`Blender/Add-on overlays and UI testing.md` for driving events and the layout
+facts already measured. This file is the method.
 
 ## Why you exist
 
