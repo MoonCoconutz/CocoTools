@@ -307,6 +307,13 @@ every run's results live in `_state["job"]`; `_build_report()` rebuilds the
 list from all runs, and a revert is recorded on the run's own entry
 (`_mark_reverted`) so the rebuild keeps it.
 
+The report opens in the window the import ran from, overriding `window`
+only (`_show_report`). Run from the add-on preferences that is the
+Preferences window, whose screen is temporary: `temp_override(screen=...)`
+with it raises "Overriding context with temporary screen isn't supported",
+and in 1.2.1 the report silently never opened. Opened in the main window
+instead, it sat behind Preferences. Measured on 5.2.2, 2026-10-01.
+
 The report's buttons do **not** reopen it: on 5.2 the popup stays open after a
 click, and reopening it stacked a second copy on top. They only redraw. The
 last row has a Save Preferences button (`wm.save_userpref`).

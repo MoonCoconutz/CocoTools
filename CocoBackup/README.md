@@ -32,7 +32,8 @@ changes to add-on shortcuts travel too.
 - **File ▸ Import ▸ CocoBackup (.json)** applies it. A popup then lists
   exactly what changed: which preference went from what to what, and which
   shortcuts were changed, removed, added or skipped. If this Blender already
-  matched the backup, it just says so.
+  matched the backup, it just says so. Imported from the add-on's
+  preferences, the popup opens inside the Preferences window.
 - Then **Save Preferences** (there is a button at the bottom of the popup), or
   the changes last only until Blender closes.
 - In the popup, tick shortcuts and press **Revert Selected Shortcuts** to undo

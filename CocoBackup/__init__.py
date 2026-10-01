@@ -361,13 +361,18 @@ def _finish_run():
 
 
 def _show_report(window):
-    """Open the report in the window the import ran from (a timer has none)."""
+    """Open the report in the window the import ran from (a timer has none).
+
+    From the add-on preferences that is the Preferences window, whose screen is
+    temporary: overriding `screen` with it raises TypeError and the report
+    never opened. The window alone is accepted. Opened in the main window
+    instead, the report sat behind Preferences."""
     wm = bpy.context.window_manager
     if window not in wm.windows[:]:
         window = wm.windows[0] if len(wm.windows) else None
     if window is None:
         return
-    with bpy.context.temp_override(window=window, screen=window.screen):
+    with bpy.context.temp_override(window=window):
         bpy.ops.cocobackup.show_report('INVOKE_DEFAULT')
 
 
