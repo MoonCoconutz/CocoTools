@@ -216,9 +216,21 @@ Anything else is executed as plain Python.
 ## Adding items by right-clicking
 
 You don't have to type commands by hand. **Right-click almost any button in
-Blender → Add to CocoPies**. This works on operator buttons and on property
-toggles (overlay switches and the like), and fills in the command, a label,
-and a sensible icon.
+Blender → Add to CocoPies**. It works on any operator button and on any
+setting, wherever it lives: viewport overlays and shading, tool settings
+(snapping, proportional editing), the active object and its modifiers,
+materials, the world, render settings, the Preferences. It fills in the
+command and a label:
+
+- an operator keeps the options its button sets (Add Modifier ▸ Bevel adds a
+  Bevel), and runs as if you clicked the button;
+- an on/off setting becomes a switch that flips it;
+- a setting with a list of choices (Proportional Editing Falloff, Shading)
+  asks which choice the slot should set, starting from the current one;
+- one field of a row (Location X) sets just that field.
+
+Settings of the active object, scene or editor follow whatever is active when
+you open the pie, not the one you right-clicked.
 
 The submenu lists every pie you have, each opening onto its eight directions
 so you can see which are free before picking one. Choosing a direction that is

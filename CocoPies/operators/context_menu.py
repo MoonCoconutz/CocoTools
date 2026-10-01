@@ -14,7 +14,8 @@ the cursor is captured while the *context menu itself* draws (where
 
 import re
 import bpy
-from bpy.props import StringProperty, IntProperty, BoolProperty
+import mathutils
+from bpy.props import StringProperty, IntProperty, EnumProperty
 from bpy.types import Operator, Menu
 from ..items import POSITION_NAMES
 from ..utils import (
@@ -35,72 +36,284 @@ _CAPTURED = {}
 MAX_PIE_SUBMENUS = 32
 
 
+def _python_literal(value):
+    """Source text that evaluates back to value, or None when there is none.
+
+    Covers what a property or an operator option holds: numbers, strings,
+    enum sets, arrays (vectors, colours, matrices, flag rows) and data-blocks,
+    which are written the way Blender itself prints them,
+    bpy.data.objects['Cube']. Floats keep six significant digits, so 0.1
+    stays 0.1 rather than the 0.10000000149011612 a float32 reads back as.
+    """
+    if value is None or isinstance(value, (bool, int, str)):
+        return repr(value)
+    if isinstance(value, float):
+        return repr(float(f"{value:.6g}"))
+    if isinstance(value, (set, frozenset)):
+        return repr(set(sorted(value))) if value else "set()"
+    if isinstance(value, bpy.types.ID):
+        text = repr(value)
+        return text if text.startswith("bpy.data.") else None
+    if isinstance(value, bpy.types.bpy_struct):
+        return None
+    if isinstance(value, mathutils.Matrix):
+        # Reads back as rows, but a matrix property takes a nested sequence
+        # as columns
+        value = value.transposed()
+    try:
+        parts = [_python_literal(v) for v in value]
+    except TypeError:
+        return None
+    if None in parts:
+        return None
+    return "(" + ", ".join(parts) + ("," if len(parts) == 1 else "") + ")"
+
+
+# Where a data-block is reached from the context rather than by its name, so
+# a slot follows whatever is active when the pie opens: the proportional
+# editing of the scene in front of you, the modifier of the selected object.
+# Checked in order; a block that is none of these is named, which is right
+# for things that exist once (one particular material's node, a brush).
+_CONTEXT_OWNERS = (
+    ("scene",),
+    ("object",),
+    ("object", "data"),
+    ("object", "active_material"),
+    ("object", "active_material", "node_tree"),
+    ("scene", "world"),
+    ("scene", "world", "node_tree"),
+    ("workspace",),
+    ("window_manager",),
+)
+
+# Structs a button can sit on that have no path from their data-block
+_CONTEXT_STRUCTS = (
+    ("region_data",),
+    ("space_data",),
+    ("area",),
+    ("region",),
+)
+
+
+def _context_value(context, attrs):
+    value = context
+    for attr in attrs:
+        value = getattr(value, attr, None)
+        if value is None:
+            return None
+    return value
+
+
+def _pointer_path(owner, pointer, depth=2):
+    """The attribute path from owner down to pointer, following plain
+    pointers only, or None.
+
+    For structs Blender cannot give a path for itself: the scene's Display
+    settings (Workbench's light and shadow, viewport anti-aliasing) say
+    "does not support path creation".
+    """
+    for prop in owner.bl_rna.properties:
+        if prop.type != 'POINTER' or prop.identifier == "rna_type":
+            continue
+        child = getattr(owner, prop.identifier, None)
+        if child is None or isinstance(child, bpy.types.ID):
+            continue
+        if child == pointer:
+            return prop.identifier
+        if depth > 1:
+            below = _pointer_path(child, pointer, depth - 1)
+            if below is not None:
+                return f"{prop.identifier}.{below}"
+    return None
+
+
+def _struct_path(context, pointer):
+    """Python source that reaches pointer from bpy, or None.
+
+    path_from_id() is relative to the data-block that owns the struct:
+    "tool_settings" for the scene's tool settings, "areas[2].spaces[0].overlay"
+    for a viewport's overlays. On its own it is not something Python can run
+    -- a slot holding "tool_settings.proportional_edit_falloff" failed with
+    "name 'tool_settings' is not defined" -- so the owner goes in front.
+    """
+    id_data = pointer.id_data
+    if id_data is None:
+        # Not inside any data-block. The Preferences are where such a button
+        # lives, one level down (View, Interface, Input...).
+        prefs = context.preferences
+        if pointer == prefs:
+            return "bpy.context.preferences"
+        for prop in prefs.bl_rna.properties:
+            if prop.type == 'POINTER' and getattr(prefs, prop.identifier, None) == pointer:
+                return f"bpy.context.preferences.{prop.identifier}"
+        return None
+
+    if pointer == id_data:
+        path = ""
+    else:
+        try:
+            path = pointer.path_from_id()
+        except ValueError:
+            path = _pointer_path(id_data, pointer)
+        if path is None:
+            # Not reachable from its data-block, like the 3D View's own view
+            # (Lock Camera to View, Clip Region): only through the context
+            return next(("bpy.context." + ".".join(attrs) for attrs in _CONTEXT_STRUCTS
+                         if _context_value(context, attrs) == pointer), None)
+
+    if isinstance(id_data, bpy.types.Screen):
+        # An area's index means nothing from a pie opened somewhere else: the
+        # pie acts on the editor it is opened over.
+        for pattern, owner in ((r'areas\[\d+\]\.spaces\[\d+\]', "bpy.context.space_data"),
+                               (r'areas\[\d+\]', "bpy.context.area")):
+            match = re.match(pattern, path)
+            if match:
+                return owner + path[match.end():]
+        owner = "bpy.context.screen"
+    else:
+        owner = next(("bpy.context." + ".".join(attrs) for attrs in _CONTEXT_OWNERS
+                      if _context_value(context, attrs) == id_data), None)
+        if owner is None:
+            owner = _python_literal(id_data)
+            if owner is None:
+                return None
+
+    if not path:
+        return owner
+    return owner + ("" if path.startswith("[") else ".") + path
+
+
+class _BpyInContext:
+    """bpy, with bpy.context standing for the context menu's own context"""
+
+    def __init__(self, context):
+        self.context = context
+
+    def __getattr__(self, name):
+        return getattr(bpy, name)
+
+
+def _reaches(context, path, pointer):
+    """Whether path, run the way a pie runs it, lands on pointer right now.
+
+    The last check before a capture is offered: a path that does not reach
+    the right-clicked button from its own editor would not work from a pie
+    either, so the entry is left out rather than written as a broken slot.
+    """
+    try:
+        return eval(path, {"bpy": _BpyInContext(context)}) == pointer
+    except Exception:
+        return False
+
+
+def _operator_command(button_op):
+    """The bpy.ops call a right-clicked operator button runs, or None.
+
+    The options the button sets are kept: Select Mode's Edge, a menu's Add
+    Modifier > Subdivision Surface. Up to 1.14.0 only the operator's name was
+    kept, so such a slot ran with the defaults instead.
+
+    It is invoked, as the button was: an operator whose invoke() prepares
+    what its execute() reads (Mio3 UV's Sort) fails when only executed, a
+    modal one (Move in the Object menu) does nothing, and one that asks
+    first (Delete) should still ask.
+    """
+    identifier = button_op.bl_rna.identifier
+    if '_OT_' not in identifier:
+        return None
+    module, name = identifier.split('_OT_', 1)
+    args = [repr('INVOKE_DEFAULT')]
+    for prop in button_op.bl_rna.properties:
+        ident = prop.identifier
+        if ident == "rna_type" or not button_op.is_property_set(ident):
+            continue
+        literal = _python_literal(getattr(button_op, ident, None))
+        if literal is not None:
+            args.append(f"{ident}={literal}")
+    return f"bpy.ops.{module.lower()}.{name.lower()}({', '.join(args)})"
+
+
+def _property_capture(context, pointer, prop):
+    """The capture for a right-clicked property, or None"""
+    if prop.is_readonly or prop.type == 'COLLECTION':
+        return None
+    owner = _struct_path(context, pointer)
+    if owner is None or not _reaches(context, owner, pointer):
+        return None
+    target = f"{owner}.{prop.identifier}"
+    label = prop.name
+    if not label or label == prop.identifier:
+        # A node input's value has no name of its own: the input's is the
+        # one on screen ("Roughness")
+        label = getattr(pointer, "name", "") or prop.identifier.replace('_', ' ').title()
+
+    try:
+        value = getattr(pointer, prop.identifier)
+    except Exception:
+        return None
+
+    # One field of a row (Location's X) is right-clicked on its own, and is
+    # what the slot sets. context.property carries its index.
+    is_array = getattr(prop, "is_array", False)
+    index = (getattr(context, "property", None) or (None, None, -1))[2]
+    if is_array and index >= 0 and tuple(prop.array_dimensions)[1:2] == (0,):
+        target = f"{target}[{index}]"
+        value = value[index]
+        is_array = False
+        if prop.array_length <= 4:
+            channels = "RGBA" if prop.subtype in {'COLOR', 'COLOR_GAMMA'} else "XYZW"
+            label = f"{label} {channels[index]}"
+
+    if prop.type == 'BOOLEAN' and not is_array:
+        # A switch: flip it, as clicking it does
+        return {'command': f"{target} = not {target}", 'label': label}
+
+    if prop.type == 'ENUM' and not prop.is_enum_flag:
+        if not value:
+            # No current choice (the Image Editor's Mode while it shows UVs)
+            return None
+        # Blender passes the property but not which of its choices is under
+        # the cursor -- right-clicking Random in a row whose current choice
+        # is Smooth gives Smooth -- so the choice is asked for when the slot
+        # is added, starting from the current one. The strings are held here
+        # for the dropdown that shows them.
+        choices = [(item.identifier, item.name, item.description, item.icon, i)
+                   for i, item in enumerate(prop.enum_items)]
+        if value in {c[0] for c in choices}:
+            return {'command': f"{target} = {value!r}", 'label': label,
+                    'enum_target': target, 'enum_value': value, 'choices': choices}
+        # A list built while drawing (View Transform, Length unit, the
+        # studio lights) cannot be listed from here: the current choice it is
+        name = bpy.types.UILayout.enum_item_name(pointer, prop.identifier, value)
+        return {'command': f"{target} = {value!r}", 'label': name or label}
+
+    literal = _python_literal(value)
+    if literal is None:
+        return None
+    return {'command': f"{target} = {literal}", 'label': label}
+
+
 def _capture_button(context):
     """Describe the button under the cursor, or None if it is not capturable.
 
-    Returns a dict of the operator/property payload the add operator needs.
-    Called during the context menu's draw, so it must not mutate anything.
+    Returns a dict holding the finished slot's 'command' and 'label', plus,
+    for a choice property, what the value dropdown needs. Called during the
+    context menu's draw, so it must not mutate anything.
     """
-    # Case 1: Operator button
     button_op = getattr(context, 'button_operator', None)
     if button_op:
-        op_string = button_op.bl_rna.identifier
-        if '.' in op_string:
-            parts = op_string.split('.')
-            op_string = '.'.join(parts[-2:]) if len(parts) > 1 else op_string
-        return {
-            'operator_string': op_string,
-            'prop_label': "",
-            'is_property': False,
-        }
+        command = _operator_command(button_op)
+        if command is None:
+            return None
+        rna = button_op.bl_rna
+        label = rna.name or rna.identifier.split('_OT_')[-1].replace('_', ' ').title()
+        return {'command': command, 'label': label}
 
-    # Case 2: Property button (overlay toggles, etc.)
-    button_pointer = getattr(context, 'button_pointer', None)
-    button_prop = getattr(context, 'button_prop', None)
-    if not (button_pointer and button_prop):
+    pointer = getattr(context, 'button_pointer', None)
+    prop = getattr(context, 'button_prop', None)
+    if not (pointer and prop):
         return None
-
-    try:
-        data_path = button_pointer.path_from_id()
-    except Exception:
-        data_path = None
-
-    prop_id = button_prop.identifier
-    if not (data_path and prop_id):
-        return None
-
-    prop_type = button_prop.type
-
-    # An area-specific path is meaningless from a pie invoked elsewhere, so
-    # rewrite it to the equivalent context path:
-    #   "areas[2].spaces[0].overlay" -> "bpy.context.space_data.overlay"
-    clean_path = re.sub(
-        r'areas\[\d+\]\.spaces\[\d+\]', 'bpy.context.space_data', data_path)
-    clean_path = re.sub(
-        r'screens\[\w+\]\.areas\[\d+\]\.spaces\[\d+\]',
-        'bpy.context.space_data', clean_path)
-
-    full_prop_path = f"{clean_path}.{prop_id}"
-
-    if prop_type in ('INT', 'FLOAT'):
-        try:
-            op_string = f"{full_prop_path} = {getattr(button_pointer, prop_id)}"
-        except Exception:
-            op_string = f"{full_prop_path} = 0"
-    elif prop_type == 'ENUM':
-        try:
-            op_string = f"{full_prop_path} = '{getattr(button_pointer, prop_id)}'"
-        except Exception:
-            op_string = f"{full_prop_path} = ''"
-    else:
-        # BOOLEAN and anything else toggle-shaped
-        op_string = f"{full_prop_path} = not {full_prop_path}"
-
-    return {
-        'operator_string': op_string,
-        'prop_label': prop_id.replace('_', ' ').title(),
-        'is_property': True,
-    }
+    return _property_capture(context, pointer, prop)
 
 
 def _items_by_position(pie):
@@ -116,8 +329,8 @@ def _items_by_position(pie):
     return by_pos
 
 
-def _write_capture(item, operator_string, prop_label, is_property):
-    """Turn a captured button into a slot's command and label.
+def _write_capture(item, command, label):
+    """Put a captured button into a slot.
 
     Shared by both entry points -- assigning to an existing pie's direction,
     and creating a new pie around the button -- so the two cannot disagree
@@ -125,36 +338,37 @@ def _write_capture(item, operator_string, prop_label, is_property):
     """
     item.icon = "NONE"
     item.enabled = True
-
-    if is_property:
-        item.command = operator_string
-        item.label = prop_label or operator_string.split('.')[-1].split(' ')[0].replace('_', ' ').title()
-
-    elif 'MT_' in operator_string or '_MT_' in operator_string:
-        menu_class = operator_string
-        item.label = menu_class.replace('VIEW3D_MT_', '').replace('_MT_', ' ').replace('_', ' ').title()
-        item.command = f"bpy.ops.wm.call_menu(name='{menu_class}')"
-
-    else:
-        op_name = operator_string
-        if '_OT_' in op_name:
-            parts = op_name.split('_OT_')
-            if len(parts) == 2:
-                op_name = f"{parts[0].lower()}.{parts[1].lower()}"
-        else:
-            op_name = op_name.lower()
-        item.label = op_name.split('.')[-1].replace('_', ' ').title()
-        # The button that was right-clicked ran the operator through its
-        # invoke(); a pie slot runs execute() unless told otherwise. For an
-        # add-on operator whose invoke() prepares state its execute() reads
-        # (Mio3 UV's Sort), execute alone fails, so a Python operator that
-        # defines invoke() keeps it. C operators cannot be inspected this way
-        # and keep the pie's usual execute.
-        op_class = getattr(bpy.types, operator_string, None)
-        wants_invoke = op_class is not None and callable(getattr(op_class, "invoke", None))
-        item.command = f"bpy.ops.{op_name}({repr('INVOKE_DEFAULT') if wants_invoke else ''})"
-
+    item.command = command
+    item.label = label or "Item"
     return item.label
+
+
+# The choices offered by the value dropdown of the add dialog that is open.
+# Copied out of _CAPTURED when the dialog opens, since the next right-click
+# redraws that, and held here because Blender keeps only pointers to a
+# dynamic enum's strings.
+_DIALOG_CHOICES = []
+
+
+def _dialog_choices(self, context):
+    return _DIALOG_CHOICES or [("NONE", "None", "")]
+
+
+def _prepare_choice(op):
+    """Fill op's value dropdown from the capture, starting at its current choice"""
+    _DIALOG_CHOICES[:] = _CAPTURED.get('choices', [])
+    value = _CAPTURED.get('enum_value')
+    if any(choice[0] == value for choice in _DIALOG_CHOICES):
+        op.value = value
+
+
+def _chosen_slot(op):
+    """(command, label) the add operator writes: as captured, or with the
+    choice picked in its dialog"""
+    if not op.enum_target:
+        return op.command, op.label
+    label = next((c[1] for c in _DIALOG_CHOICES if c[0] == op.value), op.value)
+    return f"{op.enum_target} = {op.value!r}", label
 
 
 class COCOPIE_MT_add_to_cocopie(Menu):
@@ -170,9 +384,9 @@ class COCOPIE_MT_add_to_cocopie(Menu):
         # only entry that is useful in that state.
         op = layout.operator(
             "cocopie.add_to_new_pie", text="Add a New Pie...", icon='ADD')
-        op.operator_string = _CAPTURED.get('operator_string', "")
-        op.prop_label = _CAPTURED.get('prop_label', "")
-        op.is_property = _CAPTURED.get('is_property', False)
+        op.command = _CAPTURED.get('command', "")
+        op.label = _CAPTURED.get('label', "")
+        op.enum_target = _CAPTURED.get('enum_target', "")
         layout.separator()
 
         if prefs is None or len(prefs.pie_menus) == 0:
@@ -222,9 +436,9 @@ def _make_direction_menu(index):
                 )
                 op.pie_index = self.pie_index
                 op.position = position
-                op.operator_string = _CAPTURED.get('operator_string', "")
-                op.prop_label = _CAPTURED.get('prop_label', "")
-                op.is_property = _CAPTURED.get('is_property', False)
+                op.command = _CAPTURED.get('command', "")
+                op.label = _CAPTURED.get('label', "")
+                op.enum_target = _CAPTURED.get('enum_target', "")
 
     _DirectionMenu.__name__ = f"COCOPIE_MT_cocopie_dirs_{index}"
     return _DirectionMenu
@@ -241,31 +455,46 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
 
     pie_index: IntProperty()
     position: IntProperty(default=-1)
-    operator_string: StringProperty()
-    prop_label: StringProperty(default="")
-    is_property: BoolProperty(default=False)
+    replacing: StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+    command: StringProperty()
+    label: StringProperty(default="")
+    # Set for a choice property: the slot then sets it to value
+    enum_target: StringProperty()
+    value: EnumProperty(name="Value", items=_dialog_choices)
 
     def invoke(self, context, event):
         # Overwriting an existing assignment is confirmed first; claiming an
-        # empty direction is immediate.
+        # empty direction is immediate, unless there is a choice to make.
         pie = get_pie(context, self.pie_index)
-        if pie is not None:
-            existing = _items_by_position(pie).get(self.position)
-            if existing is not None and slot_is_used(existing):
-                return context.window_manager.invoke_confirm(
-                    self, event,
-                    title="Replace Direction",
-                    message=f'Replace "{existing.label}" on {POSITION_NAMES[self.position]}?',
-                    confirm_text="Replace",
-                    icon='WARNING',
-                )
+        existing = _items_by_position(pie).get(self.position) if pie is not None else None
+        self.replacing = existing.label if existing is not None and slot_is_used(existing) else ""
+        if self.enum_target:
+            _prepare_choice(self)
+            return context.window_manager.invoke_props_dialog(
+                self, width=300, title="Add to Pie Direction",
+                confirm_text="Replace" if self.replacing else "Add")
+        if self.replacing:
+            return context.window_manager.invoke_confirm(
+                self, event,
+                title="Replace Direction",
+                message=f'Replace "{self.replacing}" on {POSITION_NAMES[self.position]}?',
+                confirm_text="Replace",
+                icon='WARNING',
+            )
         return self.execute(context)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "value")
+        if self.replacing:
+            layout.label(text=f'Replaces "{self.replacing}" on {POSITION_NAMES[self.position]}',
+                         icon='WARNING')
 
     def execute(self, context):
         prefs = get_prefs(context)
         if prefs is None or not (0 <= self.pie_index < len(prefs.pie_menus)):
             return {'CANCELLED'}
-        if not self.operator_string:
+        if not self.command:
             self.report({'WARNING'}, "Nothing was captured from that button")
             return {'CANCELLED'}
 
@@ -284,7 +513,7 @@ class COCOPIE_OT_add_operator_to_pie(Operator):
             self.report({'WARNING'}, f"{pie.name} has no free direction (8 of 8 used)")
             return {'CANCELLED'}
 
-        _write_capture(item, self.operator_string, self.prop_label, self.is_property)
+        _write_capture(item, *_chosen_slot(self))
 
         register_pie_menus()
         # item.position, not self.position: that is -1 when no direction was
@@ -304,9 +533,11 @@ class COCOPIE_OT_add_to_new_pie(Operator):
         description="Name for the new pie menu",
         default="",
     )
-    operator_string: StringProperty()
-    prop_label: StringProperty(default="")
-    is_property: BoolProperty(default=False)
+    command: StringProperty()
+    label: StringProperty(default="")
+    # Set for a choice property: the slot then sets it to value
+    enum_target: StringProperty()
+    value: EnumProperty(name="Value", items=_dialog_choices)
 
     def invoke(self, context, event):
         # The name is asked for up front rather than assigned and renamed
@@ -314,16 +545,20 @@ class COCOPIE_OT_add_to_new_pie(Operator):
         # and not having to go there is the point of this entry.
         prefs = get_prefs(context)
         self.name = unused_pie_name(prefs) if prefs is not None else "Pie Menu 1"
+        if self.enum_target:
+            _prepare_choice(self)
         return context.window_manager.invoke_props_dialog(self, width=300)
 
     def draw(self, context):
         self.layout.prop(self, "name")
+        if self.enum_target:
+            self.layout.prop(self, "value")
 
     def execute(self, context):
         prefs = get_prefs(context)
         if prefs is None:
             return {'CANCELLED'}
-        if not self.operator_string:
+        if not self.command:
             self.report({'WARNING'}, "Nothing was captured from that button")
             return {'CANCELLED'}
 
@@ -339,8 +574,7 @@ class COCOPIE_OT_add_to_new_pie(Operator):
             pie.key = ""
 
             ensure_slot_items(pie)
-            label = _write_capture(pie.items[0], self.operator_string,
-                                   self.prop_label, self.is_property)
+            label = _write_capture(pie.items[0], *_chosen_slot(self))
 
         prefs.active_pie_index = len(prefs.pie_menus) - 1
         register_pie_menus()

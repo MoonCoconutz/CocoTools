@@ -28,27 +28,64 @@ def execute_script(filepath, **params):
         exec(f.read(), {"bpy": bpy, **params})
 
 
+def _assignment_target(command):
+    """The left-hand side of a command that is one plain assignment, or None.
+
+    Only a single statement qualifies: a slot drawn as the property's own
+    switch runs nothing else, so a second line would be silently dropped.
+    """
+    try:
+        tree = ast.parse(command)
+    except SyntaxError:
+        return None
+    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.Assign):
+        return None
+    targets = tree.body[0].targets
+    if len(targets) != 1:
+        return None
+    return ast.get_source_segment(command, targets[0])
+
+
 def _resolve_bpy_data_path(path_str):
-    """Resolve a dotted attribute path like 'bpy.context.space_data.overlay.show_edge_seams'
-    into (data_object, prop_name). Returns None if it can't be safely resolved
-    (e.g. it contains a function call, subscript, or isn't rooted at bpy)."""
-    path_str = path_str.strip()
-    parts = path_str.split(".")
-    if len(parts) < 2 or parts[0] != "bpy":
+    """Resolve a path like 'bpy.context.space_data.overlay.show_edge_seams',
+    or one with literal subscripts like
+    'bpy.context.object.modifiers["Subdivision"].show_viewport', into
+    (data_object, prop_name). Returns None if it can't be safely resolved:
+    a function call, a computed subscript, or not rooted at bpy."""
+    try:
+        node = ast.parse(path_str.strip(), mode='eval').body
+    except SyntaxError:
+        return None
+    if not isinstance(node, ast.Attribute):
+        return None
+    prop_name = node.attr
+
+    steps = []
+    node = node.value
+    while True:
+        if isinstance(node, ast.Attribute):
+            steps.append((getattr, node.attr))
+            node = node.value
+        elif (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+              and isinstance(node.slice.value, (str, int))):
+            steps.append((lambda obj, key: obj[key], node.slice.value))
+            node = node.value
+        else:
+            break
+    if not (isinstance(node, ast.Name) and node.id == "bpy"):
         return None
 
     obj = bpy
-    for part in parts[1:-1]:
-        if not part.isidentifier():
+    for step, key in reversed(steps):
+        try:
+            obj = step(obj, key)
+        except (AttributeError, KeyError, IndexError, TypeError):
             return None
-        obj = getattr(obj, part, None)
         if obj is None:
             return None
 
-    prop_name = parts[-1]
-    if not prop_name.isidentifier() or not hasattr(obj, prop_name):
+    if not hasattr(obj, prop_name):
         return None
-
     return obj, prop_name
 
 
@@ -265,8 +302,8 @@ def create_pie_menu_class(pie_data):
                         # Try to bind directly to the boolean property so the
                         # button reflects its live state (lit when True, like
                         # Blender's native overlay toggle buttons)
-                        lhs = command.split("=")[0].strip()
-                        resolved = _resolve_bpy_data_path(lhs)
+                        lhs = _assignment_target(command)
+                        resolved = _resolve_bpy_data_path(lhs) if lhs else None
                         bound = False
                         if resolved:
                             data_obj, prop_name = resolved
