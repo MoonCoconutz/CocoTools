@@ -52,6 +52,8 @@ WORKSPACE_TARGETS = (
     ("WorkspaceToGeometryNodes.py", "Geometry Nodes", 'GEOMETRY_NODES',   3),
     ("WorkspaceToSculpting.py",     "Sculpting",      'SCULPTMODE_HLT',   4),
     ("WorkspaceToScripting.py",     "Scripting",      'FILE_SCRIPT',      5),
+    ("WorkspaceToModeling.py",      "Modeling",       'EDITMODE_HLT',     6),
+    ("WorkspaceToRendering.py",     "Rendering",      'RENDER_STILL',     7),
 )
 
 

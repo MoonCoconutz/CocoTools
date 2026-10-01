@@ -84,7 +84,7 @@ configure anything:
 
 | Pie | Shortcut | Scope | What it does |
 | --- | --- | --- | --- |
-| **Workspace Menu** | `Shift + T` | Global | Jump to Shading, Layout, UV Editing, Geometry Nodes, Sculpting or Scripting. A tap alternates Layout / UV Editing |
+| **Workspace Menu** | `Shift + T` | Global | Jump to Shading, Layout, UV Editing, Geometry Nodes, Sculpting, Scripting, Modeling or Rendering. A tap alternates Layout / UV Editing |
 | **Edge Info** | `Alt + 2` | Global | Toggle the sharp / seam / crease / bevel-weight overlays |
 | **Animation** | `Shift + Space` | Global | Play, play reverse, jump to start / end, previous / next keyframe, auto keying, keyframe menu |
 | **UV Unwrap** | `Shift + F` | UV Editor | Mio3 unwrap and axis unwraps, align X/Y, rectify, gridify, classic unwrap |
