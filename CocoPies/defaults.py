@@ -519,7 +519,8 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SMOOTH'\n"
                             "bpy.context.tool_settings.use_proportional_edit_objects = True"},
                 {"label": "Random", "icon": "RNDCURVE", "position": 1, "enabled": True,
-                 "command": "bpy.context.scene.tool_settings.proportional_edit_falloff = 'RANDOM'"},
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'RANDOM'\n"
+                            "bpy.context.tool_settings.use_proportional_edit_objects = True"},
                 {"label": "Sharp", "icon": "SHARPCURVE", "position": 2, "enabled": True,
                  "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SHARP'\n"
                             "bpy.context.tool_settings.use_proportional_edit_objects = True"},
@@ -555,7 +556,8 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SMOOTH'\n"
                             "bpy.context.tool_settings.use_proportional_edit = True"},
                 {"label": "Random", "icon": "RNDCURVE", "position": 1, "enabled": True,
-                 "command": "bpy.context.scene.tool_settings.proportional_edit_falloff = 'RANDOM'"},
+                 "command": "bpy.context.tool_settings.proportional_edit_falloff = 'RANDOM'\n"
+                            "bpy.context.tool_settings.use_proportional_edit = True"},
                 {"label": "Sharp", "icon": "SHARPCURVE", "position": 2, "enabled": True,
                  "command": "bpy.context.tool_settings.proportional_edit_falloff = 'SHARP'\n"
                             "bpy.context.tool_settings.use_proportional_edit = True"},
