@@ -1,0 +1,25 @@
+schema_version = "1.0.0"
+
+id = "CocoAttributes"
+name = "CocoAttributes"
+version = "1.0.0"
+tagline = "Vertex groups, UV maps and attributes on every selected mesh"
+maintainer = "MoonCoconutz"
+type = "add-on"
+website = "https://github.com/MoonCoconutz/CocoTools"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+copyright = [
+  "2026 MoonCoconutz",
+]
+
+[build]
+paths_exclude_pattern = [
+  "/.git/",
+  "__pycache__/",
+  ".*",
+]

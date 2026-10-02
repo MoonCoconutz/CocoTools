@@ -10,6 +10,7 @@ one repository.
 | [CocoBackup](CocoBackup/README.md) | Move your shortcuts, preferences and add-on settings to another machine, without the duplicated add-on shortcuts a keymap preset brings. |
 | [CocoCutter](CocoCutter/README.md) | Cut meshes in two along a line drawn in the viewport, with a noisy cut surface you tweak live before applying it. |
 | [CocoUVs](CocoUVs/README.md) | Manage UV maps across every selected mesh, measure, assign and visualise texel density, place islands on trim sheet areas, show UV problems (flipped, overlapping, done) and toggle a checker map, from the UV Editor sidebar. |
+| [CocoAttributes](CocoAttributes/README.md) | Rename, remove and add vertex groups, UV maps, color attributes and attributes on every selected mesh at once, and fill in the ones some meshes are missing, from the Properties editor's Data tab. |
 
 ## Install
 
