@@ -142,14 +142,20 @@ class COCOCUTTER_PG_scene(PropertyGroup):
     solver: IntProperty()
     image: PointerProperty(type=bpy.types.Image)
     image_rotation: FloatProperty()
+    fill: BoolProperty(default=True)
 
 
 # Sheet input name -> attribute on COCOCUTTER_PG_scene.
 _CARRIED = {
     "Resolution": "resolution", "Detail": "detail", "Roughness": "roughness",
     "Distortion": "distortion", "Seed": "seed", "Keep": "keep", "Solver": "solver",
-    "Image": "image", "Image Rotation": "image_rotation",
+    "Image": "image", "Image Rotation": "image_rotation", "Fill Cut": "fill",
 }
+
+
+def has_input(mod, name):
+    """False for an input added after the group version this cutter uses."""
+    return nodes.socket_id(mod.node_group, name) is not None
 
 
 def remember(scene, cutter):
@@ -159,7 +165,8 @@ def remember(scene, cutter):
         return
     memory = scene.coco_cutter
     for name, attr in _CARRIED.items():
-        setattr(memory, attr, get(mod, name))
+        if has_input(mod, name):
+            setattr(memory, attr, get(mod, name))
     memory.remembered = True
 
 

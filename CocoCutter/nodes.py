@@ -5,7 +5,8 @@
   along its normals with noise (and an optional image), and outputs that
   noisy sheet. Every setting of a cut lives on this modifier, so a cutter
   carries its own settings and Ctrl+Z covers them. The settings the cut
-  side needs (Keep, Gap, Solver, Cyclic) travel to it as point attributes.
+  side needs (Keep, Gap, Solver, Cyclic, Fill Cut) travel to it as point
+  attributes.
 - **Cut** sits on each object being cut. It reads the cutter's sheet, closes
   it into a volume, and booleans the object against it: side A is the
   object minus the volume, side B the object minus everything else.
@@ -30,7 +31,7 @@ alone for the cutters already using them (see get_group).
 
 import bpy
 
-GROUP_VERSION = 3
+GROUP_VERSION = 4
 SHEET_NAME = "CocoCutter Sheet"
 CUT_NAME = "CocoCutter Cut"
 
@@ -42,6 +43,7 @@ A_KEEP = "cococutter_keep"
 A_GAP = "cococutter_gap"
 A_SOLVER = "cococutter_solver"
 A_CLOSED = "cococutter_closed"
+A_FILL = "cococutter_fill"
 A_CHORD = "cococutter_chord"  # unit start-to-end direction, in cutter space
 A_U = "cococutter_u"          # 0 on the sheet's start column, 1 on its end column
 # Kept on the output in Keep Both, so the Cut operator can split the result
@@ -71,6 +73,7 @@ SHEET_INPUTS = (
     ("Keep", 'NodeSocketInt', KEEP_BOTH, 0, 2, 'NONE'),
     ("Gap", 'NodeSocketFloat', 0.0, 0.0, 1e6, 'DISTANCE'),
     ("Solver", 'NodeSocketInt', 0, 0, 2, 'NONE'),
+    ("Fill Cut", 'NodeSocketBool', True, None, None, None),
 )
 
 
@@ -270,6 +273,7 @@ def _build_sheet():
     sheet = g.store(sheet, A_GAP, gi["Gap"], 'FLOAT', 'POINT')
     sheet = g.store(sheet, A_SOLVER, gi["Solver"], 'INT', 'POINT')
     sheet = g.store(sheet, A_CLOSED, gi["Cyclic"], 'BOOLEAN', 'POINT')
+    sheet = g.store(sheet, A_FILL, gi["Fill Cut"], 'BOOLEAN', 'POINT')
     ends = [g.node("GeometryNodeSampleCurve", {"Curves": curve, "Factor": f},
                    mode='FACTOR').outputs["Position"] for f in (0.0, 1.0)]
     chord = g.vmath('NORMALIZE', g.vmath('SUBTRACT', ends[1], ends[0]))
@@ -297,6 +301,7 @@ def _build_cut():
     gap = g.sample0(sheet, A_GAP, 'FLOAT')
     solver = g.sample0(sheet, A_SOLVER, 'INT')
     closed = g.sample0(sheet, A_CLOSED, 'BOOLEAN')
+    fill = g.sample0(sheet, A_FILL, 'BOOLEAN')
 
     # Attributes are not transformed by Object Info, positions are: the chord
     # and the side (square to it, in the cutter's plane) are worked out in
@@ -381,11 +386,16 @@ def _build_cut():
     # indices). So the material lives on this modifier, kept in step with the
     # cutter's by the add-on.
     is_cut = g.named(A_CUT, 'BOOLEAN')
-    out = g.node("GeometryNodeSetMaterial", {
+    filled = g.node("GeometryNodeSetMaterial", {
         "Geometry": out, "Selection": is_cut, "Material": gi["Material"]}).outputs[0]
-    out = g.node("GeometryNodeStoreNamedAttribute", {
-        "Geometry": out, "Selection": is_cut, "Name": gi["UV Map"],
+    filled = g.node("GeometryNodeStoreNamedAttribute", {
+        "Geometry": filled, "Selection": is_cut, "Name": gi["UV Map"],
         "Value": g.named(A_UV, 'FLOAT_VECTOR')}, data_type='FLOAT2', domain='CORNER').outputs[0]
+    # Without Fill Cut the cut faces go, leaving each piece open along the
+    # cut. This branch skips Set Material, so no cut material slot is added.
+    opened = g.node("GeometryNodeDeleteGeometry", {"Geometry": out, "Selection": is_cut},
+                    domain='FACE', mode='ALL').outputs[0]
+    out = g.switch('GEOMETRY', fill, opened, filled)
     out = g.node("GeometryNodeRemoveAttribute", {
         "Geometry": out, "Pattern Mode": "Wildcard", "Name": "cococutter_*"}).outputs[0]
     ng.links.new(out, go.inputs[0])

@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Panel
 
-from .cutter import cut_modifiers, cutter_of, inp, sheet_modifier, targets_of
+from .cutter import cut_modifiers, cutter_of, get, has_input, inp, sheet_modifier, targets_of
 
 
 class _Sidebar:
@@ -106,7 +106,13 @@ class COCOCUTTER_PT_result(_CutterPanel, Panel):
         layout, cutter, mod = self.setup(context)
         layout.row().prop(cutter.coco_cutter, "keep", expand=True)
         layout.prop(inp(mod, "Gap"), "value", text="Preview Gap")
-        layout.prop(cutter.coco_cutter, "material")
+        if has_input(mod, "Fill Cut"):
+            layout.prop(inp(mod, "Fill Cut"), "value", text="Fill Cut")
+            col = layout.column()
+            col.active = get(mod, "Fill Cut")
+            col.prop(cutter.coco_cutter, "material")
+        else:
+            layout.prop(cutter.coco_cutter, "material")
         layout.prop(cutter.coco_cutter, "solver")
         layout.prop(context.scene.coco_cutter, "delete_cutter")
 
