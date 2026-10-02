@@ -68,13 +68,14 @@ brings its cutter's settings back.
 | | **Preview Gap** | Pulls side B away while you work, to see the cut. Cut puts it back |
 | | **Fill Cut** | Off leaves the pieces open along the cut, with no new faces |
 | | **Cut Material** | Material of the new faces. The next cutter starts with the last one used |
+| | **Vertex Group** | On Cut, put the cut's vertices in the vertex group **Cut**: the whole cut surface, or the open border without Fill Cut. Later cuts add to the same group |
 | | **Solver** | **Exact** works on any mesh. **Manifold** is much faster, for closed meshes without holes. **Float** is the fastest and least accurate |
 | | **Delete Cutter after Cut** | Off keeps the cutter for another cut |
 | Utilities | **Split Loose** | Separate every disconnected piece of the selected meshes |
 
 A new cutter starts with the last cutter's Resolution, Detail, Roughness,
-Distortion, Seed, Keep, Solver, Image, Image Rotation and Fill Cut, and its
-Cut Material. The settings measured in metres (Strength, Scale, Length, Preview
+Distortion, Seed, Keep, Solver, Image, Image Rotation, Fill Cut and Vertex Group,
+and its Cut Material. The settings measured in metres (Strength, Scale, Length, Preview
 Gap, Image Strength and Size) are worked out again from the size of the new
 objects, so the noise looks the same on a pebble and on a column; Cyclic
 follows the line you draw.

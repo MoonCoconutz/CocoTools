@@ -5,8 +5,8 @@
   along its normals with noise (and an optional image), and outputs that
   noisy sheet. Every setting of a cut lives on this modifier, so a cutter
   carries its own settings and Ctrl+Z covers them. The settings the cut
-  side needs (Keep, Gap, Solver, Cyclic, Fill Cut) travel to it as point
-  attributes.
+  side needs (Keep, Gap, Solver, Cyclic, Fill Cut, Vertex Group) travel to
+  it as point attributes.
 - **Cut** sits on each object being cut. It reads the cutter's sheet, closes
   it into a volume, and booleans the object against it: side A is the
   object minus the volume, side B the object minus everything else.
@@ -31,7 +31,7 @@ alone for the cutters already using them (see get_group).
 
 import bpy
 
-GROUP_VERSION = 4
+GROUP_VERSION = 5
 SHEET_NAME = "CocoCutter Sheet"
 CUT_NAME = "CocoCutter Cut"
 
@@ -44,11 +44,16 @@ A_GAP = "cococutter_gap"
 A_SOLVER = "cococutter_solver"
 A_CLOSED = "cococutter_closed"
 A_FILL = "cococutter_fill"
+A_GROUP = "cococutter_group"
 A_CHORD = "cococutter_chord"  # unit start-to-end direction, in cutter space
 A_U = "cococutter_u"          # 0 on the sheet's start column, 1 on its end column
 # Kept on the output in Keep Both, so the Cut operator can split the result
 # into its two pieces. The operator removes it.
 A_SIDE = "coco_cut_side"
+# With Vertex Group on, marks the vertices of the cut faces (the open border
+# without Fill Cut), so the Cut operator can put them in a vertex group. The
+# operator removes it.
+A_VERTS = "coco_cut_vertices"
 
 KEEP_BOTH, KEEP_A, KEEP_B = 0, 1, 2
 SOLVERS = ('EXACT', 'MANIFOLD', 'FLOAT')
@@ -74,7 +79,13 @@ SHEET_INPUTS = (
     ("Gap", 'NodeSocketFloat', 0.0, 0.0, 1e6, 'DISTANCE'),
     ("Solver", 'NodeSocketInt', 0, 0, 2, 'NONE'),
     ("Fill Cut", 'NodeSocketBool', True, None, None, None),
+    ("Vertex Group", 'NodeSocketBool', False, None, None, None),
 )
+
+SHEET_DESCRIPTIONS = {
+    "Fill Cut": "Make faces along the cut. Off leaves the pieces open there",
+    "Vertex Group": 'On Cut, put the cut\'s vertices in the vertex group "Cut"',
+}
 
 
 class _Graph:
@@ -169,7 +180,8 @@ def _new_group(name):
 def _build_sheet():
     ng = _new_group(SHEET_NAME)
     for name, stype, default, lo, hi, subtype in SHEET_INPUTS:
-        s = ng.interface.new_socket(name, in_out='INPUT', socket_type=stype)
+        s = ng.interface.new_socket(name, in_out='INPUT', socket_type=stype,
+                                    description=SHEET_DESCRIPTIONS.get(name, ""))
         if subtype and subtype != 'NONE':
             s.subtype = subtype
         if default is not None:
@@ -274,6 +286,7 @@ def _build_sheet():
     sheet = g.store(sheet, A_SOLVER, gi["Solver"], 'INT', 'POINT')
     sheet = g.store(sheet, A_CLOSED, gi["Cyclic"], 'BOOLEAN', 'POINT')
     sheet = g.store(sheet, A_FILL, gi["Fill Cut"], 'BOOLEAN', 'POINT')
+    sheet = g.store(sheet, A_GROUP, gi["Vertex Group"], 'BOOLEAN', 'POINT')
     ends = [g.node("GeometryNodeSampleCurve", {"Curves": curve, "Factor": f},
                    mode='FACTOR').outputs["Position"] for f in (0.0, 1.0)]
     chord = g.vmath('NORMALIZE', g.vmath('SUBTRACT', ends[1], ends[0]))
@@ -302,6 +315,7 @@ def _build_cut():
     solver = g.sample0(sheet, A_SOLVER, 'INT')
     closed = g.sample0(sheet, A_CLOSED, 'BOOLEAN')
     fill = g.sample0(sheet, A_FILL, 'BOOLEAN')
+    group = g.sample0(sheet, A_GROUP, 'BOOLEAN')
 
     # Attributes are not transformed by Object Info, positions are: the chord
     # and the side (square to it, in the cutter's plane) are worked out in
@@ -386,6 +400,10 @@ def _build_cut():
     # indices). So the material lives on this modifier, kept in step with the
     # cutter's by the add-on.
     is_cut = g.named(A_CUT, 'BOOLEAN')
+    # A vertex is marked when any face around it is a cut face. Stored
+    # before Fill Cut deletes those faces, so what survives is the border.
+    marked = g.store(out, A_VERTS, is_cut, 'BOOLEAN', 'POINT')
+    out = g.switch('GEOMETRY', group, out, marked)
     filled = g.node("GeometryNodeSetMaterial", {
         "Geometry": out, "Selection": is_cut, "Material": gi["Material"]}).outputs[0]
     filled = g.node("GeometryNodeStoreNamedAttribute", {

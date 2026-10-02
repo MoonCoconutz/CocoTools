@@ -143,6 +143,7 @@ class COCOCUTTER_PG_scene(PropertyGroup):
     image: PointerProperty(type=bpy.types.Image)
     image_rotation: FloatProperty()
     fill: BoolProperty(default=True)
+    vertex_group: BoolProperty(default=False)
 
 
 # Sheet input name -> attribute on COCOCUTTER_PG_scene.
@@ -150,6 +151,7 @@ _CARRIED = {
     "Resolution": "resolution", "Detail": "detail", "Roughness": "roughness",
     "Distortion": "distortion", "Seed": "seed", "Keep": "keep", "Solver": "solver",
     "Image": "image", "Image Rotation": "image_rotation", "Fill Cut": "fill",
+    "Vertex Group": "vertex_group",
 }
 
 

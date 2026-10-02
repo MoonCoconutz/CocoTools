@@ -12,6 +12,7 @@ from .cutter import (MODIFIER_NAME, cut_modifiers, cutter_of, get, is_cutter, pu
                      remember, sheet_modifier, targets_of)
 
 INSIDE_MATERIAL = "CocoCutter Inside"
+VERTEX_GROUP = "Cut"
 
 # Events that move the view: passed through while not drawing a stroke, so
 # the view can be orbited, zoomed or snapped to an axis between strokes.
@@ -371,6 +372,20 @@ def _delete_faces(mesh, flags, value):
     mesh.update()
 
 
+def _save_vertex_group(ob):
+    """Put the vertices the Cut group marked into the vertex group "Cut",
+    adding to what earlier cuts left there."""
+    mesh = ob.data
+    attr = mesh.attributes.get(nodes.A_VERTS)
+    if attr is None:
+        return
+    flags = [False] * len(mesh.vertices)
+    attr.data.foreach_get("value", flags)
+    mesh.attributes.remove(attr)
+    group = ob.vertex_groups.get(VERTEX_GROUP) or ob.vertex_groups.new(name=VERTEX_GROUP)
+    group.add([i for i, flag in enumerate(flags) if flag], 1.0, 'REPLACE')
+
+
 def _split_sides(ob):
     """Turn a Keep Both result into two objects; returns the new one."""
     mesh = ob.data
@@ -430,6 +445,7 @@ class COCOCUTTER_OT_cut(Operator):
                 failed.append(f"{ob.name}: {str(err).strip().removeprefix('Error: ')}")
                 continue
             results.append(ob)
+            _save_vertex_group(ob)
             other = _split_sides(ob)
             if other is not None:
                 results.append(other)

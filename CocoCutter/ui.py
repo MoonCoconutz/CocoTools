@@ -113,6 +113,8 @@ class COCOCUTTER_PT_result(_CutterPanel, Panel):
             col.prop(cutter.coco_cutter, "material")
         else:
             layout.prop(cutter.coco_cutter, "material")
+        if has_input(mod, "Vertex Group"):
+            layout.prop(inp(mod, "Vertex Group"), "value", text="Vertex Group")
         layout.prop(cutter.coco_cutter, "solver")
         layout.prop(context.scene.coco_cutter, "delete_cutter")
 
