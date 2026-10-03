@@ -138,11 +138,34 @@ _classes = (
 )
 
 
-def register():
+def tab_name():
+    """The sidebar tab from the add-on preferences (default "CocoCutter")."""
+    addon = bpy.context.preferences.addons.get(__package__)
+    return addon.preferences.tab_name if addon is not None else "CocoCutter"
+
+
+_registered = []
+
+
+def update_tab(_self=None, _context=None):
+    """Re-register the panels under the current tab name (none if empty)."""
+    for cls in reversed(_registered):
+        bpy.utils.unregister_class(cls)
+    _registered.clear()
+    name = tab_name().strip()
+    if not name:
+        return
     for cls in _classes:
+        cls.bl_category = name
         bpy.utils.register_class(cls)
+        _registered.append(cls)
+
+
+def register():
+    update_tab()
 
 
 def unregister():
-    for cls in reversed(_classes):
+    for cls in reversed(_registered):
         bpy.utils.unregister_class(cls)
+    _registered.clear()

@@ -86,3 +86,9 @@ the object's active UV map.
 Cut applies every modifier above the cut too, so the result matches what
 you saw; modifiers below it stay. An object with shape keys cannot have
 modifiers applied: Cut skips it with a warning and keeps the cutter.
+
+## Preferences
+
+**Sidebar Tab** (Preferences ▸ Add-ons ▸ CocoCutter) sets the name of the
+sidebar tab the panels are in. Clear it to remove the panels from the
+sidebar. The button beside it puts the default name back.

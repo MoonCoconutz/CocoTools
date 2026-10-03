@@ -5,13 +5,14 @@ if "bpy" in locals():
     importlib.reload(nodes)
     importlib.reload(cutter)
     importlib.reload(operators)
+    importlib.reload(prefs)
     importlib.reload(ui)
 else:
-    from . import nodes, cutter, operators, ui
+    from . import nodes, cutter, operators, prefs, ui
 
 import bpy  # noqa: E402
 
-_modules = (cutter, operators, ui)
+_modules = (cutter, operators, prefs, ui)
 
 
 def register():
