@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoUVs"
 name = "CocoUVs"
-version = "1.2.3"
+version = "1.3.0"
 tagline = "UV maps, texel density, trims and UV checks in the UV Editor"
 maintainer = "MoonCoconutz"
 type = "add-on"

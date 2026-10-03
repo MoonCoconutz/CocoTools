@@ -50,6 +50,12 @@ def _checker_changed(self, context):
     checker._settings_changed(self, context)
 
 
+def _update_seams_changed(self, context):
+    # Records the borders as they are now, so the next change is noticed
+    from . import seams
+    seams.request_follow()
+
+
 class COCOUVS_Settings(PropertyGroup):
     checker_map: EnumProperty(
         name="Checker Map",
@@ -66,8 +72,10 @@ class COCOUVS_Settings(PropertyGroup):
     )
     update_seams: BoolProperty(
         name="Update Seams",
-        description="When a UV map is picked in the list, replace the seams with that map's island borders",
+        description="Keep the seams on the active UV map's island borders: when a map is picked "
+        "or removed in the list, and in Edit Mode whenever the islands change (Rip, Unwrap, Stitch...)",
         default=False,
+        update=_update_seams_changed,
     )
     trim_rotate: BoolProperty(
         name="Auto-rotate",

@@ -1,0 +1,5 @@
+# The dev checkout names every add-on "<Name>_dev" so Blender shows which copy
+# is running; commits and the published feed keep the plain name. Needs the
+# filter defined once per clone (see "CocoTools development" in the vault);
+# without it nothing happens.
+*/blender_manifest.toml filter=devname

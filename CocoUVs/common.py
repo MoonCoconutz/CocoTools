@@ -20,42 +20,46 @@ UV_KEY_SCALE = 1e5
 
 # "Done" marks: a hidden boolean face attribute per UV map, saved in the .blend.
 DONE_PREFIX = ".cocouvs_done."
+# Seams Update: a hidden boolean edge attribute per UV map, holding the island
+# borders the seams were last set from. It lives in the mesh so that it comes
+# back with Ctrl+Z, like the seams and the UVs it is compared with.
+SEAM_SYNC_PREFIX = ".cocouvs_seams."
 
 
 def done_layer_name(uv_name):
     return DONE_PREFIX + uv_name
 
 
+def seam_sync_name(uv_name):
+    return SEAM_SYNC_PREFIX + uv_name
+
+
+def _per_map_names(uv_name):
+    return (done_layer_name(uv_name), seam_sync_name(uv_name))
+
+
 def rename_uv_map(me, old, new):
-    """Rename a UV map and the Done marks that belong to it."""
+    """Rename a UV map and the hidden attributes that belong to it."""
     layer = me.uv_layers.get(old)
     if layer is None:
         return
     layer.name = new
-    done = me.attributes.get(done_layer_name(old))
-    if done is not None:
-        done.name = done_layer_name(layer.name)
+    for before, after in zip(_per_map_names(old), _per_map_names(layer.name)):
+        attribute = me.attributes.get(before)
+        if attribute is not None:
+            attribute.name = after
 
 
-def seams_from_uv_map(obj, uv_name):
-    """Replace the mesh's seams with the island borders of `uv_name`: an edge
-    is a seam where the faces on either side do not share UVs at both ends.
-    Mesh boundary edges are left unmarked, as Blender's Seams from Islands."""
-    me = obj.data
-    in_edit = obj.mode == 'EDIT'
-    bm = bmesh.from_edit_mesh(me) if in_edit else bmesh.new()
-    if not in_edit:
-        bm.from_mesh(me)
-    uv = bm.loops.layers.uv.get(uv_name)
-    if uv is None:
-        if not in_edit:
-            bm.free()
-        return
+def _uv_borders(bm, uv):
+    """Per edge, in bm.edges order: is it an island border of `uv`? An edge is
+    one where the faces on either side do not share UVs at both ends. Mesh
+    boundary edges are not, as in Blender's Seams from Islands."""
     limit = UV_CONNECT_LIMIT
 
     def same(a, b):
         return abs(a.x - b.x) < limit and abs(a.y - b.y) < limit
 
+    borders = []
     for edge in bm.edges:
         loops = list(edge.link_loops)
         split = False
@@ -70,7 +74,35 @@ def seams_from_uv_map(obj, uv_name):
             if not (same(a0, b0) and same(a1, b1)):
                 split = True
                 break
-        edge.seam = split
+        borders.append(split)
+    return borders
+
+
+def _set_seams(bm, uv_name, borders, seams=True):
+    """Record `borders` as the ones the seams follow, and make them the seams."""
+    name = seam_sync_name(uv_name)
+    layer = bm.edges.layers.bool.get(name)
+    if layer is None:
+        layer = bm.edges.layers.bool.new(name)
+    for edge, border in zip(bm.edges, borders):
+        edge[layer] = border
+        if seams:
+            edge.seam = border
+
+
+def seams_from_uv_map(obj, uv_name):
+    """Replace the mesh's seams with the island borders of `uv_name`."""
+    me = obj.data
+    in_edit = obj.mode == 'EDIT'
+    bm = bmesh.from_edit_mesh(me) if in_edit else bmesh.new()
+    if not in_edit:
+        bm.from_mesh(me)
+    uv = bm.loops.layers.uv.get(uv_name)
+    if uv is None:
+        if not in_edit:
+            bm.free()
+        return
+    _set_seams(bm, uv_name, _uv_borders(bm, uv))
     if in_edit:
         bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
     else:
@@ -78,10 +110,42 @@ def seams_from_uv_map(obj, uv_name):
         bm.free()
 
 
+def follow_uv_islands(obj, uv_name):
+    """Seams Update in Edit Mode: replace the seams with the island borders of
+    `uv_name` if those borders changed since the seams were last set from
+    them. Returns whether it did.
+
+    Borders that did not change leave the seams alone, so a seam marked by
+    hand stays until the islands change (it is there to be unwrapped). A map
+    seen for the first time on a mesh that has seams only has its borders
+    recorded: they may be hand-made ones waiting for an unwrap. A mesh with
+    no seam at all has nothing to lose and gets them straight away - the
+    default cube's cross is cut along edges that were never marked."""
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+    uv = bm.loops.layers.uv.get(uv_name)
+    if uv is None:
+        return False
+    borders = _uv_borders(bm, uv)
+    layer = bm.edges.layers.bool.get(seam_sync_name(uv_name))
+    if layer is None:
+        unmarked = not any(edge.seam for edge in bm.edges)
+        _set_seams(bm, uv_name, borders, seams=unmarked)
+        bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
+        return unmarked and any(borders)
+    if all(edge[layer] == border for edge, border in zip(bm.edges, borders)):
+        return False
+    _set_seams(bm, uv_name, borders)
+    bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
+    return True
+
+
 def remove_done_marks(me, uv_name):
-    done = me.attributes.get(done_layer_name(uv_name))
-    if done is not None:
-        me.attributes.remove(done)
+    """Remove the hidden attributes that belong to a UV map."""
+    for name in _per_map_names(uv_name):
+        attribute = me.attributes.get(name)
+        if attribute is not None:
+            me.attributes.remove(attribute)
 
 
 def _editing(view_layer):
