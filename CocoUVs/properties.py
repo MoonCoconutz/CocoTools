@@ -86,7 +86,14 @@ class COCOUVS_Settings(PropertyGroup):
         name="Randomize",
         description="Shift each island a random amount along a repeating trim, "
         "so repeated pieces show different parts of it",
-        default=False,
+        default=True,
+    )
+    trim_stack: BoolProperty(
+        name="Stack",
+        description="Put every island at the start of the trim, on top of each other, instead of side by side: "
+        "many long islands then stay near the trim rather than running far past it. "
+        "With Randomize, each is scattered over a few lengths of the trim (Spread, in the redo panel)",
+        default=True,
     )
     uv_index: IntProperty(
         name="Active UV Map",

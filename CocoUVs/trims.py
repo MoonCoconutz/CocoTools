@@ -21,7 +21,7 @@ import blf
 import bpy
 import gpu
 import numpy as np
-from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatVectorProperty,
+from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatProperty, FloatVectorProperty,
                        IntProperty, StringProperty)
 from bpy.types import Operator, PropertyGroup, UIList
 from gpu_extras.batch import batch_for_shader
@@ -29,9 +29,9 @@ from gpu_extras.batch import batch_for_shader
 from . import common
 
 TILING_ITEMS = [
-    ('HORIZONTAL', "Horizontal", "The trim repeats left to right: islands are fitted to its height", 'ARROW_LEFTRIGHT', 0),
-    ('VERTICAL', "Vertical", "The trim repeats bottom to top: islands are fitted to its width", 'SORT_DESC', 1),
-    ('NONE', "None", "The area does not repeat: islands are fitted inside it", 'CANCEL', 2),
+    ('HORIZONTAL', "Horizontal", "The trim repeats left to right: islands are fitted to its height", 'EVENT_RIGHT_ARROW', 0),
+    ('VERTICAL', "Vertical", "The trim repeats top to bottom: islands are fitted to its width", 'EVENT_DOWN_ARROW', 1),
+    ('NONE', "None", "The area does not repeat: islands are fitted inside it", 'MESH_PLANE', 2),
 ]
 
 HANDLE_PX = 7          # how close (in pixels, before UI scale) counts as on an edge
@@ -40,8 +40,28 @@ GRID_MIN_PX = 12       # the snap grid is never finer than this on screen
 MIN_NEW_PX = 4         # a smaller drag on empty space is a click, not a new area
 
 STATUS = ("Trim areas: drag empty space = new area  |  drag edge or corner = resize  |  "
-          "drag inside = move  |  Ctrl = snap to vertices  |  Shift = snap to grid  |  "
-          "X = remove  |  Esc / right-click = done")
+          "drag inside or G = move  |  S = scale  |  R = turn 90°  |  Ctrl = snap to vertices  |  "
+          "Shift = snap to grid  |  X = remove  |  Q / Esc / right-click = done")
+
+# While drawing, only these reach the UV Editor from its canvas: looking
+# around, undo, and the sidebars. Every other key or button is kept, so G
+# cannot move the UVs under the areas being drawn.
+_DRAW_PASS_THROUGH = frozenset({
+    'MIDDLEMOUSE', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE',
+    'TRACKPADPAN', 'TRACKPADZOOM', 'MOUSEROTATE', 'MOUSESMARTZOOM',
+    'HOME', 'NUMPAD_PERIOD', 'NUMPAD_PLUS', 'NUMPAD_MINUS', 'F', 'N', 'T',
+    'LEFT_ALT', 'RIGHT_ALT', 'LEFT_CTRL', 'RIGHT_CTRL', 'LEFT_SHIFT', 'RIGHT_SHIFT', 'OSKEY',
+    'NONE', 'WINDOW_DEACTIVATE', 'ACTIONZONE_AREA', 'ACTIONZONE_REGION', 'ACTIONZONE_FULLSCREEN',
+})
+
+
+def _passes_while_drawing(event):
+    kind = event.type
+    if kind in _DRAW_PASS_THROUGH or kind.startswith(('TIMER', 'NDOF')):
+        return True
+    if event.alt and kind in {'LEFTMOUSE', 'RIGHTMOUSE'}:
+        return True   # Alt + mouse is my view navigation
+    return kind == 'Z' and event.ctrl   # undo, redo
 
 # Draw mode state, shared with the overlay and the panel (Python only).
 _state = {"running": False, "stop": False, "drag": None, "preview": None, "snap": None}
@@ -369,9 +389,12 @@ def _long_axis(area_size, tiling):
     return 0 if area_size[0] >= area_size[1] else 1
 
 
-def fit_islands(island_pts, rect, tiling, method, rotate, randomize, seed=0):
+def fit_islands(island_pts, rect, tiling, method, rotate, randomize, seed=0, stack=False, spread=1.0):
     """Place islands (a list of (n, 2) UV arrays) into `rect`, side by side
-    along the area's length from its start. Returns the new arrays.
+    along the area's length from its start, or with `stack` all at its start,
+    on top of each other. Returns the new arrays. Stacked islands are
+    randomized over `spread` lengths of the area, so they can be told apart;
+    side by side, one length is enough to show another part of the trim.
 
     TILE: scale to the area's cross size (height for a horizontal trim), so the
           island may run past the area's end - it repeats there. A non-tiling
@@ -427,11 +450,12 @@ def fit_islands(island_pts, rect, tiling, method, rotate, randomize, seed=0):
         offset[along] = start[along] + cursor
         if randomize and tiling != 'NONE' and size[along] > 0:
             # Any shift along a repeating trim shows a different part of it.
-            offset[along] += rng.uniform(0.0, size[along])
+            offset[along] += rng.uniform(0.0, size[along] * (spread if stack else 1.0))
         # Centred across the area (exact for TILE and FILL, which fill it).
         offset[cross] = start[cross] + (size[cross] - new_dims[cross]) * 0.5
         placed[i] = pts + offset
-        cursor += new_dims[along]
+        if not stack:
+            cursor += new_dims[along]
     out.extend(placed)
     return out
 
@@ -584,13 +608,13 @@ FIT_METHODS = [
 
 def _fit_description(method):
     return next(desc for key, _name, desc in FIT_METHODS if key == method) + (
-        ". Several islands are lined up side by side")
+        ". Several islands are stacked at the start of the trim, or lined up side by side with Stack off")
 
 
 class _TrimFit:
     """Fit + Tile, Fit Inside, Fill, Move: one operator per method (see
-    _TrimMove). Auto-rotate, Randomize and Seed stay settings, in the redo
-    panel."""
+    _TrimMove). Auto-rotate, Randomize, Stack and Seed stay settings, in the
+    redo panel."""
     bl_options = {'REGISTER', 'UNDO'}
     method = 'TILE'
 
@@ -599,6 +623,13 @@ class _TrimFit:
     randomize: BoolProperty(name="Randomize",
                             description="Shift each island a random amount along a repeating trim, "
                                         "so repeated pieces show different parts of it")
+    stack: BoolProperty(name="Stack",
+                        description="Put every island at the start of the trim, on top of each other, "
+                                    "instead of side by side")
+    spread: FloatProperty(name="Spread",
+                          description="With Stack and Randomize, how far the islands are scattered along the trim, "
+                                      "in lengths of the trim",
+                          default=5.0, min=1.0, soft_max=10.0, step=50, precision=1)
     seed: IntProperty(name="Seed", description="Change it for a different random layout", default=0, min=0)
 
     @classmethod
@@ -609,6 +640,7 @@ class _TrimFit:
         settings = context.scene.cocouvs
         self.rotate = settings.trim_rotate
         self.randomize = settings.trim_randomize
+        self.stack = settings.trim_stack
         self.seed = random.randrange(10000) if self.randomize else 0
         return self.execute(context)
 
@@ -620,7 +652,7 @@ class _TrimFit:
             return {'CANCELLED'}
         pts = [np.array([loop[uv].uv[:] for loop in loops]) for _o, _bm, uv, loops in islands]
         placed = fit_islands(pts, tuple(area.rect), area.tiling, self.method,
-                             self.rotate, self.randomize, self.seed)
+                             self.rotate, self.randomize, self.seed, self.stack, self.spread)
         touched = {}
         for (obj, _bm, uv, loops), new in zip(islands, placed):
             for loop, p in zip(loops, new):
@@ -770,8 +802,9 @@ class COCOUVS_OT_trim_draw(Operator):
     bl_label = "Draw Trim Areas"
     bl_description = ("Draw and edit trim areas in the UV Editor: drag on empty space for a new area, "
                       "drag an area's edges or corners to resize it, drag its inside to move it. "
-                      "Ctrl snaps to texture pixels and UV vertices, X removes the picked area, "
-                      "Esc or right-click finishes")
+                      "G moves the picked area, S scales it, R turns it 90 degrees, X removes it. "
+                      "Ctrl snaps to UV vertices, Shift to the grid. The UVs cannot be edited "
+                      "meanwhile. Q, Esc or right-click finishes")
 
     toggle: BoolProperty(default=True, options={'HIDDEN', 'SKIP_SAVE'},
                          description="Pressing it again while drawing finishes draw mode")
@@ -1009,6 +1042,38 @@ class COCOUVS_OT_trim_draw(Operator):
                           "orig": tuple(mat.cocouvs_trims[index].rect), "start": (u, v)}
         mat.cocouvs_trim_index = index
 
+    def _grab(self, context, mx, my, kind='MOVE'):
+        """G or S: the picked area follows the mouse (or scales about its
+        centre) until a click (or Enter) confirms it; Esc or right-click puts
+        it back."""
+        mat = material(context)
+        index = mat.cocouvs_trim_index
+        if not 0 <= index < len(mat.cocouvs_trims):
+            return
+        self._verts = _uv_vertices(context) if context.mode == 'EDIT_MESH' else np.zeros((0, 2))
+        _state["snap"] = None
+        _state["drag"] = {"kind": kind, "index": index, "sides": None, "grab": True,
+                          "orig": tuple(mat.cocouvs_trims[index].rect),
+                          "start": self._region.view2d.region_to_view(mx, my)}
+        context.window.cursor_set('SCROLL_XY')
+
+    def _turn(self, context):
+        """R: turn the picked area a quarter turn about its centre. Areas
+        are upright rectangles, so its width and height swap, and so does
+        the way it repeats."""
+        mat = material(context)
+        index = mat.cocouvs_trim_index
+        if not 0 <= index < len(mat.cocouvs_trims):
+            return
+        area = mat.cocouvs_trims[index]
+        u0, v0, u1, v1 = area.rect
+        cu, cv, hw, hh = (u0 + u1) / 2, (v0 + v1) / 2, (u1 - u0) / 2, (v1 - v0) / 2
+        with _quietly():
+            area.rect = (cu - hh, cv - hw, cu + hh, cv + hw)
+            area.tiling = {'HORIZONTAL': 'VERTICAL', 'VERTICAL': 'HORIZONTAL'}.get(area.tiling, area.tiling)
+        commit("Turn Trim Area")
+        _redraw(context)
+
     def _update(self, context, mx, my, vertex, grid):
         drag = _state["drag"]
         _state["snap"] = None
@@ -1029,6 +1094,14 @@ class COCOUVS_OT_trim_draw(Operator):
             r = [r[0] + du, r[1] + dv, r[2] + du, r[3] + dv]
             if vertex or grid:
                 r = list(self._snap_move(context, r, vertex, grid))
+        elif drag["kind"] == 'SCALE':
+            # By how much further from the centre the mouse is than at the start
+            cu, cv = (r[0] + r[2]) / 2, (r[1] + r[3]) / 2
+            cx, cy = _uv_to_px(self._region, cu, cv)
+            sx, sy = _uv_to_px(self._region, *drag["start"])
+            factor = max(math.hypot(mx - cx, my - cy), 1.0) / max(math.hypot(sx - cx, sy - cy), 1.0)
+            hw, hh = (r[2] - r[0]) / 2 * factor, (r[3] - r[1]) / 2 * factor
+            r = [cu - hw, cv - hh, cu + hw, cv + hh]
         else:
             sides = drag["sides"]
             if vertex or grid:
@@ -1062,7 +1135,7 @@ class COCOUVS_OT_trim_draw(Operator):
                     add_area(material(context), preview)
                     commit("Add Trim Area")
         elif tuple(material(context).cocouvs_trims[drag["index"]].rect) != drag["orig"]:
-            commit("Move Trim Area" if drag["kind"] == 'MOVE' else "Resize Trim Area")
+            commit({'MOVE': "Move Trim Area", 'SCALE': "Scale Trim Area"}.get(drag["kind"], "Resize Trim Area"))
         else:
             commit("Pick Trim Area")
         _redraw(context)
@@ -1098,7 +1171,12 @@ class COCOUVS_OT_trim_draw(Operator):
                 context.window.cursor_set('DEFAULT')
             return {'PASS_THROUGH'}
 
-        if event.type == 'LEFTMOUSE':
+        grabbing = drag is not None and drag.get("grab")
+        if event.type == 'LEFTMOUSE' and not (event.alt and drag is None):
+            if grabbing:
+                if event.value in {'PRESS', 'DOUBLE_CLICK'}:
+                    self._release(context)
+                return {'RUNNING_MODAL'}
             if event.value in {'PRESS', 'DOUBLE_CLICK'} and inside and drag is None:
                 self._press(context, mx, my, event.ctrl, event.shift)
                 _redraw(context)
@@ -1109,13 +1187,34 @@ class COCOUVS_OT_trim_draw(Operator):
             return {'RUNNING_MODAL'} if inside or drag is not None else {'PASS_THROUGH'}
 
         if not inside and drag is None:
+            # Q finishes from anywhere in this UV Editor, its sidebar included
+            area = self._area
+            if (event.type == 'Q' and event.value == 'PRESS'
+                    and not (event.ctrl or event.alt or event.shift or event.oskey)
+                    and area.x <= event.mouse_x < area.x + area.width
+                    and area.y <= event.mouse_y < area.y + area.height):
+                return self._finish(context)
             return {'PASS_THROUGH'}
 
-        if event.type in {'ESC', 'RIGHTMOUSE'} and event.value == 'PRESS':
+        if grabbing and event.type in {'RET', 'NUMPAD_ENTER'} and event.value == 'PRESS':
+            self._release(context)
+            return {'RUNNING_MODAL'}
+
+        if event.type in {'ESC', 'RIGHTMOUSE'} and event.value == 'PRESS' and not (event.alt and drag is None):
             if drag is not None:
                 self._cancel_drag(context)
                 return {'RUNNING_MODAL'}
             return self._finish(context)
+
+        if drag is None and event.value == 'PRESS' and not (event.ctrl or event.alt or event.shift or event.oskey):
+            if event.type == 'Q':
+                return self._finish(context)
+            if event.type in {'G', 'S'}:
+                self._grab(context, mx, my, 'MOVE' if event.type == 'G' else 'SCALE')
+                return {'RUNNING_MODAL'}
+            if event.type == 'R':
+                self._turn(context)
+                return {'RUNNING_MODAL'}
 
         if event.type in {'X', 'DEL'} and event.value == 'PRESS' and drag is None:
             mat = material(context)
@@ -1128,8 +1227,9 @@ class COCOUVS_OT_trim_draw(Operator):
                 _redraw(context)
             return {'RUNNING_MODAL'}
 
-        # Anything else (navigation, zoom) goes to the UV Editor as usual.
-        return {'PASS_THROUGH'}
+        # Looking around goes to the UV Editor as usual; editing does not.
+        undo = event.type == 'Z'
+        return {'PASS_THROUGH'} if _passes_while_drawing(event) and not (undo and drag is not None) else {'RUNNING_MODAL'}
 
 
 def is_drawing():

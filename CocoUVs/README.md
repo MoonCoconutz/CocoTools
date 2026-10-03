@@ -108,10 +108,11 @@ Areas are saved in the .blend.
 | **Fit Inside** | Scale the islands, keeping proportions, until each fits inside the area |
 | **Fill** | Stretch the islands to exactly the area's size |
 | **Move** | Move the islands into the area without scaling them |
-| **Auto-rotate** | Turn islands 90° when needed so their long side runs along the trim |
-| **Randomize** | Shift each island a random amount along a repeating trim, so repeated pieces show different parts of it. Change **Seed** in the redo panel for another layout |
+| **Rotate** (Auto-rotate) | Turn islands 90° when needed so their long side runs along the trim |
+| **Random** (Randomize) | Shift each island a random amount along a repeating trim, so repeated pieces show different parts of it. On by default. Change **Seed** in the redo panel for another layout |
+| **Stack** | Put every island at the start of the trim, on top of each other, instead of side by side, so many long islands stay near the trim instead of running far past it. With Randomize they are scattered over a few lengths of the trim: **Spread**, in the redo panel, sets how far (5 by default). On by default |
 
-Several selected islands are lined up side by side from the start of the area
+With Stack off, several selected islands are lined up side by side from the start of the area
 (left, or bottom for a vertical trim), in the order they already sit, and
 keep going past the end if they are longer than the area. Across the area they
 are centred.
@@ -130,8 +131,14 @@ are centred.
   size of the Texel Density section), in steps of 1, 2, 4 ... pixels that
   follow the zoom, so the grid is always big enough to see. It is drawn
   faintly while you snap. Ctrl+Shift: vertices first, the grid otherwise.
+- **G** moves the picked area with the mouse and **S** scales it about its
+  centre: click or Enter to confirm, Esc or right-click to put it back.
+- **R** turns the picked area a quarter turn about its centre: its width and
+  height swap, and a Horizontal trim becomes Vertical (and back).
 - **X** or **Delete** removes the picked area.
-- **Esc**, right-click or the Draw Areas button finishes. Esc or right-click
+- While drawing, the UVs cannot be edited from the UV Editor: G, S and R act
+  on the picked area, the other editing keys do nothing. Zooming, panning and undo still work.
+- **Q**, **Esc**, right-click or the Draw Areas button finishes. Esc or right-click
   during a drag cancels just that drag.
 - Zooming and panning work as usual; the sidebar and toolbar keep working.
 - **Ctrl+Z** undoes area changes too, in Edit Mode as in Object Mode. Each

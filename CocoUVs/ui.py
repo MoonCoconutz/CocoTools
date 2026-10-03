@@ -7,6 +7,8 @@ from bpy.types import Panel
 
 from . import checker, common, debug, heatmap, trims, uv_sets
 
+PIN_ROOM = 3.0   # separator factor: the width of the header pin
+
 
 class _CocoUVsPanel:
     bl_space_type = 'IMAGE_EDITOR'
@@ -18,6 +20,13 @@ class _CocoUVsPanel:
         return context.space_data.mode == 'UV' and common.has_targets(context)
 
 
+def _room_for_pin(panel):
+    """A pinned panel gets a pin drawn at the right end of its header, on top
+    of whatever draw_header_preset put there: leave it its room."""
+    if panel.use_pin:
+        panel.layout.separator(factor=PIN_ROOM)
+
+
 class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
     bl_idname = "COCOUVS_PT_uv_maps"
     bl_label = "UV Maps"
@@ -25,6 +34,7 @@ class COCOUVS_PT_uv_maps(_CocoUVsPanel, Panel):
     def draw_header_preset(self, context):
         # Right-hand end of the panel header.
         self.layout.prop(context.scene.cocouvs, "update_seams", text="Seams Update")
+        _room_for_pin(self)
 
     def draw(self, context):
         layout = self.layout
@@ -117,6 +127,7 @@ class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
                          emboss=False)
         # A little room after it, so it sits left of the header's drag handle.
         self.layout.separator(factor=1.5)
+        _room_for_pin(self)
 
     def draw(self, context):
         layout = self.layout
@@ -159,8 +170,10 @@ class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
         row.operator("cocouvs.trim_move_islands", text="Move")
         row = layout.row()
         settings = context.scene.cocouvs
-        row.prop(settings, "trim_rotate")
-        row.prop(settings, "trim_randomize")
+        # Short labels: three full names are cut off at the sidebar's usual width
+        row.prop(settings, "trim_rotate", text="Rotate")
+        row.prop(settings, "trim_randomize", text="Random")
+        row.prop(settings, "trim_stack")
 
 
 class COCOUVS_PT_debug(_CocoUVsPanel, Panel):
