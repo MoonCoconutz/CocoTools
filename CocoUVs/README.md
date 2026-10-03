@@ -179,4 +179,5 @@ toggles themselves are not offered.
 ## Preferences
 
 **Sidebar Tab** sets the name of the sidebar tab the panels are in. Clear it
-to remove the panels from the sidebar (Alt+T keeps working).
+to remove the panels from the sidebar (Alt+T keeps working). The button
+beside it puts the default name back.
