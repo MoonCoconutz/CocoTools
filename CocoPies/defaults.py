@@ -289,7 +289,8 @@ def default_pie_definitions(script_paths):
                  "command": "bpy.ops.uv.mio3_select_edge()"},
             ],
         },
-        # Mio3 UV throughout; only the classic unwrap is stock Blender.
+        # Mio3 UV, except the classic unwrap (stock Blender) and the two axis
+        # unwraps (CocoUVs' Unfold Along U / V, Maya's buttons of that name).
         {
             "name": "UV Unwrap",
             "idname": "COCOPIE_MT_uv_unwrap",
@@ -316,9 +317,9 @@ def default_pie_definitions(script_paths):
                 {"label": "Gridify", "icon": 'MESH_GRID', "position": 5, "enabled": True,
                  "command": "bpy.ops.uv.mio3_gridify(ratio_influence=0.0)"},
                 {"label": "UV Unwrap X", "icon": 'AXIS_SIDE', "position": 6, "enabled": True,
-                 "command": "bpy.ops.uv.mio3_unwrap(axis='X')"},
+                 "command": "bpy.ops.cocouvs.unfold_along_u()"},
                 {"label": "UV Unwrap Y", "icon": 'AXIS_FRONT', "position": 7, "enabled": True,
-                 "command": "bpy.ops.uv.mio3_unwrap(axis='Y')"},
+                 "command": "bpy.ops.cocouvs.unfold_along_v()"},
             ],
         },
         # Mesh-edit-mode UV prep, in the 3D viewport rather than the UV

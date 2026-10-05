@@ -87,7 +87,7 @@ configure anything:
 | **Workspace Menu** | `Shift + T` | Global | Jump to Shading, Layout, UV Editing, Geometry Nodes, Sculpting, Scripting, Modeling or Rendering. A tap alternates Layout / UV Editing |
 | **Edge Info** | `Alt + 2` | Global | Toggle the sharp / seam / crease / bevel-weight overlays |
 | **Animation** | `Shift + Space` | Global | Play, play reverse, jump to start / end, previous / next keyframe, auto keying, keyframe menu |
-| **UV Unwrap** | `Shift + F` | UV Editor | Mio3 unwrap and axis unwraps, align X/Y, rectify, gridify, classic unwrap |
+| **UV Unwrap** | `Shift + F` | UV Editor | Mio3 unwrap, unwrap along X / Y (CocoUVs Unfold Along U / V), align X/Y, rectify, gridify, classic unwrap |
 | **UV Transform** | `Shift + D` | UV Editor | Flip, rotate, stack, sort and orient islands |
 | **UV Select** | `Shift + A` | UV Editor | Select similar, overlapping, zero-area, flipped, done, self-intersecting, boundary |
 | **3D UV** | `Shift + F` | 3D View | Mark / clear seams, smart project, unwrap, bevel weight, crease, sharp |
@@ -111,8 +111,9 @@ UV Transform is mostly [Mio3 UV](https://github.com/mio3io/mio3-uv) — Flip X/Y
 and Rotate 90 are stock Blender (`transform.resize` / `transform.rotate`, the
 same as `S X -1` and `R -90`), so those three work regardless. Stack Islands is
 Mio3 Align ▸ Center in island mode (Bounding Box pivot: islands stack in place,
-not at the UV centre). UV Unwrap is all Mio3 apart from the classic unwrap;
-its Gridify runs with Geometry Ratio 0. UV Select is Mio3 UV, with Select
+not at the UV centre). UV Unwrap is Mio3 apart from the classic unwrap and
+UV Unwrap X / Y, which are **CocoUVs'** Unfold Along U / V; its Gridify runs
+with Geometry Ratio 0. UV Select is Mio3 UV, with Select
 Overlapping, Select Done and Select Self Intersecting coming from **CocoUVs**
 (also in the CocoTools repository). Without the addon a slot depends on, it
 simply reports a missing operator; install it and that slot starts working
