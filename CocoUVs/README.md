@@ -87,6 +87,16 @@ Objects sharing a mesh get their materials back too.
 
 ### Trims
 
+**Unfold U** and **Unfold V**, at the top of the panel, work with or without a
+material. They are Maya's *Unfold Along U / V*: every selected UV keeps its V
+(or U) and only the other coordinate moves, until the faces are as unstretched
+as they can be with that one locked. The scale follows the locked side, so
+texels stay square. Unselected and pinned UVs of an island stay where they
+are, so only the selection moves. The usual use: project from a side, then
+Unfold U to unroll the width while the height stays exact. A closed loop (a
+cylinder with no seam) cannot unroll: cut a seam first. **Iterations** in the
+redo panel relaxes long or curved islands further.
+
 Areas of the UV space where the strips of a trim sheet are. Every **material**
 has its own list: the list shows the active material (the one highlighted in
 the Material tab; in Edit Mode clicking a face makes its material active).

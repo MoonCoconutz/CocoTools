@@ -131,6 +131,11 @@ class COCOUVS_PT_trims(_CocoUVsPanel, Panel):
 
     def draw(self, context):
         layout = self.layout
+        # Unfold needs no material, so it sits above the material check.
+        row = layout.row(align=True)
+        row.operator("cocouvs.unfold_along_u", text="Unfold U")
+        row.operator("cocouvs.unfold_along_v", text="Unfold V")
+
         mat = trims.material(context)
         if mat is None:
             layout.label(text="The active object has no material", icon='INFO')

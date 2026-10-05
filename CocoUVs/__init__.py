@@ -11,14 +11,15 @@ if "bpy" in locals():
     importlib.reload(debug)
     importlib.reload(checker)
     importlib.reload(trims)
+    importlib.reload(unfold)
     importlib.reload(prefs)
     importlib.reload(ui)
 else:
-    from . import common, properties, uv_sets, seams, texel, heatmap, debug, checker, trims, prefs, ui
+    from . import common, properties, uv_sets, seams, texel, heatmap, debug, checker, trims, unfold, prefs, ui
 
 import bpy  # noqa: E402
 
-_modules = (properties, uv_sets, seams, texel, heatmap, debug, checker, trims, prefs, ui)
+_modules = (properties, uv_sets, seams, texel, heatmap, debug, checker, trims, unfold, prefs, ui)
 
 
 def register():
