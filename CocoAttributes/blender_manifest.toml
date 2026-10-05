@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoAttributes"
 name = "CocoAttributes"
-version = "1.0.0"
+version = "1.1.0"
 tagline = "Vertex groups, UV maps and attributes on every selected mesh"
 maintainer = "MoonCoconutz"
 type = "add-on"

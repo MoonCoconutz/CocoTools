@@ -50,7 +50,7 @@ on two meshes shows as two rows.
 | **N/total** | How many of the selected meshes have it. A warning icon means some do not |
 | **Lock** | Blender will not remove or rename it (`position`) |
 | **Camera** (UV maps, color attributes) | Render with it on every selected mesh that has it |
-| `+` | Add one, with the same name, to every selected mesh. In Attributes it first asks for the name and the type (Attribute, Color Attribute or UV Map), plus domain and data type where they apply. A UV map is copied from each mesh's active UV map |
+| `+` | Add one, with the same name, to every selected mesh. In Attributes it first asks for the name and the type (Attribute, Color Attribute or UV Map), plus domain and data type where they apply. A UV map is copied from each mesh's active UV map. In Vertex Groups, with meshes in Edit Mode, whatever is selected on each mesh (vertices, edges or faces) goes straight into the new group, with the **Weight** below; a mesh with nothing selected gets it empty |
 | `−` | Remove the ticked rows from every selected mesh |
 | **Fill Missing** (clipboard icon) | For each ticked row, add it to the selected meshes that do not have it: same name, and for attributes the same domain and type. Vertex groups come in empty, attributes and color attributes as zero (black), UV maps copied from that mesh's active one, custom normals through Blender's own Add Custom Normals Data |
 | **Tick All** (check-box icon) | Tick every row, or untick them all if any is ticked |

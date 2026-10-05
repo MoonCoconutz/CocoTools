@@ -54,13 +54,34 @@ def _finish_add(kind, context, name, domain, data_type, added, skipped, report):
 
 # --- + -----------------------------------------------------------------------
 
+def _assign_selected(obj, name, weight):
+    """Put the selected vertices of a mesh in Edit Mode into its group `name`
+    (what Assign does). Returns how many vertices went in."""
+    # Adding the group can rebuild the edit mesh: fetch it only now.
+    group = obj.vertex_groups.get(name)
+    if group is None:
+        return 0
+    bm = bmesh.from_edit_mesh(obj.data)
+    if not any(v.select and not v.hide for v in bm.verts):
+        return 0
+    # verify() can rebuild the vertex data: collect the vertices after it.
+    layer = bm.verts.layers.deform.verify()
+    verts = [v for v in bm.verts if v.select and not v.hide]
+    for vert in verts:
+        vert[layer][group.index] = weight
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+    return len(verts)
+
+
 class COCOATTRS_OT_add_vertex_group(Operator):
     """+ for vertex groups: the same free name on every mesh, so they stay
     one row (a plain "Group" would become "Group.001" on a mesh that already
-    has one)."""
+    has one). In Edit Mode, whatever is selected on each mesh goes into the
+    new group; with nothing selected it stays empty."""
     bl_idname = "cocoattrs.add_vertex_group"
     bl_label = "Add Vertex Group"
-    bl_description = "Add an empty vertex group, with the same name, to every selected mesh"
+    bl_description = ("Add a vertex group, with the same name, to every selected mesh. "
+                      "In Edit Mode the selected vertices, edges or faces are assigned to it")
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -70,7 +91,14 @@ class COCOATTRS_OT_add_vertex_group(Operator):
     def execute(self, context):
         objects = common.targets(context)
         name = common.unique_name(objects, "Group")
-        added = sum(common.create('VGROUP', obj, name) for obj in objects)
+        editing = {obj.data for obj in common.edit_targets(context)}
+        weight = context.scene.tool_settings.vertex_group_weight
+        added = 0
+        for obj in objects:
+            if common.create('VGROUP', obj, name):
+                added += 1
+                if obj.data in editing:
+                    _assign_selected(obj, name, weight)
         return _finish_add('VGROUP', context, name, "", "", added, len(objects) - added, self.report)
 
 
