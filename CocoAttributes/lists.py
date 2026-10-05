@@ -268,20 +268,22 @@ class COCOATTRS_UL_items(UIList):
         row = layout.row(align=True)
         if item.locked:
             row.label(text="", icon='LOCKED')
-            row.label(text=item.name)
         else:
             row.prop(item, "use", text="")
             kind_icon = self.ICONS.get(item.kind)
             if kind_icon:
-                row.prop(item, "name", text="", emboss=False, icon=kind_icon)
-            else:
-                row.prop(item, "name", text="", emboss=False)
+                row.label(text="", icon=kind_icon)
 
-        # Each label gets its own right-aligned row, one level deep: a row
-        # nested inside a right-aligned row came out with no width in a wide
-        # Properties editor, and its "2/2" vanished (seen on 5.2).
-        if item.kind != 'VGROUP':
-            info = row.row(align=True)
+        # Laid out like Blender's own Attributes list: the name keeps the left
+        # half and the type is right-aligned in the other, clipped when it is
+        # too long, so a narrow panel never squeezes the name. The tick box
+        # and icon stay outside the split, so the half is all name.
+        if item.kind == 'VGROUP':
+            name_row = row
+        else:
+            split = row.split(factor=0.5, align=True)
+            name_row = split.row(align=True)
+            info = split.row(align=True)
             info.alignment = 'RIGHT'
             info.active = False
             if item.kind == 'UV':
@@ -289,6 +291,14 @@ class COCOATTRS_UL_items(UIList):
             else:
                 domain = common.DOMAIN_LABELS.get(item.domain, item.domain)
                 info.label(text=f"{domain} · {common.type_label(item.data_type)}")
+        if item.locked:
+            name_row.label(text=item.name)
+        else:
+            name_row.prop(item, "name", text="", emboss=False)
+
+        # The count has a row of its own, one level deep: a row nested inside
+        # a right-aligned row came out with no width in a wide Properties
+        # editor, and its "2/2" vanished (seen on 5.2).
         if total > 1:
             count = row.row(align=True)
             count.alignment = 'RIGHT'
