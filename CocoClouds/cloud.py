@@ -1,17 +1,24 @@
 """What a cloud is, and how one is made.
 
-A cloud is a mesh object carrying the Cloud modifier. The mesh is the rough
-shape, an ordinary mesh that stays editable. It can be as plain as a box or
-a few of them: the modifier's Puffs setting rounds it and breaks it into
-lumps. A cloud added from nothing starts as a heap of overlapping spheres,
-another heap every time (shapes.py), and remembers the seed of it: Shape
-Seed draws the heap again. Overlapping closed pieces need no boolean: the
-density grid takes their union (measured on 5.2).
+A cloud is a mesh object carrying the Cloud modifier, in four parts, as the
+panel shows them:
+
+- Geometry: the mesh, the cloud's rough outline. Either the generator's
+  heap of spheres (shapes.py), drawn again whenever one of its settings,
+  kept on the object, changes; or a mesh of the user's own, as plain as a
+  box, which is never written to.
+- Deform: the modifier fills the mesh with balls moved and sized by one
+  noise (nodes.py).
+- Material: the object's first material slot (look.py).
+- Render: the modifier's voxels in the viewport and in a render.
+
+A genus (a real cloud genus) is a set of starting values for Geometry and
+Deform. Giving a cloud a genus writes them all.
 """
 
 import bpy
 from bpy.app.handlers import persistent
-from bpy.props import BoolProperty, IntProperty, PointerProperty
+from bpy.props import BoolProperty, FloatProperty, IntProperty, PointerProperty
 from bpy.types import PropertyGroup
 
 from . import look, nodes, shapes
@@ -35,7 +42,7 @@ def put(mod, name, value):
 
 
 def has_input(mod, name):
-    """False for an input added after the group version this cloud uses."""
+    """False for an input the group this cloud uses does not have."""
     return nodes.socket_id(mod.node_group, name) is not None
 
 
@@ -56,11 +63,10 @@ def is_cloud(ob):
 # object's material is looked for and changed: the Material tab, the Shader
 # Editor. Blender does not render a volume made by nodes with it, though
 # (measured on 5.2: with the material only in the slot, Cycles drew a black
-# silhouette whichever way the slot was linked, EEVEE only read an
-# object-linked one, and neither a copy made by another object's nodes). The
-# group has to set it on the volume, and no node reads a slot. So the group
-# keeps its Material input, and a handler copies the slot into it whenever
-# the two differ (_follow_slots).
+# silhouette whichever way the slot was linked). The group has to set it on
+# the volume, and no node reads a slot. So the group keeps its Material
+# input, and a handler copies the slot into it whenever the two differ
+# (_follow_slots).
 #
 # SLOT_KEY says how an object got the slot, for Back to Mesh to undo it:
 # 'ADDED', the mesh had no material and was given one; 'OBJECT', the mesh
@@ -115,6 +121,7 @@ def set_material(ob, mat):
     else:
         _give_slot(ob, mat)
     put(cloud_modifier(ob), "Material", mat)
+    ob.update_tag()
 
 
 def sync_material(ob):
@@ -122,7 +129,7 @@ def sync_material(ob):
     differ. An empty slot, or none, changes nothing: the cloud keeps the
     material it has."""
     mod = cloud_modifier(ob)
-    if mod is None:
+    if mod is None or not has_input(mod, "Material"):
         return
     want = slot_material(ob)
     if want is not None and get(mod, "Material") != want:
@@ -158,80 +165,70 @@ def make_cloud(ob, settings=None):
         put(mod, "Material", slot_material(ob))
     for name, value in (settings or {}).items():
         put(mod, name, value)
+    ob.update_tag()
     return mod
 
 
 def is_current(mod):
-    """False for a cloud, or a field, still on a group of an earlier
-    version."""
+    """False for a cloud still on a group of an earlier version."""
     return nodes.is_current(mod.node_group)
 
 
 def update_cloud(mod):
     """Move a cloud to the current group, keeping the settings both have.
-    Sockets are matched by name: their identifiers differ between versions."""
+    Sockets are matched by name: their identifiers differ between versions.
+    A cloud from before 0.20.0 keeps little: its shape was made otherwise."""
     old = mod.node_group
     kept = {name: get(mod, name) for name, *_ in nodes.INPUTS if nodes.socket_id(old, name)}
     mod.node_group = nodes.get_group()
     for name, value in kept.items():
         put(mod, name, value)
-    # A cloud from before the material moved to the slot: its material goes
-    # there now.
     ob = mod.id_data
     if SLOT_KEY not in ob:
         _give_slot(ob, kept.get("Material") or look.material())
-    # The material from before it had controls, if nothing was changed in
-    # it, gives way to the one that has them. One the user changed stays.
-    if ob.material_slots and look.is_plain(slot_material(ob)):
-        ob.material_slots[0].material = look.material()
     put(mod, "Material", slot_material(ob))
+    ob.update_tag()
 
 
-# Types: (identifier, label, description, settings). A type is a set of the
-# Shape settings, all but Puffs and Seed, so giving it to a cloud leaves
-# nothing of the type the cloud had; it can be given to any mesh. The rough
-# shape a new cloud of each type starts from is in shapes.py, under the same
-# identifier.
+# ---------------------------------------------------------------- genera
 #
-# Puffs is not a type's to set: it says how far to leave the mesh, and that
-# depends on the mesh. A heap of spheres is a cloud's shape already; a box
-# is not.
-#
-# The scales count across the cloud's longest side, so a type made of many
-# small pieces needs them high.
+# A genus: (identifier, label, description, settings), the identifier the
+# builder's in shapes.py. Settings holds the generator's (lower case, kept
+# on the object: the dimensions and shapes.SETTINGS) and the modifier's
+# Deform settings (by socket name). Lengths are metres for the dimensions,
+# parts of the cloud's longest side for the rest.
 
-def _settings(puff_scale, billows, billow_scale, erosion, erosion_scale, softness, flat_base):
-    return {"Puff Scale": puff_scale, "Billows": billows, "Billow Scale": billow_scale,
-            "Erosion": erosion, "Erosion Scale": erosion_scale,
-            "Softness": softness, "Flat Base": flat_base}
+def _genus(dimensions, generator, puff, strength, scale, detail, roughness, distortion, flat_base, density=30.0):
+    settings = dict(zip(("length", "width", "height"), dimensions))
+    settings.update(generator)
+    settings.update({"Puff Size": puff, "Noise Strength": strength, "Noise Scale": scale, "Noise Detail": detail,
+                     "Noise Roughness": roughness, "Noise Distortion": distortion, "Flat Base": flat_base,
+                     "Density": density})
+    return settings
 
 
 TYPES = (
     ('CUMULUS', "Cumulus", "Cumulus: a heaped fair-weather cloud with a flat base",
-     _settings(3.0, 0.3, 2.0, 0.19, 7.0, 0.05, 0.15)),
-    ('PUFF', "Puff", "Cumulus humilis: a small, low, soft cloud, wider than tall",
-     _settings(2.0, 0.4, 1.5, 0.19, 5.0, 0.14, 0.2)),
-    ('TOWER', "Tower", "Cumulus congestus: a tall, crisp cloud growing upwards",
-     _settings(4.5, 0.2, 2.5, 0.16, 9.0, 0.03, 0.1)),
-    ('ANVIL', "Anvil", "Cumulonimbus: a thunderstorm tower spreading into a flat anvil at the top",
-     _settings(4.5, 0.2, 2.5, 0.14, 9.0, 0.06, 0.06)),
-    ('SHEET', "Sheet", "Stratocumulus: a low patch of rounded masses grown into one another",
-     _settings(5.0, 0.2, 4.0, 0.16, 12.0, 0.08, 0.25)),
-    ('FLOCK', "Flock", "Altocumulus: a field of small separate cloudlets",
-     _settings(8.0, 0.15, 6.0, 0.12, 30.0, 0.2, 0.2)),
-    ('LENS', "Lens", "Lenticular: a smooth lens, or a stack of them, as over mountains",
-     _settings(3.0, 0.1, 1.5, 0.04, 6.0, 0.25, 0.0)),
-    ('SHREDS', "Shreds", "Fractus: small ragged pieces torn by the wind",
-     _settings(4.0, 0.8, 3.0, 0.5, 6.0, 0.5, 0.0)),
-    ('LAYER', "Layer", "Stratus: a flat, soft, featureless sheet",
-     _settings(4.0, 0.35, 3.0, 0.15, 8.0, 0.35, 0.0)),
+     _genus((8.0, 6.0, 5.0), dict(lumps=4, spread=0.4), 0.02, 0.08, 15.0, 2.0, 0.5, 1.0, 0.1)),
+    ('CUMULONIMBUS', "Cumulonimbus", "Cumulonimbus: a thunderstorm tower spreading into a flat anvil",
+     _genus((12.0, 10.0, 16.0), dict(lumps=2, spread=0.4, distortion=0.2), 0.018, 0.06, 15.0, 2.0, 0.5, 1.0, 0.05)),
+    ('ALTOCUMULUS', "Altocumulus", "Altocumulus: a mid-level layer of small rounded cloudlets",
+     _genus((14.0, 12.0, 1.5), dict(lumps=1, spread=0.5), 0.012, 0.02, 30.0, 1.0, 0.5, 1.0, 0.0)),
+    ('CIRROCUMULUS', "Cirrocumulus", "Cirrocumulus: a thin high sheet of tiny grains in ripples",
+     _genus((14.0, 12.0, 0.6), dict(lumps=0, distortion=0.2), 0.006, 0.01, 60.0, 1.0, 0.5, 1.0, 0.0, 90.0)),
+    ('STRATUS', "Stratus", "Stratus: a low, flat, featureless grey sheet",
+     _genus((16.0, 12.0, 1.6), dict(lumps=1, spread=0.6), 0.02, 0.03, 8.0, 1.0, 0.5, 1.0, 0.0)),
+    ('ALTOSTRATUS', "Altostratus", "Altostratus: a thin, even mid-level sheet",
+     _genus((18.0, 14.0, 1.0), dict(lumps=0), 0.015, 0.02, 6.0, 1.0, 0.5, 1.0, 0.0)),
+    ('NIMBOSTRATUS', "Nimbostratus", "Nimbostratus: a thick dark rain layer, ragged underneath",
+     _genus((16.0, 12.0, 4.0), dict(lumps=2, spread=0.5), 0.025, 0.05, 8.0, 2.0, 0.5, 1.0, 0.0)),
+    ('CIRRUS', "Cirrus", "Cirrus: thin high strokes and hooks of ice",
+     _genus((14.0, 8.0, 2.0), dict(lumps=0, distortion=0.2), 0.008, 0.015, 20.0, 1.0, 0.5, 3.0, 0.0, 150.0)),
 )
+DIMENSIONS = ("length", "width", "height")
+GENERATOR = DIMENSIONS + tuple(s[0] for s in shapes.SETTINGS)
 
-# Puffs for a new cloud's own heap, and for a mesh made into a cloud.
-HEAP_PUFFS = 0.0
-MESH_PUFFS = 0.6
-
-# Where an object remembers the type it was last given, for the panel.
+# Where an object remembers the genus it was last given, for the panel.
 TYPE_KEY = "cococlouds_type"
 
 
@@ -244,33 +241,43 @@ def cloud_type(identifier):
 
 def type_of(ob):
     """The TYPES item an object was last given, or None."""
-    identifier = ob.get(TYPE_KEY)
+    identifier = ob.get(TYPE_KEY) if ob is not None else None
     return next((item for item in TYPES if item[0] == identifier), None)
 
 
-def set_type(ob, identifier, puffs=MESH_PUFFS):
-    """Give a mesh object a type: every setting the type owns is written,
-    whatever it was. A mesh that is not a cloud becomes one, with `puffs`;
-    a cloud keeps the Puffs it has.
+def generator_settings(ob):
+    """The generator's settings an object holds, as shapes.fill_mesh takes them."""
+    return {name: getattr(ob.cococlouds, name) for name, *_ in shapes.SETTINGS}
 
-    A cloud still on the heap of spheres it was added as gets the new
-    type's heap as well, of the same seed and as wide: the settings of two
-    types are close, and on the same heap a Cumulus made a Tower looked the
-    same cloud. A heap edited by hand is a shape of the user's own by then
-    and stays."""
-    before = type_of(ob)
-    if (before is not None and before[0] != identifier and ob.cococlouds.heap and ob.mode == 'OBJECT'
-            and shapes.is_heap(ob.data, before[0], ob.cococlouds.shape_seed)):
-        shapes.fill_mesh(ob.data, identifier, ob.cococlouds.shape_seed, shapes.width(ob.data))
-    mod = cloud_modifier(ob)
-    settings = dict(cloud_type(identifier)[3])
-    if mod is None:
-        settings["Puffs"] = puffs
-    elif not is_current(mod):
-        update_cloud(mod)
-    mod = make_cloud(ob, settings)
+
+def dimensions(ob):
+    return tuple(getattr(ob.cococlouds, name) for name in DIMENSIONS)
+
+
+def reshape(ob):
+    """Draw the object's heap again from its genus and generator settings.
+    Never on a mesh of the user's own, nor while it is being edited."""
+    kind = type_of(ob)
+    if kind is None or not ob.cococlouds.heap or ob.type != 'MESH' or ob.mode != 'OBJECT':
+        return
+    shapes.fill_mesh(ob.data, kind[0], ob.cococlouds.shape_seed, dimensions(ob), generator_settings(ob))
+
+
+def set_type(ob, identifier):
+    """Give a mesh object a genus: every Deform setting of the genus is
+    written, whatever it was, and on a heap the generator's too, which draws
+    it again. A mesh of the user's own keeps its shape. A mesh that is not a
+    cloud becomes one."""
+    settings = cloud_type(identifier)[3]
     ob[TYPE_KEY] = identifier
-    return mod
+    if ob.cococlouds.heap:
+        quietly(ob, {name: value for name, value in settings.items() if name in GENERATOR},
+                shapes.defaults())
+        reshape(ob)
+    mod = cloud_modifier(ob)
+    if mod is not None and not is_current(mod):
+        update_cloud(mod)
+    return make_cloud(ob, {name: value for name, value in settings.items() if name not in GENERATOR})
 
 
 def remove_cloud(ob):
@@ -282,49 +289,65 @@ def remove_cloud(ob):
         del ob[TYPE_KEY]
 
 
-# The heap of spheres a cloud was added as can be drawn again. Its seed is
-# kept on the object, as a real property so that the panel can show it as a
-# slider, next to whether the mesh is such a heap at all: a mesh of the
-# user's own is never written to, whatever ends up in its seed (a value
-# dragged with Alt held goes to every selected object).
+# ---------------------------------------------------------------- the generator's settings
+#
+# Kept on the object, as real properties so that the panel can show them as
+# sliders; each draws the heap again. `heap` says the mesh is one the
+# generator built: a mesh of the user's own is never written to, whatever
+# ends up in these (a value dragged with Alt held goes to every selected
+# object).
 SEEDS = 99999
 _quiet = False
 
 
 def _reshape(self, context):
-    """Shape Seed changed: build the heap again, as the type the cloud has
-    now, in the mesh the object already has and as wide as that is."""
-    ob = self.id_data
-    kind = type_of(ob)
-    if _quiet or not self.heap or kind is None or ob.type != 'MESH' or ob.mode != 'OBJECT':
-        return
-    shapes.fill_mesh(ob.data, kind[0], self.shape_seed, shapes.width(ob.data) or 1.0)
+    if not _quiet:
+        reshape(self.id_data)
 
 
-class CocoCloudsObject(PropertyGroup):
-    heap: BoolProperty(options={'HIDDEN'})
-    shape_seed: IntProperty(
+def quietly(ob, values, base=None):
+    """Write generator settings without drawing the heap at each one:
+    `base` first, then `values` over it."""
+    global _quiet
+    _quiet = True
+    try:
+        for name, value in {**(base or {}), **values}.items():
+            setattr(ob.cococlouds, name, value)
+    finally:
+        _quiet = False
+
+
+def _setting(name, default, lo, hi, description):
+    if isinstance(default, int):
+        return IntProperty(name=name.replace("_", " ").title(), description=description, default=default,
+                           min=lo, max=hi, update=_reshape)
+    return FloatProperty(name=name.replace("_", " ").title(), description=description, default=default,
+                         min=lo, soft_max=hi, update=_reshape)
+
+
+def _dimension(name, description):
+    return FloatProperty(name=name, description=description, default=8.0, min=0.001, soft_max=10000.0,
+                         subtype='DISTANCE', update=_reshape)
+
+
+# Made with type(): the generator's settings come from a table.
+CocoCloudsObject = type("CocoCloudsObject", (PropertyGroup,), {"__annotations__": {
+    "heap": BoolProperty(options={'HIDDEN'}),
+    "shape_seed": IntProperty(
         name="Shape Seed",
-        description=("Another heap of spheres of the cloud's type, as wide as this one. "
-                     "It replaces the mesh: whatever was edited on it is gone"),
-        default=1, min=1, max=SEEDS, update=_reshape)
+        description="Another heap of spheres of the cloud's genus. It replaces the mesh: whatever was edited on it is gone",
+        default=1, min=1, max=SEEDS, update=_reshape),
+    "length": _dimension("Length", "Size of the cloud along X"),
+    "width": _dimension("Width", "Size of the cloud along Y"),
+    "height": _dimension("Height", "Size of the cloud along Z"),
+    **{name: _setting(name, default, lo, hi, description) for name, default, lo, hi, description in shapes.SETTINGS},
+}})
 
 
 def heap_seed(ob):
     """The seed of the heap an object was added as, None for a mesh of the
     user's own."""
     return ob.cococlouds.shape_seed if ob.cococlouds.heap else None
-
-
-def set_heap_seed(ob, seed):
-    """Record that an object's mesh is the heap of a seed, already built."""
-    global _quiet
-    _quiet = True
-    try:
-        ob.cococlouds.heap = True
-        ob.cococlouds.shape_seed = seed
-    finally:
-        _quiet = False
 
 
 def register():

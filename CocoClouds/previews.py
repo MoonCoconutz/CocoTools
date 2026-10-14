@@ -1,6 +1,6 @@
 """The pictures of the cloud types, for the menus and the panel that add one.
 
-previews/<TYPE>.png, one for each of cloud.TYPES, rendered once by the
+previews/<GENUS>.png, one for each of cloud.TYPES (the genera), rendered once by the
 probe make_previews.py (in the vault) and shipped with the add-on. Blender
 loads them as icons of its own kind, which live from register() to
 unregister(). A type without a picture gets no icon and still works.
@@ -80,8 +80,8 @@ def register():
         name="Add Cloud", description="Add a new cloud of this type at the 3D cursor",
         items=type_items, get=_chosen, set=_choose, options={'SKIP_SAVE'})
     bpy.types.WindowManager.cococlouds_type = bpy.props.EnumProperty(
-        name="Cloud Type", description=("Give the selected meshes this type: every Shape setting but Puffs and "
-                                        "Seed becomes the type's. A mesh of yours keeps its shape"),
+        name="Cloud Genus", description=("Give the selected meshes this genus: every Deform setting becomes "
+                                         "the genus's. A mesh of yours keeps its shape"),
         items=type_items, get=_type, set=_set_type, options={'SKIP_SAVE'})
 
 

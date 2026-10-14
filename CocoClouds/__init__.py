@@ -7,15 +7,14 @@ if "bpy" in locals():
     importlib.reload(look)
     importlib.reload(cloud)
     importlib.reload(previews)
-    importlib.reload(field)
     importlib.reload(operators)
     importlib.reload(ui)
 else:
-    from . import nodes, shapes, look, cloud, previews, field, operators, ui
+    from . import nodes, shapes, look, cloud, previews, operators, ui
 
 import bpy  # noqa: E402
 
-_modules = (look, cloud, previews, field, operators, ui)
+_modules = (look, cloud, previews, operators, ui)
 
 
 def register():
