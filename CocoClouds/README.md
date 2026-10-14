@@ -1,6 +1,6 @@
 # CocoClouds
 
-**Experimental.** Procedural volume clouds for Blender 5.2+: pick a real cloud
+Procedural volume clouds for Blender 5.2+: pick a real cloud
 genus, get a cloud. Its rough shape is an ordinary mesh you can edit, or a mesh
 of your own; a Geometry Nodes modifier fills it with soft balls of cloud and a
 volume material shades it.
