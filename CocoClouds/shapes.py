@@ -6,7 +6,10 @@ the footprint broken up by a noise on the ground plane (Distortion), then a
 few rounds of secondary spheres (Lumps), each round a ring of smaller ones
 on the surface of the last, pushed mostly upwards or, with Spread, every
 way. Random Size makes the spheres of a round unequal. A layer cloud is a
-sheet of flattened spheres; a cirrus a few strokes of small ones.
+sheet of flattened spheres. A cirrus is not spheres but strokes, in a curve
+object (fill_curve), which the user can draw more of. A heap
+or a sheet is always one piece: _joined pulls any part that came out apart
+back onto the rest.
 
 The result is an ordinary mesh the user can go on editing. The Cloud
 modifier then fills it with balls (nodes.py); the spheres here only give
@@ -74,6 +77,67 @@ def _unequal(rng, p, r, by=0.6):
     return r * (1.0 + p["random_size"] * rng.uniform(-by, by))
 
 
+# Two blobs are joined when the line between their centres runs inside one
+# or the other shrunk to JOIN of its radii: a thinner neck does not survive
+# the cloud's fill, and the heap would come out as two clouds.
+JOIN = 0.75
+
+
+def _inside(q, blob, shrink):
+    c, r = blob
+    return sum(((q[i] - c[i]) / (r[i] * shrink)) ** 2 for i in range(3)) <= 1.0
+
+
+def _touch(a, b, shrink=JOIN):
+    if (a[0] - b[0]).length > (max(a[1]) + max(b[1])) * shrink:
+        return False
+    for k in range(1, 12):
+        q = a[0].lerp(b[0], k / 12.0)
+        if not (_inside(q, a, shrink) or _inside(q, b, shrink)):
+            return False
+    return True
+
+
+def _joined(blobs):
+    """Pull pieces of a heap that do not touch the rest onto it, each piece
+    whole, along the ground, until it is joined to the nearest blob of the
+    largest piece."""
+    blobs = list(blobs)
+    while True:
+        # The pieces, as lists of indices, largest (by volume) first.
+        left, pieces = set(range(len(blobs))), []
+        while left:
+            piece, todo = [], [left.pop()]
+            while todo:
+                i = todo.pop()
+                piece.append(i)
+                near = [j for j in left if _touch(blobs[i], blobs[j])]
+                left.difference_update(near)
+                todo += near
+            pieces.append(piece)
+        if len(pieces) == 1:
+            return blobs
+        pieces.sort(key=lambda piece: -sum(blobs[i][1][0] * blobs[i][1][1] * blobs[i][1][2] for i in piece))
+        main, stray = pieces[0], pieces[1]
+        i, j = min(((i, j) for i in stray for j in main),
+                   key=lambda ij: (blobs[ij[0]][0] - blobs[ij[1]][0]).length)
+        way = blobs[j][0] - blobs[i][0]
+        way.z = 0.0
+        if way.length < 1e-6:
+            way = blobs[j][0] - blobs[i][0]
+        step = way * 0.05
+        for _ in range(20):
+            for k in stray:
+                blobs[k] = (blobs[k][0] + step, blobs[k][1])
+            if _touch(blobs[i], blobs[j]):
+                break
+        else:
+            # Over it and still apart in height: the rest of the way up or down.
+            rest = blobs[j][0] - blobs[i][0]
+            for k in stray:
+                blobs[k] = (blobs[k][0] + rest, blobs[k][1])
+
+
 def _scatter(rng, count, half_width, half_depth):
     """Places in an ellipse on the ground, spread evenly: each is the one of
     a dozen tries farthest from those before it."""
@@ -135,49 +199,34 @@ def _cumulus(rng, p):
         r = _unequal(rng, p, step * rng.uniform(0.75, 0.95), 0.4)
         x = -0.4 + (i + 0.5 + rng.uniform(-0.2, 0.2)) * step
         body.append(_ball(x, rng.uniform(-0.1, 0.1), r * 0.6, r))
-    body = _distorted(rng, p, body)
+    body = _joined(_distorted(rng, p, body))
     return body + _lumps(rng, p, body)
 
 
-def _cumulonimbus(rng, p):
-    """Cumulonimbus: a broad tower, floors of a few spheres round its axis,
-    flaring at its top into the anvil, a thick sheet flat on top that
-    reaches farther downwind."""
-    r = 0.2
+def _stratocumulus(rng, p):
+    """Stratocumulus: a low layer of large rounded masses in loose rolls
+    along the length, run together in places and apart in others, flat
+    underneath."""
+    rows = rng.randint(3, 5)
+    gap = 0.76 / rows
+    cell = rng.uniform(0.1, 0.13)
     body = []
-    place = Vector((0.0, 0.0, r * 0.7))
-    lean = Vector((rng.uniform(-0.15, 0.15), rng.uniform(-0.08, 0.08), 0.0))
-    floors = rng.randint(4, 6)
-    for f in range(floors):
-        # Each floor a sphere on the axis and a ring round it, narrower higher up.
-        ring = rng.randint(3, 5)
-        wide = r * (1.0 - 0.25 * f / floors)
-        body.append((place.copy(), (wide,) * 3))
-        turn = rng.uniform(0.0, math.tau)
-        for k in range(ring):
-            a = turn + k * math.tau / ring + rng.uniform(-0.3, 0.3)
-            rr = _unequal(rng, p, wide * rng.uniform(0.7, 0.9), 0.3)
-            body.append((place + Vector((math.cos(a), math.sin(a), rng.uniform(-0.3, 0.3))) * wide * 0.8, (rr,) * 3))
-        place = place + (lean + Vector((rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15), 1.0))) * wide * 0.95
-    # The anvil's underside goes into the top floor, or it floats over the tower.
-    top = max(body, key=lambda blob: blob[0].z)[0]
-    wind = rng.uniform(0.0, math.tau)
-    downwind = Vector((math.cos(wind), 0.6 * math.sin(wind), 0.0))
-    span, thick = r * 2.3, r * 0.7
-    ceiling = top.z + r * 0.85
-    centre = Vector((top.x, top.y, 0.0)) + downwind * 0.4 * span
-    anvil = [(Vector((centre.x, centre.y, ceiling - thick)), (span, span * 0.85, thick))]
-    count = rng.randint(7, 10)
-    for i in range(count):
-        angle = (i + rng.uniform(-0.3, 0.3)) * math.tau / count
-        away = rng.uniform(0.45, 1.0)
-        out = Vector((math.cos(angle), 0.8 * math.sin(angle), 0.0)) * away * span
-        out *= 1.0 + 0.6 * max(0.0, out.normalized().dot(downwind.normalized()))
-        a = _unequal(rng, p, span * rng.uniform(0.4, 0.6), 0.3)
-        deep = thick * rng.uniform(0.5, 0.9) * (1.0 - 0.5 * away)
-        anvil.append((Vector((centre.x + out.x, centre.y + out.y, ceiling - deep)), (a, a * rng.uniform(0.8, 1.0), deep)))
-    body = _distorted(rng, p, body, 0.1)
-    return body + anvil + _lumps(rng, p, body, rounds=min(p["lumps"], 2), per=(1, 2), up=0.3)
+    for j in range(rows):
+        y = ((j + 0.5) / rows - 0.5) * 0.76 + rng.uniform(-0.15, 0.15) * gap
+        # Rolls shorter towards the sides of the footprint, an ellipse.
+        half = 0.5 * math.sqrt(max(0.05, 1.0 - (y / 0.42) ** 2))
+        phase, bend = rng.uniform(0.0, math.tau), rng.uniform(0.02, 0.05)
+        x = -half + rng.uniform(0.0, 0.5) * cell
+        while x < half:
+            # A break in the roll now and then.
+            if rng.random() > 0.12:
+                r = _unequal(rng, p, cell * rng.uniform(0.6, 0.8), 0.4)
+                yy = y + bend * math.sin(x * math.tau * 1.2 + phase)
+                body.append(_ball(x, yy, r * 0.25, r, 0.5, rng.uniform(0.8, 1.15) * gap / (2.0 * cell) * 1.3))
+            x += cell * rng.uniform(0.85, 1.15)
+    body = _joined(_distorted(rng, p, body or [_ball(0.0, 0.0, 0.0, 0.1, 0.5)]))
+    return body + _lumps(rng, p, body, rounds=min(p["lumps"], 2), per=(1, 2), shrink=(0.45, 0.65), flat=0.7,
+                         lowest=0.0)
 
 
 def _altocumulus(rng, p):
@@ -224,7 +273,7 @@ def _sheet(rng, p, count, flat, lumps_up):
     for q in _scatter(rng, count, 0.5, 0.36):
         r = _unequal(rng, p, step * rng.uniform(0.85, 1.2), 0.4)
         body.append(_ball(q.x, q.y, rng.uniform(-0.01, 0.01), r, flat, rng.uniform(0.8, 1.1)))
-    body = _distorted(rng, p, body)
+    body = _joined(_distorted(rng, p, body))
     return body + _lumps(rng, p, body, rounds=min(p["lumps"], 2), per=(1, 2), shrink=(0.4, 0.6),
                          up=lumps_up, flat=0.6, lowest=-0.1)
 
@@ -244,29 +293,34 @@ def _nimbostratus(rng, p):
     return _sheet(rng, p, rng.randint(14, 20), 0.35, -1.0)
 
 
-def _cirrus(rng, p):
-    """Cirrus: a few thin strokes, each a chain of small spheres along a
-    bent path, thickest at its head and trailing off, often hooked."""
+def _cirrus(rng, _p):
+    """Cirrus: a few thin strokes, each a bent path hooked at its end. Not
+    blobs but strokes, (place, radius) along each: a cirrus is a curve
+    object, whose strokes the Cloud modifier makes tubes of (nodes.py),
+    and more can be drawn on it with the Draw tool."""
     strokes = []
     for _ in range(rng.randint(3, 6)):
         start = Vector((rng.uniform(-0.45, -0.1), rng.uniform(-0.3, 0.3), rng.uniform(-0.05, 0.05)))
         heading = rng.uniform(-0.35, 0.35)
         length = rng.uniform(0.4, 0.9)
         hook = rng.uniform(0.15, 0.5) * rng.choice((-1.0, 1.0))
-        steps = int(60 * length)
+        steps = max(4, int(24 * length))
+        stroke = []
         for k in range(steps):
-            t = k / max(steps - 1, 1)
+            t = k / (steps - 1)
             angle = heading + hook * t * t
             q = start + Vector((math.cos(angle), math.sin(angle), 0.15 * t * t)) * (length * t)
-            r = _unequal(rng, p, 0.018 * (1.0 - 0.75 * t) + 0.004, 0.3)
-            strokes.append(_ball(q.x, q.y, q.z, r, 0.7, 1.0))
-    return _distorted(rng, p, strokes, 0.1)
+            stroke.append((q, rng.uniform(0.8, 1.0)))
+        strokes.append(stroke)
+    return strokes
 
 
-# (identifier, label, description, builder)
+# (identifier, label, description, builder). The genera in CURVES are
+# drawn as strokes into a curve, the others as spheres into a mesh.
 GENERA = (
     ('CUMULUS', "Cumulus", "Cumulus: a heaped fair-weather cloud with a flat base", _cumulus),
-    ('CUMULONIMBUS', "Cumulonimbus", "Cumulonimbus: a thunderstorm tower spreading into a flat anvil", _cumulonimbus),
+    ('STRATOCUMULUS', "Stratocumulus", "Stratocumulus: a low layer of large rounded masses in loose rolls",
+     _stratocumulus),
     ('ALTOCUMULUS', "Altocumulus", "Altocumulus: a mid-level layer of small rounded cloudlets", _altocumulus),
     ('CIRROCUMULUS', "Cirrocumulus", "Cirrocumulus: a thin high sheet of tiny grains in ripples", _cirrocumulus),
     ('STRATUS', "Stratus", "Stratus: a low, flat, featureless grey sheet", _stratus),
@@ -275,6 +329,7 @@ GENERA = (
     ('CIRRUS', "Cirrus", "Cirrus: thin high strokes and hooks of ice", _cirrus),
 )
 BUILDERS = {g[0]: g[3] for g in GENERA}
+CURVES = {'CIRRUS'}
 
 
 def defaults():
@@ -303,10 +358,33 @@ def _icosphere(subdivisions):
     return _ICOSPHERES[subdivisions]
 
 
-def fill_mesh(mesh, genus, seed, dimensions, settings=None):
+# Height ±: the tops rise and sink over the footprint by a smooth noise of
+# VARY_BENDS bends across it; never by more than VARY_MOST of the height:
+# past half, a place stretched that far up reads as a flame (0.21.0).
+VARY_BENDS = 1.2
+VARY_MOST = 0.5
+
+
+def _varied(seed, xyz, dimensions, vary):
+    """Heights made unequal, in place: each place's height over the base
+    scaled so the tops lie from about Height less `vary` to Height plus it.
+    `xyz` is an (n, 3) array in metres, its base on Z = 0."""
+    if vary <= 0.0 or len(xyz) == 0:
+        return
+    wobble = _Wobble(random.Random(seed * 7919 + 17), VARY_BENDS)
+    x = xyz[:, 0] / max(dimensions[0], 1e-6)
+    y = xyz[:, 1] / max(dimensions[1], 1e-6)
+    w = sum(np.sin(f * y + a) + np.sin(f * x + b) for f, a, b in wobble.waves)
+    w = w / max(float(np.abs(w).max()), 1e-6)
+    xyz[:, 2] *= 1.0 + min(vary, VARY_MOST * dimensions[2]) / max(dimensions[2], 1e-6) * w
+
+
+def fill_mesh(mesh, genus, seed, dimensions, settings=None, vary=0.0):
     """Write a genus's rough shape into a mesh, in place of whatever it
     holds: `dimensions` (length, width, height) along X, Y and Z, its base
-    on Z = 0 and its middle on the Z axis. Each seed gives another one.
+    on Z = 0 and its middle on the Z axis; with `vary`, Height ± in metres,
+    its tops from place to place higher or lower than the height. Each seed
+    gives another one.
 
     The spheres are copies of two icospheres put together as arrays: one
     bmesh operator call for each took 60 to 170 ms for a heap, too long for
@@ -328,6 +406,7 @@ def fill_mesh(mesh, genus, seed, dimensions, settings=None):
     verts = (verts - low) / span * np.array(dimensions, dtype=np.float32)
     verts[:, 0] -= dimensions[0] / 2.0
     verts[:, 1] -= dimensions[1] / 2.0
+    _varied(seed, verts, dimensions, vary)
     mesh.clear_geometry()
     mesh.vertices.add(len(verts))
     mesh.vertices.foreach_set("co", verts.ravel())
@@ -336,6 +415,33 @@ def fill_mesh(mesh, genus, seed, dimensions, settings=None):
     mesh.polygons.add(len(faces))
     mesh.polygons.foreach_set("loop_start", np.arange(0, faces.size, 3, dtype=np.int32))
     mesh.update(calc_edges=True)
+
+
+def fill_curve(curve, genus, seed, dimensions, settings=None, vary=0.0):
+    """Write a genus's strokes into a curve, in place of the ones it has:
+    poly splines stretched to `dimensions` as fill_mesh stretches a heap,
+    each point's radius the stroke's thickness there."""
+    p = defaults()
+    p.update(settings or {})
+    strokes = BUILDERS[genus](random.Random(seed), p)
+    places = [q for stroke in strokes for q, _r in stroke]
+    low = Vector(tuple(min(q[i] for q in places) for i in range(3)))
+    high = Vector(tuple(max(q[i] for q in places) for i in range(3)))
+    at = np.array([[(q[i] - low[i]) / max(high[i] - low[i], 1e-6) * dimensions[i] for i in range(3)]
+                   for q in places], dtype=np.float64)
+    at[:, 0] -= dimensions[0] / 2.0
+    at[:, 1] -= dimensions[1] / 2.0
+    _varied(seed, at, dimensions, vary)
+    curve.splines.clear()
+    curve.dimensions = '3D'
+    k = 0
+    for stroke in strokes:
+        spline = curve.splines.new('POLY')
+        spline.points.add(len(stroke) - 1)
+        for point, (_q, r) in zip(spline.points, stroke):
+            point.co = (*at[k], 1.0)
+            point.radius = r
+            k += 1
 
 
 def blockout_mesh(genus, seed, dimensions, settings=None, name="Cloud"):

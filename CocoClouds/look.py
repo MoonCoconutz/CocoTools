@@ -58,7 +58,7 @@ import bpy
 from . import nodes
 
 MATERIAL_NAME = "CocoClouds Cloud"
-SHADER_VERSION = 4
+SHADER_VERSION = 5
 
 # The parts, by the name of their group.
 DATA = "CocoClouds Data"
@@ -103,22 +103,34 @@ DESCRIPTIONS = {
 
 # Preview Light, tuned on 5.2 against Cycles with 64 bounces, a Cumulus, a
 # Tower and a Puff under a sun of strength 5 from the front, the side, the
-# back and above, in a plain blue world (probes/lookdev_match.py, 0.11.0).
+# back and above, in a plain blue world (probes/lookdev_match.py, 0.11.0);
+# again in 0.21.0 against Cycles with 128 bounces at Density 90, a sun in
+# front, at the side, behind, above and at sunset (probes/probe_light.py),
+# where LIT went from 0.32 to 0.2.
 # The lit side: the sunlight times LIT, by how far a place faces the sun.
 # Wrapped, since light gets round a cloud: a place facing LIT_WRAP away
 # from the sun is the first in the dark.
-LIT = 0.32
+LIT = 0.2
 LIT_WRAP = 0.6
 LIT_POWER = 1.6
-# Looked at against the sun, what is lit is this many times brighter at
-# most: the silver lining.
-LIT_FORWARD = 2.0
+# Looked at against the sun (0.21.0, against Cycles under a sun behind the
+# cloud and at sunset): a thick cloud's body goes dark, the light no longer
+# wrapping round it, and only its edges, thin as the camera sees them, shine:
+# the silver lining, LIT_RIM times the lit side at most, sharper by
+# RIM_POWER. Before, the whole face was brightened and a sunset turned the
+# cloud orange all over.
+LIT_RIM = 8.0
+RIM_POWER = 3.0
 # With the sun overhead the base is this much darker: the cloud's own
 # shadow, which nothing here can work out.
 LIT_SHADOW = 0.5
 # The shade: this much of the sky's light and of the sun's.
 FILL_SKY = 0.6
 FILL_SUN = 0.04
+# Looked at against the sun the shade is the sky's light only (the sun's share
+# goes, see _build_preview), and a little more of it: Cycles' cloud lit from
+# behind is the sky's blue, about as dark as this makes it (0.21.0).
+FILL_AGAINST = -0.15
 # The sky's light when the world gives no plain colour to read.
 SKY_ELSE = (0.3, 0.5, 0.9)
 # A scene without a Sun light (a new one has a point light) still shows its
@@ -215,29 +227,41 @@ def _build_preview():
     is to give off, standing in for all that Cycles scatters.
 
     Lit by how far the way out of the cloud points at the sun, wrapped
-    round; brighter looked at against the sun; darker at the base under a
-    high sun; and never darker than the shade, a part of the sky's light
-    and of the sun's."""
+    round unless looked at against the sun; then its edges shine instead;
+    darker at the base under a high sun; and never darker than the shade, a
+    part of the sky's light and of the sun's."""
     ng, g, gi, go = _part(PREVIEW, ("Way Out", "Height", "To Sun", "Sunlight", "Skylight"),
                           (("Light", 'NodeSocketColor'),))
     world = g.node("ShaderNodeVectorTransform", {0: gi["Way Out"]}, vector_type='NORMAL',
                    convert_from='OBJECT', convert_to='WORLD')
     world.label = "Way Out, in the World"
-    facing = g.vmath('DOT_PRODUCT', g.vmath('NORMALIZE', world.outputs[0]), gi["To Sun"]).node.outputs["Value"]
-    lit = g.math('POWER', g.math('MAXIMUM', g.math('DIVIDE', g.math('ADD', facing, LIT_WRAP), 1.0 + LIT_WRAP), 0.0),
-                 LIT_POWER)
-    lit.node.label = "Facing the Sun"
+    out = g.vmath('NORMALIZE', world.outputs[0])
+    facing = g.vmath('DOT_PRODUCT', out, gi["To Sun"]).node.outputs["Value"]
     view = g.node("ShaderNodeNewGeometry").outputs["Incoming"]
     against = g.math('MAXIMUM', g.math('MULTIPLY', g.vmath('DOT_PRODUCT', view, gi["To Sun"]).node.outputs["Value"], -1.0), 0.0)
-    forward = g.math('ADD', 1.0, g.math('MULTIPLY', g.math('MULTIPLY', against, against), LIT_FORWARD))
-    forward.node.label = "Silver Lining"
+    wrap = g.math('MULTIPLY', LIT_WRAP, g.math('SUBTRACT', 1.0, against))
+    lit = g.math('POWER', g.math('MAXIMUM', g.math('DIVIDE', g.math('ADD', facing, wrap), g.math('ADD', wrap, 1.0)), 0.0),
+                 LIT_POWER)
+    lit.node.label = "Facing the Sun"
+    edge = g.math('SUBTRACT', 1.0, g.math('ABSOLUTE', g.vmath('DOT_PRODUCT', out, view).node.outputs["Value"]))
+    # On the edges towards the sun only: at an edge the way out is across
+    # the view, and how far it points at the sun, over how far the sun is
+    # off the view's line, says which side of the cloud the sun is on.
+    off = g.math('MAXIMUM', g.math('SQRT', g.math('SUBTRACT', 1.0, g.math('MULTIPLY', against, against))), 0.1)
+    towards = g.math('DIVIDE', facing, off, clamp=True)
+    rim = g.math('MULTIPLY', g.math('MULTIPLY', g.math('MULTIPLY', against, against), g.math('POWER', edge, RIM_POWER)),
+                 g.math('MULTIPLY', towards, LIT_RIM))
+    rim.node.label = "Silver Lining"
     overhead = g.math('MAXIMUM', g.separate(gi["To Sun"])["Z"], 0.0)
     shadow = g.math('SUBTRACT', 1.0, g.math('MULTIPLY', g.math('MULTIPLY', overhead, LIT_SHADOW),
                                             g.math('SUBTRACT', 1.0, g.math('MAXIMUM', g.math('MINIMUM', gi["Height"], 1.0), 0.0))))
     shadow.node.label = "Its Own Shadow"
-    level = g.math('MULTIPLY', g.math('MULTIPLY', g.math('MULTIPLY', lit, forward), shadow), LIT)
-    sun = g.vmath('SCALE', gi["Sunlight"], scale=g.math('ADD', level, FILL_SUN))
-    sky = g.vmath('SCALE', gi["Skylight"], scale=FILL_SKY)
+    level = g.math('MULTIPLY', g.math('MULTIPLY', g.math('ADD', lit, rim), shadow), LIT)
+    # The sun's share of the shade is light it threw through the cloud: none comes
+    # out on the near side of a cloud lit from behind.
+    sun = g.vmath('SCALE', gi["Sunlight"], scale=g.math('ADD', level, g.math('MULTIPLY', FILL_SUN, g.math('SUBTRACT', 1.0, against))))
+    sky = g.vmath('SCALE', gi["Skylight"], scale=g.math('MULTIPLY', FILL_SKY,
+                                                        g.math('SUBTRACT', 1.0, g.math('MULTIPLY', against, FILL_AGAINST))))
     g.link(go, {"Light": g.vmath('ADD', sun, sky)})
     return ng
 

@@ -1,9 +1,9 @@
 import bpy
 from bpy.types import Panel
 
-from . import look, shapes
-from .cloud import cloud_modifier, has_input, heap_seed, inp, is_current, slot_material, type_of
-from .operators import cycles_is_dark, eevee_is_cut, eevee_is_flat
+from . import look, previews, shapes
+from .cloud import KINDS, cloud_modifier, has_input, heap_seed, inp, is_current, slot_material, type_of
+from .operators import cycles_is_dark, eevee_is_cut, eevee_is_flat, fast_gi_greys
 
 
 class _Sidebar:
@@ -20,11 +20,6 @@ def _values(layout, mod, *names):
             col.prop(inp(mod, name), "value", text=name)
     return col
 
-
-# The chooser at the top: the size in icons of the picture it shows closed,
-# and of each picture in the grid it opens.
-TYPE_PICTURE = 2.5
-TYPE_PICTURES = 5.0
 
 # The material's controls as the Material panel lays them out, a gap between
 # the groups.
@@ -69,13 +64,12 @@ class COCOCLOUDS_PT_main(_Sidebar, Panel):
         if mod is not None:
             kind = type_of(context.active_object)
             said, chooser = (f"Genus: {kind[1]}" if kind else "Cloud Genus"), "cococlouds_type"
-        elif any(o.type == 'MESH' for o in context.selected_objects):
+        elif any(o.type in KINDS for o in context.selected_objects):
             said, chooser = "Cloud from Selection", "cococlouds_type"
         else:
             said, chooser = "Add Cloud", "cococlouds_add"
         layout.label(text=said, icon='VOLUME_DATA')
-        layout.template_icon_view(context.window_manager, chooser, show_labels=True,
-                                  scale=TYPE_PICTURE, scale_popup=TYPE_PICTURES)
+        previews.show(layout, context, chooser)
         if mod is not None:
             col = layout.column(align=True)
             if not is_current(mod):
@@ -101,23 +95,36 @@ class COCOCLOUDS_PT_geometry(_CloudPanel, Panel):
     bl_label = "Geometry"
 
     def draw(self, context):
-        layout, _mod = self.setup(context)
+        layout, mod = self.setup(context)
         ob = context.active_object
+        _values(layout, mod, "Show Geometry")
+        if ob.type == 'CURVE':
+            # Strokes: drawn with the Draw tool, made tubes by the modifier.
+            _values(layout, mod, "Stroke Thickness")
+            row = layout.row(align=True)
+            row.operator("cococlouds.draw", icon='GREASEPENCIL')
+            row.operator("cococlouds.draw", text="Draw New", icon='TRASH').clear = True
         if heap_seed(ob) is None:
-            # A mesh of the user's own: its shape is theirs to edit.
-            layout.label(text="Shaped by your mesh: edit it in Edit Mode", icon='MESH_DATA')
+            # A shape of the user's own: theirs to edit.
+            if ob.type == 'CURVE':
+                layout.label(text="Shaped by your strokes", icon='CURVE_DATA')
+            else:
+                layout.label(text="Shaped by your mesh: edit it in Edit Mode", icon='MESH_DATA')
             return
         # The generator's settings draw the heap again, which is not done
-        # while the mesh is being edited.
-        layout.enabled = ob.mode == 'OBJECT'
+        # while the shape is being edited.
+        col = layout.column()
+        col.enabled = ob.mode == 'OBJECT'
         own = ob.cococlouds
-        col = layout.column(align=True)
-        for name in ("length", "width", "height"):
-            col.prop(own, name)
-        layout.prop(own, "shape_seed")
-        col = layout.column(align=True)
-        for name, *_rest in shapes.SETTINGS:
-            col.prop(own, name)
+        sub = col.column(align=True)
+        for name in ("length", "width", "height", "height_variation"):
+            sub.prop(own, name)
+        col.prop(own, "shape_seed")
+        if ob.type == 'MESH':
+            # Strokes have no spheres for these to shape.
+            sub = col.column(align=True)
+            for name, *_rest in shapes.SETTINGS:
+                sub.prop(own, name)
 
 
 class COCOCLOUDS_PT_deform(_CloudPanel, Panel):
@@ -168,6 +175,8 @@ class COCOCLOUDS_PT_render(_Sidebar, Panel):
             col.prop(inp(mod, "Resolution"), "value", text="Render")
         scene = context.scene
         col = layout.column(align=True)
+        if fast_gi_greys(scene):
+            col.label(text="Cycles: Fast GI greys clouds", icon='ERROR')
         if cycles_is_dark(scene):
             col.label(text="Cycles: clouds will render dark", icon='ERROR')
         if eevee_is_flat(scene):

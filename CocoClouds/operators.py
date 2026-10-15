@@ -1,17 +1,31 @@
 import random
 
 import bpy
-from bpy.props import EnumProperty, IntProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty
 from bpy.types import Operator
 
 from . import cloud, look, previews, shapes
 
-# What "Set Up Render" asks of each engine. Cycles lights a volume once with
-# the factory 0 volume bounces, and a cloud is white only because light
-# bounces inside it many times. EEVEE has no such bounces; these settings are
-# what makes it show the cloud's shape instead of a flat silhouette. Its
-# Custom Range is switched off as well (see eevee_is_cut).
-CYCLES_BOUNCES = 12
+# What "Set Up Render" asks of each engine, as I set it (0.21.0). Cycles
+# lights a volume once with the factory 0 volume bounces, and a cloud is
+# white only because light bounces inside it many times: CYCLES_BOUNCES, the
+# volume's and in all. Fast GI on, but only after as many bounces: after
+# fewer it puts an estimate in place of the light, which in a cloud is grey
+# smoke (a Cumulus in front of the sun at 32 bounces: 0.17 with 4 AO
+# bounces, 0.43 without Fast GI, 0.43 with 32). The denoiser is
+# OpenImageDenoise on the GPU. Samples and the noise threshold are left as
+# they are. EEVEE has no such bounces; its settings are what makes it show
+# the cloud's shape instead of a flat silhouette, and its Custom Range is
+# switched off (eevee_is_cut).
+CYCLES_BOUNCES = 32
+CYCLES_SETTINGS = (
+    ("use_denoising", True),
+    ("denoiser", 'OPENIMAGEDENOISE'),
+    ("denoising_use_gpu", True),
+    ("use_fast_gi", True),
+    ("ao_bounces", CYCLES_BOUNCES),
+    ("ao_bounces_render", CYCLES_BOUNCES),
+)
 EEVEE_SETTINGS = (
     ("volumetric_tile_size", '2'),
     ("volumetric_samples", 128),
@@ -21,15 +35,19 @@ EEVEE_SETTINGS = (
 
 
 def _setup(scene, bounces=CYCLES_BOUNCES):
-    """What clouds need of a scene to look right at all, in either engine,
-    with at least `bounces` in Cycles. Returns the engines something was
-    changed for."""
+    """What clouds need of a scene to look right, in either engine: in
+    Cycles at least `bounces` and CYCLES_SETTINGS. Returns the engines
+    something was changed for."""
     changed = []
     cycles = getattr(scene, "cycles", None)
     if cycles is not None:
         for attr in ("volume_bounces", "max_bounces"):
             if getattr(cycles, attr) < bounces:
                 setattr(cycles, attr, bounces)
+                changed.append("Cycles")
+        for attr, value in CYCLES_SETTINGS:
+            if getattr(cycles, attr) != value:
+                setattr(cycles, attr, value)
                 changed.append("Cycles")
     eevee = scene.eevee
     if int(eevee.volumetric_tile_size) > int(EEVEE_SETTINGS[0][1]):
@@ -45,7 +63,14 @@ def _setup(scene, bounces=CYCLES_BOUNCES):
     return list(dict.fromkeys(changed))
 
 
+def fast_gi_greys(scene):
+    """Fast GI on and starting before CYCLES_BOUNCES: clouds come out grey."""
+    cycles = getattr(scene, "cycles", None)
+    return cycles is not None and cycles.use_fast_gi and min(cycles.ao_bounces, cycles.ao_bounces_render) < CYCLES_BOUNCES
+
+
 def cycles_is_dark(scene):
+    """Too few bounces: Cycles will render clouds dark."""
     cycles = getattr(scene, "cycles", None)
     return cycles is not None and min(cycles.volume_bounces, cycles.max_bounces) < CYCLES_BOUNCES
 
@@ -98,10 +123,9 @@ class COCOCLOUDS_OT_add(Operator):
     def execute(self, context):
         if self.seed == 0:
             self.seed = random.randint(1, SEEDS)
-        ob = bpy.data.objects.new("Cloud", bpy.data.meshes.new("Cloud"))
+        ob = cloud.new_heap(self.type)
         context.collection.objects.link(ob)
         ob.location = context.scene.cursor.location
-        ob.cococlouds.heap = True
         cloud.quietly(ob, {"shape_seed": self.seed})
         mod = cloud.set_type(ob, self.type)
         cloud.put(mod, "Seed", self.seed)
@@ -115,8 +139,9 @@ class COCOCLOUDS_OT_add(Operator):
 class COCOCLOUDS_OT_set_type(Operator):
     bl_idname = "cococlouds.set_type"
     bl_label = "Cloud Genus"
-    bl_description = ("Give the selected meshes this genus: every Deform setting becomes the genus's, and a "
-                      "cloud from the generator is drawn again as one. A mesh of yours keeps its shape")
+    bl_description = ("Give the selected meshes and curves this genus: every Deform setting becomes the genus's, "
+                      "and a cloud from the generator is drawn again as one. A mesh or curve of yours keeps its "
+                      "shape")
     bl_options = {'REGISTER', 'UNDO'}
 
     type: EnumProperty(name="Genus", items=previews.type_items)
@@ -125,14 +150,14 @@ class COCOCLOUDS_OT_set_type(Operator):
     def poll(cls, context):
         if context.mode != 'OBJECT':
             return False
-        if not any(o.type == 'MESH' for o in context.selected_objects):
-            cls.poll_message_set("Select a mesh")
+        if not any(o.type in cloud.KINDS for o in context.selected_objects):
+            cls.poll_message_set("Select a mesh or a curve")
             return False
         return True
 
     def execute(self, context):
         for ob in context.selected_objects:
-            if ob.type != 'MESH':
+            if ob.type not in cloud.KINDS:
                 continue
             new = not cloud.is_cloud(ob)
             mod = cloud.set_type(ob, self.type)
@@ -140,6 +165,42 @@ class COCOCLOUDS_OT_set_type(Operator):
                 # Two alike meshes made into clouds together should not come
                 # out alike.
                 cloud.put(mod, "Seed", random.randint(1, SEEDS))
+        _redraw(context)
+        return {'FINISHED'}
+
+
+class COCOCLOUDS_OT_draw(Operator):
+    bl_idname = "cococlouds.draw"
+    bl_label = "Draw Strokes"
+    bl_description = ("Draw more strokes on this cloud in Edit Mode, with the Draw tool: each one becomes a "
+                      "streak of cloud. The strokes become yours, no longer redrawn by the Geometry settings")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    clear: BoolProperty(name="Clear", description="Remove the strokes the cloud has first",
+                        options={'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.type == 'CURVE' and cloud.is_cloud(ob) and context.area is not None \
+            and context.area.type == 'VIEW_3D'
+
+    def execute(self, context):
+        ob = context.active_object
+        ob.cococlouds.heap = False
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        if self.clear:
+            ob.data.splines.clear()
+        for other in context.selected_objects:
+            if other != ob:
+                other.select_set(False)
+        bpy.ops.object.mode_set(mode='EDIT')
+        try:
+            bpy.ops.wm.tool_set_by_id(name="builtin.draw")
+        except RuntimeError:
+            # Seen without a window, where tools have no keymaps.
+            self.report({'WARNING'}, "Pick the Draw tool in the toolbar")
         _redraw(context)
         return {'FINISHED'}
 
@@ -222,10 +283,10 @@ class COCOCLOUDS_OT_remove(Operator):
 class COCOCLOUDS_OT_setup_render(Operator):
     bl_idname = "cococlouds.setup_render"
     bl_label = "Set Up Render"
-    bl_description = ("Change this scene's render settings so clouds look right: Cycles gets "
-                      f"{CYCLES_BOUNCES} volume bounces; EEVEE finer volumes with shadows, and no Custom "
-                      "Range cutting them off far from the camera. Settings that are already "
-                      "higher are left alone")
+    bl_description = ("Change this scene's render settings so clouds look right. Cycles: at least "
+                      f"{CYCLES_BOUNCES} bounces, volume and total; Fast GI from bounce {CYCLES_BOUNCES} (from "
+                      "fewer it turns clouds grey); OpenImageDenoise on the GPU. Samples are left alone. EEVEE: "
+                      "finer volumes with shadows, and no Custom Range cutting them off far from the camera")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -240,6 +301,7 @@ class COCOCLOUDS_OT_setup_render(Operator):
 _classes = (
     COCOCLOUDS_OT_add,
     COCOCLOUDS_OT_set_type,
+    COCOCLOUDS_OT_draw,
     COCOCLOUDS_OT_cloud_material,
     COCOCLOUDS_OT_update_material,
     COCOCLOUDS_OT_update,

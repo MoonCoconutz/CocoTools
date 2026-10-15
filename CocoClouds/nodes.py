@@ -1,7 +1,9 @@
 """The geometry node group CocoClouds runs on.
 
 **Cloud** sits on a mesh object, the cloud's rough shape, and outputs a
-volume in its place. It works the way Cloud Creator Lite does (read in its
+volume in its place. On a curve object (a Cirrus) each stroke is first made
+a tube, Stroke Thickness wide and thinning towards its end, and the tubes are
+the rough shape. It works the way Cloud Creator Lite does (read in its
 own file, rebuilt here, nothing of it copied):
 
 1. the mesh is filled with points on a grid, Spacing of a ball apart;
@@ -38,7 +40,7 @@ for the clouds already using them (see get_group).
 
 import bpy
 
-GROUP_VERSION = 11
+GROUP_VERSION = 15
 CLOUD_NAME = "CocoClouds Cloud"
 GRID = "density"
 # The grid the cloud's material reads besides, and how many coarse voxels it
@@ -75,24 +77,43 @@ GROW_EDGE = 0.2
 # The seed moves the noise in its fourth dimension by the fraction of seed x
 # SEED_STEP, times SEED_SPAN: added as it is, a seed in the tens of
 # thousands put the noise so far out that single precision broke it.
+# A ball is never smaller than BALL_VOXELS voxels: a smaller one does not
+# show, and its points would only cost (Puff Size 0.005 took 13 s at the
+# viewport's voxels, 0.01 1.8 s).
+BALL_VOXELS = 1.0
 SEED_STEP = 0.6180339
 SEED_SPAN = 97.0
+# A stroke's tube: as thick as Stroke Thickness times the point's radius,
+# swelling to it over the first STROKE_HEAD of its length and thinning to
+# STROKE_TAIL of it at its end; a profile of STROKE_SIDES.
+STROKE_HEAD = 0.1
+STROKE_TAIL = 0.2
+STROKE_SIDES = 8
 
 # (name, socket type, default, min, max, subtype) for the group's inputs. The
-# operators and the UI address them by name.
+# operators and the UI address them by name. The limits are where a setting
+# stops making a cloud, measured on a Cumulus (0.21.0): a Puff Size under
+# 0.005 takes ever longer (the time goes as one over its cube: 13 s at 0.005
+# at the viewport's voxels before BALL_VOXELS) and over 0.1 is a few bubbles;
+# a Noise Scale over 100, a Detail over 6 or a Distortion over 20 change
+# nothing more that shows, Detail only costs; Flat Base over 0.7 leaves a
+# sliver; Density under 1 is next to nothing and over 500 a dark lump; a
+# Viewport Resolution over 512 takes seconds at every change.
 INPUTS = (
-    ("Puff Size", 'NodeSocketFloat', 0.025, 0.002, 0.25, 'FACTOR'),
+    ("Puff Size", 'NodeSocketFloat', 0.025, 0.005, 0.1, 'FACTOR'),
     ("Noise Strength", 'NodeSocketFloat', 0.05, 0.0, 0.5, 'FACTOR'),
-    ("Noise Scale", 'NodeSocketFloat', 10.0, 0.0, 1000.0, 'NONE'),
-    ("Noise Detail", 'NodeSocketFloat', 1.0, 0.0, 15.0, 'NONE'),
+    ("Noise Scale", 'NodeSocketFloat', 10.0, 0.0, 100.0, 'NONE'),
+    ("Noise Detail", 'NodeSocketFloat', 1.0, 0.0, 6.0, 'NONE'),
     ("Noise Roughness", 'NodeSocketFloat', 0.5, 0.0, 1.0, 'FACTOR'),
-    ("Noise Distortion", 'NodeSocketFloat', 1.0, 0.0, 100.0, 'NONE'),
+    ("Noise Distortion", 'NodeSocketFloat', 1.0, 0.0, 20.0, 'NONE'),
     ("Seed", 'NodeSocketInt', 0, -100000, 100000, 'NONE'),
-    ("Flat Base", 'NodeSocketFloat', 0.0, 0.0, 0.95, 'FACTOR'),
+    ("Stroke Thickness", 'NodeSocketFloat', 0.3, 0.02, 10.0, 'DISTANCE'),
+    ("Flat Base", 'NodeSocketFloat', 0.0, 0.0, 0.7, 'FACTOR'),
     ("Growth", 'NodeSocketFloat', 1.0, 0.0, 1.0, 'FACTOR'),
-    ("Density", 'NodeSocketFloat', 30.0, 0.0, 10000.0, 'NONE'),
+    ("Density", 'NodeSocketFloat', 90.0, 1.0, 500.0, 'NONE'),
     ("Resolution", 'NodeSocketInt', 256, 16, 2048, 'NONE'),
-    ("Viewport Resolution", 'NodeSocketInt', 96, 16, 1024, 'NONE'),
+    ("Viewport Resolution", 'NodeSocketInt', 96, 16, 512, 'NONE'),
+    ("Show Geometry", 'NodeSocketBool', False, None, None, None),
     ("Material", 'NodeSocketMaterial', None, None, None, None),
 )
 
@@ -105,6 +126,10 @@ DESCRIPTIONS = {
     "Noise Roughness": "How strong the smaller layers of the noise are",
     "Noise Distortion": "How much the noise twists itself",
     "Seed": "Another variation of the same cloud: it changes the noise, not the shape",
+    "Show Geometry": ("Show the cloud's rough shape in the viewport in place of the cloud, as if the cloud were "
+                      "off: its mesh, or its strokes as tubes. A render still shows the cloud"),
+    "Stroke Thickness": ("How thick a stroke of a curve is made, at its thickest: a curve's strokes are the "
+                         "cloud's rough shape. Ignored on a mesh"),
     "Flat Base": "Part of the cloud's height cut flat at the bottom",
     "Growth": ("How far the cloud has grown: nothing at 0, its whole shape at 1. It fills in from the middle "
                "of its base outwards, in scattered puffs that swell and join"),
@@ -235,7 +260,23 @@ def _build_cloud():
     g = Graph(ng)
     gi = g.node("NodeGroupInput").outputs
     go = g.node("NodeGroupOutput")
-    mesh = gi["Geometry"]
+    # A curve's strokes as closed tubes, joined to whatever mesh there is.
+    taper = g.node("GeometryNodeSplineParameter").outputs["Factor"]
+    taper = g.math('MULTIPLY', g.math('DIVIDE', taper, STROKE_HEAD, clamp=True),
+                   g.math('SUBTRACT', 1.0, g.math('MULTIPLY', taper, 1.0 - STROKE_TAIL)))
+    tubes = g.node("GeometryNodeCurveToMesh", {
+        "Curve": gi["Geometry"],
+        "Profile Curve": g.node("GeometryNodeCurvePrimitiveCircle", {"Resolution": STROKE_SIDES, "Radius": 1.0},
+                                mode='RADIUS').outputs["Curve"],
+        "Scale": g.math('MULTIPLY', g.math('MULTIPLY', g.node("GeometryNodeInputRadius").outputs[0], taper),
+                        gi["Stroke Thickness"]),
+        "Fill Caps": True}).outputs[0]
+    joined = g.node("GeometryNodeJoinGeometry").outputs[0]
+    ng.links.new(tubes, joined.node.inputs[0])
+    ng.links.new(gi["Geometry"], joined.node.inputs[0])
+    # A Switch works out only the side it takes: a mesh is not slowed by this.
+    strokes = g.node("GeometryNodeAttributeDomainSize", {"Geometry": gi["Geometry"]}, component='CURVE').outputs["Point Count"]
+    mesh = g.switch('GEOMETRY', joined, gi["Geometry"], g.math('GREATER_THAN', strokes, 0.5))
 
     # Yardsticks, in the object's own space: the shape's longest side, the
     # voxel, the largest ball and the points' spacing.
@@ -247,7 +288,7 @@ def _build_cloud():
     viewport = g.node("GeometryNodeIsViewport").outputs[0]
     resolution = g.switch('INT', gi["Viewport Resolution"], gi["Resolution"], viewport)
     voxel = g.math('DIVIDE', size, resolution)
-    ball = g.math('MULTIPLY', gi["Puff Size"], size)
+    ball = g.math('MAXIMUM', g.math('MULTIPLY', gi["Puff Size"], size), g.math('MULTIPLY', voxel, BALL_VOXELS))
     spacing = g.math('MULTIPLY', ball, SPACING)
 
     # 1. The shape filled with points on a grid. Mesh to Density Grid keeps
@@ -374,6 +415,14 @@ def _build_cloud():
     volume = g.node("GeometryNodeStoreNamedGrid", {"Volume": volume, "Name": OUT, "Grid": to_grid(room, way, 'VECTOR')},
                     data_type='VECTOR_FLOAT').outputs[0]
     out = g.node("GeometryNodeSetMaterial", {"Geometry": volume, "Material": gi["Material"]}).outputs[0]
+
+    # Show Geometry: in the viewport the rough shape itself in place of the
+    # cloud, as if it were off: the mesh, a curve's strokes as their tubes,
+    # no material (the cloud's would fill it with fog). A Switch works out
+    # only the side it takes, so the cloud costs nothing meanwhile.
+    shape = g.node("GeometryNodeSeparateComponents", {"Geometry": mesh}).outputs["Mesh"]
+    shape = g.node("GeometryNodeSetMaterial", {"Geometry": shape}).outputs[0]
+    out = g.switch('GEOMETRY', shape, out, g.math('MINIMUM', gi["Show Geometry"], viewport))
     ng.links.new(out, go.inputs[0])
     return ng
 
