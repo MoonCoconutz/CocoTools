@@ -1,8 +1,10 @@
 import random
 
+import bmesh
 import bpy
 from bpy.props import BoolProperty, EnumProperty, IntProperty
 from bpy.types import Operator
+from mathutils import Vector
 
 from . import cloud, look, previews, shapes
 
@@ -205,6 +207,52 @@ class COCOCLOUDS_OT_draw(Operator):
         return {'FINISHED'}
 
 
+class COCOCLOUDS_OT_add_fray(Operator):
+    bl_idname = "cococlouds.add_fray"
+    bl_label = "Add Fray Box"
+    bl_description = ("Add a box over one end of this cloud: inside it the wind pulls the cloud out along the "
+                      "box's X axis. Move, rotate, scale or edit the box like any object; it is not rendered")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        mod = cloud.cloud_modifier(ob)
+        return mod is not None and cloud.has_input(mod, "Fray Object")
+
+    def execute(self, context):
+        ob = context.active_object
+        mesh = bpy.data.meshes.new("Fray")
+        bm = bmesh.new()
+        bmesh.ops.create_cube(bm, size=1.0)
+        bm.to_mesh(mesh)
+        bm.free()
+        box = bpy.data.objects.new("Fray", mesh)
+        for collection in ob.users_collection:
+            collection.objects.link(box)
+        # Over the +X end of the cloud's shape (not of its volume, which
+        # reaches well past it), a little past it every way.
+        if ob.type == 'CURVE':
+            places = [Vector(q.co[:3]) for spline in ob.data.splines for q in spline.points]
+        else:
+            places = [v.co for v in ob.data.vertices]
+        corners = [ob.matrix_world @ q for q in places] or [ob.matrix_world @ Vector(c) for c in ob.bound_box]
+        low = Vector(tuple(min(c[i] for c in corners) for i in range(3)))
+        high = Vector(tuple(max(c[i] for c in corners) for i in range(3)))
+        span = high - low
+        box.location = Vector((high.x - span.x * 0.2, (low.y + high.y) / 2, (low.z + high.z) / 2))
+        box.scale = (span.x * 0.5, span.y * 1.2, span.z * 1.2)
+        box.display_type = 'WIRE'
+        box.hide_render = True
+        cloud.put(cloud.cloud_modifier(ob), "Fray Object", box)
+        for other in context.selected_objects:
+            other.select_set(False)
+        box.select_set(True)
+        context.view_layer.objects.active = box
+        _redraw(context)
+        return {'FINISHED'}
+
+
 class COCOCLOUDS_OT_cloud_material(Operator):
     bl_idname = "cococlouds.cloud_material"
     bl_label = "Use Cloud Material"
@@ -302,6 +350,7 @@ _classes = (
     COCOCLOUDS_OT_add,
     COCOCLOUDS_OT_set_type,
     COCOCLOUDS_OT_draw,
+    COCOCLOUDS_OT_add_fray,
     COCOCLOUDS_OT_cloud_material,
     COCOCLOUDS_OT_update_material,
     COCOCLOUDS_OT_update,

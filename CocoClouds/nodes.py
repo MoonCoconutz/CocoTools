@@ -15,6 +15,14 @@ own file, rebuilt here, nothing of it copied):
    the base outwards, broken up by a second noise;
 4. the balls become a volume, "density", their union with soft edges.
 
+Fray works like a Boolean: where the cloud is inside the Fray Object (any
+closed mesh, a cube to start with), the wind pulls it out along the
+object's X axis into soft tongues: the balls are moved, not added, more the
+further down the wind they are in the object, so the cloud stretches
+rather than breaks, and lane by lane by a smooth noise, so some parts go
+far and the parts between them thin out. Fray Softness is how far either
+side of the object's surface it fades in.
+
 That is all that shapes a cloud: the noise both moves and sizes the balls,
 so its settings work together, where the earlier cloud had four ways of
 moving one surface that fought each other.
@@ -40,7 +48,7 @@ for the clouds already using them (see get_group).
 
 import bpy
 
-GROUP_VERSION = 16
+GROUP_VERSION = 19
 CLOUD_NAME = "CocoClouds Cloud"
 GRID = "density"
 # The grid the cloud's material reads besides, and how many coarse voxels it
@@ -97,6 +105,21 @@ FIBRES = 9
 FIBRE_FAN = 8.0
 FIBRE_CURVE = 1.4
 FIBRE_THIN = 0.6
+# Fray: the Fray Object is read as a distance field of FRAY_VOXELS voxels
+# across the cloud. The wind is the object's X axis. A ball is pulled down
+# the wind by up to FRAY_REACH of the cloud's longest side, times how far
+# down the wind it is in the object (0 at its upwind side, 1 at the other)
+# and times a lane noise: a noise of the place across the wind, FRAY_LANES
+# bumps across the cloud, made sharper by FRAY_CONTRAST, so a lane is
+# pulled as one, a tongue, and its neighbour maybe not. Lanes left behind
+# thin by up to FRAY_GAP, which opens the gaps between tongues; a ball
+# pulled all the way is FRAY_TAPER thinner, so a tongue thins to its tip.
+FRAY_VOXELS = 48.0
+FRAY_REACH = 0.35
+FRAY_LANES = 2.2
+FRAY_CONTRAST = 10.0
+FRAY_GAP = 1.0
+FRAY_TAPER = 0.75
 
 # (name, socket type, default, min, max, subtype) for the group's inputs. The
 # operators and the UI address them by name. The limits are where a setting
@@ -118,6 +141,9 @@ INPUTS = (
     ("Stroke Thickness", 'NodeSocketFloat', 0.3, 0.02, 10.0, 'DISTANCE'),
     ("Flat Base", 'NodeSocketFloat', 0.0, 0.0, 0.7, 'FACTOR'),
     ("Growth", 'NodeSocketFloat', 1.0, 0.0, 1.0, 'FACTOR'),
+    ("Fray Object", 'NodeSocketObject', None, None, None, None),
+    ("Fray", 'NodeSocketFloat', 0.7, 0.0, 1.0, 'FACTOR'),
+    ("Fray Softness", 'NodeSocketFloat', 0.05, 0.0, 0.5, 'FACTOR'),
     ("Density", 'NodeSocketFloat', 90.0, 1.0, 500.0, 'NONE'),
     ("Resolution", 'NodeSocketInt', 256, 16, 2048, 'NONE'),
     ("Viewport Resolution", 'NodeSocketInt', 96, 16, 512, 'NONE'),
@@ -134,6 +160,11 @@ DESCRIPTIONS = {
     "Noise Roughness": "How strong the smaller layers of the noise are",
     "Noise Distortion": "How much the noise twists itself",
     "Seed": "Another variation of the same cloud: it changes the noise, not the shape",
+    "Fray Object": ("Where the cloud is inside this object the wind pulls it out along the object's X axis, "
+                    "into tongues: a closed mesh, like a Boolean's cutter. Rotate it to turn the wind"),
+    "Fray": "How far the wind pulls the cloud inside the Fray Object",
+    "Fray Softness": ("How far either side of the Fray Object's surface the pull fades in, as a part of "
+                      "the cloud's longest side"),
     "Show Geometry": ("Show the cloud's rough shape in the viewport in place of the cloud, as if the cloud were "
                       "off: its mesh, or its strokes as tubes. A render still shows the cloud"),
     "Stroke Thickness": ("How thick a stroke of a curve is made, at its thickest: a curve's strokes are the "
@@ -333,13 +364,62 @@ def _build_cloud():
     rise = g.math('DIVIDE', g.math('SUBTRACT', z, zmin), g.math('MULTIPLY', tall, RISE), clamp=True)
     push = g.vmath('SCALE', g.vmath('SUBTRACT', noise["Color"], (0.5, 0.5, 0.5)),
                    scale=g.math('MULTIPLY', g.math('MULTIPLY', gi["Noise Strength"], size), rise))
-    # The size is captured before the move: it belongs to the place the
-    # point was given, like the push.
+
+    # Fray: how far inside the Fray Object a point is, 0 outside it and 1
+    # Fray Softness in, times Fray; off with no object, or an empty one.
+    # Down the wind (the object's X axis) the point is pulled, by how far
+    # down the wind it is in the object and by its lane's noise.
+    held = g.node("GeometryNodeObjectInfo", {"Object": gi["Fray Object"]}, transform_space='RELATIVE')
+    cutter = held.outputs["Geometry"]
+    soft = g.math('MAXIMUM', g.math('MULTIPLY', gi["Fray Softness"], size), spacing)
+    cell = g.math('DIVIDE', size, FRAY_VOXELS)
+    sdf = g.node("GeometryNodeMeshToSDFGrid", {
+        "Mesh": cutter, "Voxel Size": cell,
+        "Band Width": g.math('ADD', g.math('CEIL', g.math('DIVIDE', soft, cell)), 2.0)}).outputs[0]
+    away_in = g.node("GeometryNodeSampleGrid", {"Grid": sdf, "Position": position}, data_type='FLOAT').outputs[0]
+    inside = g.math('DIVIDE', g.math('SUBTRACT', soft, away_in), g.math('MULTIPLY', soft, 2.0), clamp=True)
+    has_cutter = g.math('MINIMUM', g.math('GREATER_THAN', g.node("GeometryNodeAttributeDomainSize", {
+        "Geometry": cutter}, component='MESH').outputs["Face Count"], 0.5), g.math('GREATER_THAN', gi["Fray"], 1e-4))
+    wind = g.vmath('NORMALIZE', g.node("FunctionNodeTransformDirection", {
+        "Direction": (1.0, 0.0, 0.0), "Transform": held.outputs["Transform"]}).outputs[0])
+    # Down the wind in the object: its own X, from its shape's least to most.
+    local = g.node("FunctionNodeTransformPoint", {"Vector": position, "Transform": g.node(
+        "FunctionNodeInvertMatrix", {"Matrix": held.outputs["Transform"]}).outputs["Matrix"]}).outputs[0]
+    own = g.node("GeometryNodeBoundBox", {"Geometry": g.node("GeometryNodeObjectInfo", {
+        "Object": gi["Fray Object"]}, transform_space='ORIGINAL').outputs["Geometry"]}).outputs
+    low_x = g.separate(own["Min"])["X"]
+    down = g.math('DIVIDE', g.math('SUBTRACT', g.separate(local)["X"], low_x),
+                  g.math('MAXIMUM', g.math('SUBTRACT', g.separate(own["Max"])["X"], low_x), 1e-6), clamp=True)
+    # The lane: the place with its part down the wind mostly taken away.
+    lane = g.vmath('SUBTRACT', position, g.vmath('SCALE', wind, scale=g.math(
+        'MULTIPLY', g.vmath('DOT_PRODUCT', position, wind).node.outputs["Value"], 0.85)))
+    lane = g.node("ShaderNodeTexNoise", {
+        "Vector": g.vmath('SCALE', lane, scale=per_size), "W": g.math('ADD', seed, 57.3),
+        "Scale": FRAY_LANES, "Detail": 1.0, "Roughness": 0.5,
+    }, noise_dimensions='4D', noise_type='FBM', normalize=True).outputs["Fac"]
+    lane = g.math('ADD', g.math('MULTIPLY', g.math('SUBTRACT', lane, 0.5), FRAY_CONTRAST), 0.5, clamp=True)
+    fray = g.math('MULTIPLY', inside, gi["Fray"])
+    pulled = g.math('MULTIPLY', g.math('MULTIPLY', fray, down), lane)
+    # Off, none of it is worked out: a Switch takes only the side it gives.
+    left = g.switch('FLOAT', g.math('MULTIPLY', fray, g.math('SUBTRACT', 1.0, lane)), 0.0, has_cutter)
+    pulled = g.switch('FLOAT', pulled, 0.0, has_cutter)
+    torn = g.vmath('SCALE', wind, scale=g.math('MULTIPLY', pulled, g.math('MULTIPLY', size, FRAY_REACH)))
+
+    # The size and the fray are captured before the move: they belong to
+    # the place the point was given, like the push.
     sized = g.node("GeometryNodeCaptureAttribute", {"Geometry": points}, domain='POINT')
     sized.capture_items.new('FLOAT', "Radius")
-    g.link(sized, {"Radius": g.math('MULTIPLY', noise["Fac"], ball)})
-    moved = g.node("GeometryNodeSetPosition", {"Geometry": sized.outputs["Geometry"], "Offset": push}).outputs[0]
+    sized.capture_items.new('FLOAT', "Left")
+    sized.capture_items.new('FLOAT', "Pulled")
+    g.link(sized, {"Radius": g.math('MULTIPLY', noise["Fac"], ball),
+                   "Left": left, "Pulled": pulled})
+    moved = g.node("GeometryNodeSetPosition", {"Geometry": sized.outputs["Geometry"],
+                                               "Offset": g.vmath('ADD', push, torn)}).outputs[0]
     radius = sized.outputs["Radius"]
+    # Lanes left behind thin, opening gaps; tongues thin to their tips.
+    radius = g.math('MULTIPLY', radius, g.math('MULTIPLY',
+                    g.math('SUBTRACT', 1.0, g.math('MULTIPLY', sized.outputs["Left"], FRAY_GAP)),
+                    g.math('SUBTRACT', 1.0, g.math('MULTIPLY', sized.outputs["Pulled"], FRAY_TAPER))))
 
     # 3. Flat base: below the floor no ball, near it only as large as its
     # height over the floor and a little more. Off at 0.

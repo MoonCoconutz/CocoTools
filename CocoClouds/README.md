@@ -43,7 +43,7 @@ search field under them; click one. What that does follows the selection:
 | Stratus | A flat, featureless grey layer; thicker and darker (Height, Density, Dark Base) a Nimbostratus, thinner and higher an Altostratus |
 | Cirrus | Thin high streaks of ice, hair-like, hooked at their ends, drawn as curves: each stroke is a fan of fibres |
 
-A cloud's settings are in four panels, in the order a cloud is made.
+A cloud's settings are in five panels, in the order a cloud is made.
 
 ### Geometry
 
@@ -90,6 +90,19 @@ so the base stays where it is.
 | **Seed** | Another variation of the same cloud: the noise, not the shape |
 | **Flat Base** | Part of the cloud's height cut flat at the bottom |
 | **Growth** | Nothing at 0, the whole cloud at 1: it fills in from the middle of its base outwards, in scattered puffs that swell and join. Keyframe it |
+
+### Fray
+
+Tears the cloud where you choose, as if the wind had pulled it apart. It works
+like a Boolean: pick an object, and where the cloud is inside it the wind
+pulls it out along the object's X axis into soft tongues, gaps between them,
+thinning to their tips. Rotate the object to turn the wind.
+
+| Setting | What it does |
+| --- | --- |
+| **Fray Object** | Any closed mesh. **Add Fray Box** puts a wire box over one end of the cloud and picks it: move, scale, rotate or edit it like any object. It is not rendered |
+| **Fray** | How far the wind pulls the cloud inside the object: nothing at 0, long tongues at 1 |
+| **Fray Softness** | How far either side of the object's surface the tearing fades in, as a part of the cloud's longest side |
 
 ### Material
 

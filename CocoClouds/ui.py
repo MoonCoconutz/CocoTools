@@ -2,7 +2,7 @@ import bpy
 from bpy.types import Panel
 
 from . import look, previews, shapes
-from .cloud import KINDS, cloud_modifier, has_input, heap_seed, inp, is_current, slot_material, type_of
+from .cloud import KINDS, cloud_modifier, get, has_input, heap_seed, inp, is_current, slot_material, type_of
 from .operators import cycles_is_dark, eevee_is_cut, eevee_is_flat, fast_gi_greys
 
 
@@ -138,6 +138,20 @@ class COCOCLOUDS_PT_deform(_CloudPanel, Panel):
         _values(layout, mod, "Flat Base", "Growth")
 
 
+class COCOCLOUDS_PT_fray(_CloudPanel, Panel):
+    bl_label = "Fray"
+
+    def draw(self, context):
+        layout, mod = self.setup(context)
+        if not has_input(mod, "Fray Object"):
+            layout.label(text="Update Cloud to tear it", icon='INFO')
+            return
+        _values(layout, mod, "Fray Object")
+        if get(mod, "Fray Object") is None:
+            layout.operator("cococlouds.add_fray", icon='MOD_BOOLEAN')
+        _values(layout, mod, "Fray", "Fray Softness")
+
+
 class COCOCLOUDS_PT_material(_CloudPanel, Panel):
     bl_label = "Material"
 
@@ -194,6 +208,7 @@ _classes = (
     COCOCLOUDS_PT_main,
     COCOCLOUDS_PT_geometry,
     COCOCLOUDS_PT_deform,
+    COCOCLOUDS_PT_fray,
     COCOCLOUDS_PT_material,
     COCOCLOUDS_PT_render,
 )
