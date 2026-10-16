@@ -64,6 +64,61 @@ def delete_survivors(found):
         bpy.ops.mesh.delete(type='VERT')
 
 
+def delete_edges():
+    """X in Edge Mode, on every mesh in Edit Mode.
+
+    delete(type='EDGE') takes the faces on both sides of an edge with it;
+    dissolving merges them instead. Dissolving alone is wrong when the faces
+    themselves are selected: every selected edge fuses its two faces, so a
+    fully selected tube or grid collapsed into one large leftover face instead
+    of going away. So, in this order:
+
+    1. A face with every edge selected is deleted, and so is the face of a
+       selected border edge (nothing on the other side to merge with). A
+       delete by face also takes the edges and vertices only those faces used.
+    2. The selected edges still between two faces are dissolved, which merges
+       those faces. use_verts=True also dissolves an end vertex left with just
+       two edges, the one it would otherwise leave as a stray kink. A vertex
+       that still joins three or more edges stays as a T-junction, as it
+       should: dissolving it too merged the faces on every side into one large
+       n-gon.
+    3. A selected edge with no face (a wire) has nothing to dissolve into, so
+       it is deleted as an edge, with any vertex left without one but not a
+       vertex another, unselected wire edge still uses.
+
+    Done in BMesh rather than by operator, so what happens never depends on
+    which selection the previous step left behind.
+    """
+    for ob in bpy.context.objects_in_mode_unique_data:
+        bm = bmesh.from_edit_mesh(ob.data)
+        edges = {e for e in bm.edges if e.select}
+        if not edges:
+            continue
+
+        doomed = {f for f in bm.faces if all(e in edges for e in f.edges)}
+        for e in edges:
+            if len(e.link_faces) == 1:
+                doomed.add(e.link_faces[0])
+        if doomed:
+            bmesh.ops.delete(bm, geom=list(doomed), context='FACES')
+
+        edges = [e for e in edges if e.is_valid]
+        between = [e for e in edges if len(e.link_faces) == 2]
+        if between:
+            bmesh.ops.dissolve_edges(bm, edges=between, use_verts=True,
+                                     use_face_split=False)
+
+        wires = [e for e in edges if e.is_valid and not e.link_faces]
+        if wires:
+            bmesh.ops.delete(bm, geom=wires, context='EDGES')
+
+        for seq in (bm.faces, bm.edges, bm.verts):
+            for elem in seq:
+                elem.select = False
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(ob.data, loop_triangles=True, destructive=True)
+
+
 use_vert, use_edge, use_face = bpy.context.tool_settings.mesh_select_mode
 
 if use_vert or not (use_edge or use_face):
@@ -73,23 +128,7 @@ if use_vert or not (use_edge or use_face):
     bpy.ops.mesh.dissolve_verts()
     delete_survivors(found)
 elif use_edge:
-    # delete(type='EDGE') takes the faces on both sides with it; dissolving
-    # merges them instead.
-    #
-    # use_verts=True also dissolves an end vertex left with just two edges,
-    # the one it would otherwise leave as a stray kink. A vertex that still
-    # joins three or more edges stays as a T-junction, as it should: dissolving
-    # it too merged the faces on every side into one large n-gon (an interior
-    # edge in a grid took its four neighbours with it). A selected edge with
-    # no face (a wire) has nothing to dissolve into, so whatever is left of
-    # those is deleted as edges: that takes the edge and any vertex left
-    # without one, but not a vertex another, unselected wire edge still uses.
-    found = selected_verts()
-    bpy.ops.mesh.dissolve_edges(use_verts=True, use_face_split=False)
-    found = [(bm, [v for v in verts if v.is_valid and not v.link_faces])
-             for bm, verts in found]
-    if select_only_survivors(found):
-        bpy.ops.mesh.delete(type='EDGE')
+    delete_edges()
 else:
     # A lone face has no dissolve equivalent - removing it leaves a hole.
     bpy.ops.mesh.delete(type='FACE')
