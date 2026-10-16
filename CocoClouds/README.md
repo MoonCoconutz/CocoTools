@@ -36,14 +36,12 @@ search field under them; click one. What that does follows the selection:
 
 | Genus | What it is |
 | --- | --- |
-| Cumulus | A heaped fair-weather cloud with a flat base |
-| Stratocumulus | A low layer of large rounded masses in loose rolls |
-| Altocumulus | A mid-level layer of small rounded cloudlets |
-| Cirrocumulus | A thin high sheet of tiny grains in ripples |
-| Stratus | A low, flat, featureless grey sheet |
-| Altostratus | A thin, even mid-level sheet |
-| Nimbostratus | A thick dark rain layer, ragged underneath |
-| Cirrus | Thin high strokes and hooks of ice, drawn as curves |
+| Cumulus | A heaped fair-weather cloud: a few wide towers on one flat base, bulging like a cauliflower |
+| Stratocumulus | A low layer of large rounded masses packed in rolls, with a few gaps |
+| Altocumulus | A mid-level layer of separate rounded cloudlets in loose wavy rows |
+| Cirrocumulus | A thin high sheet rippled like sand, in patches |
+| Stratus | A flat, featureless grey layer; thicker and darker (Height, Density, Dark Base) a Nimbostratus, thinner and higher an Altostratus |
+| Cirrus | Thin high streaks of ice, hair-like, hooked at their ends, drawn as curves: each stroke is a fan of fibres |
 
 A cloud's settings are in four panels, in the order a cloud is made.
 

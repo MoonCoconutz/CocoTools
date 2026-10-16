@@ -19,7 +19,11 @@ selection a genus. The images are the add-on's, not the user's: they are kept
 out of the saved file (a datablock with no users is not written, so their
 users, a hidden collection of pointers and the choosers, are let go of just
 before a save and taken back after), loaded again after a file is opened, and
-removed with the add-on.
+removed with the add-on. The chooser shows the image's name under the
+picture, and Blender lets it be edited: an image renamed takes its genus's
+name back at once (a datablock's name can be made read-only only by linking
+it from another file, which puts an L and the file's name on every name in
+the grid).
 """
 import math
 import os
@@ -104,6 +108,28 @@ def _let_go():
         wm.cococlouds_type = None
     finally:
         _quiet = False
+
+
+# Who the message bus calls back when an image is renamed.
+_owner = object()
+
+
+def _named(*_args):
+    """Give a renamed picture its genus's name back, unless an image of the
+    user's has taken that name."""
+    labels = {ident: label for ident, label, *_rest in cloud.TYPES}
+    for im in bpy.data.images:
+        label = labels.get(im.get(IMAGE_KEY))
+        if label is None or im.name == label:
+            continue
+        other = bpy.data.images.get(label)
+        if other is None or other == im:
+            im.name = label
+
+
+def _watch_names():
+    bpy.msgbus.clear_by_owner(_owner)
+    bpy.msgbus.subscribe_rna(key=(Image, "name"), owner=_owner, args=(), notify=_named)
 
 
 def _ours(_self, image):
@@ -198,6 +224,8 @@ def _after_save(_path_):
 @persistent
 def _after_load(_path_):
     ensure_images()
+    # Opening a file drops every subscription.
+    _watch_names()
 
 
 def register():
@@ -224,11 +252,12 @@ def register():
     bpy.app.handlers.save_post.append(_after_save)
     bpy.app.handlers.load_post.append(_after_load)
     # bpy.data is out of reach while add-ons are registered at start-up.
-    bpy.app.timers.register(lambda: ensure_images() and None, first_interval=0.0)
+    bpy.app.timers.register(lambda: (ensure_images(), _watch_names()) and None, first_interval=0.0)
 
 
 def unregister():
     global _icons
+    bpy.msgbus.clear_by_owner(_owner)
     for handlers, fn in ((bpy.app.handlers.save_pre, _before_save), (bpy.app.handlers.save_post, _after_save),
                          (bpy.app.handlers.load_post, _after_load)):
         if fn in handlers:

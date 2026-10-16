@@ -219,19 +219,17 @@ def _genus(dimensions, generator, puff, strength, scale, detail, roughness, dist
 
 TYPES = (
     ('CUMULUS', "Cumulus", "Cumulus: a heaped fair-weather cloud with a flat base",
-     _genus((8.0, 6.0, 5.0), dict(lumps=4, spread=0.4, height_variation=1.0), 0.02, 0.08, 15.0, 2.0, 0.5, 1.0, 0.1)),
+     _genus((8.0, 6.0, 5.0), dict(lumps=4, spread=0.65, height_variation=1.0), 0.02, 0.08, 15.0, 2.0, 0.5, 1.0, 0.1)),
     ('STRATOCUMULUS', "Stratocumulus", "Stratocumulus: a low layer of large rounded masses in loose rolls",
      _genus((16.0, 12.0, 2.5), dict(lumps=1, spread=0.3, distortion=0.2, height_variation=0.6), 0.016, 0.04, 20.0, 2.0, 0.5, 1.0, 0.15)),
     ('ALTOCUMULUS', "Altocumulus", "Altocumulus: a mid-level layer of small rounded cloudlets",
      _genus((14.0, 12.0, 1.5), dict(lumps=1, spread=0.5, height_variation=0.3), 0.012, 0.02, 30.0, 1.0, 0.5, 1.0, 0.0)),
     ('CIRROCUMULUS', "Cirrocumulus", "Cirrocumulus: a thin high sheet of tiny grains in ripples",
      _genus((14.0, 12.0, 0.6), dict(lumps=0, distortion=0.2), 0.006, 0.01, 60.0, 1.0, 0.5, 1.0, 0.0, 90.0)),
-    ('STRATUS', "Stratus", "Stratus: a low, flat, featureless grey sheet",
+    ('STRATUS', "Stratus",
+     "Stratus: a flat, featureless grey layer. Thicker (Height) and darker (Density, Dark Base) it is a "
+     "Nimbostratus, thinner and higher an Altostratus",
      _genus((16.0, 12.0, 1.6), dict(lumps=1, spread=0.6), 0.02, 0.03, 8.0, 1.0, 0.5, 1.0, 0.0)),
-    ('ALTOSTRATUS', "Altostratus", "Altostratus: a thin, even mid-level sheet",
-     _genus((18.0, 14.0, 1.0), dict(lumps=0), 0.015, 0.02, 6.0, 1.0, 0.5, 1.0, 0.0)),
-    ('NIMBOSTRATUS', "Nimbostratus", "Nimbostratus: a thick dark rain layer, ragged underneath",
-     _genus((16.0, 12.0, 4.0), dict(lumps=2, spread=0.5, height_variation=0.8), 0.025, 0.05, 8.0, 2.0, 0.5, 1.0, 0.0)),
     ('CIRRUS', "Cirrus", "Cirrus: thin high strokes and hooks of ice. Draw more strokes with the Draw tool",
      _genus((14.0, 8.0, 2.0), dict(lumps=0, distortion=0.2), 0.008, 0.015, 20.0, 1.0, 0.5, 3.0, 0.0, 150.0,
             thickness=0.25)),
@@ -250,9 +248,14 @@ def cloud_type(identifier):
     raise KeyError(identifier)
 
 
+# Genera that are gone, and the one that took their place.
+RENAMED = {'ALTOSTRATUS': 'STRATUS', 'NIMBOSTRATUS': 'STRATUS'}  # 0.22.0
+
+
 def type_of(ob):
     """The TYPES item an object was last given, or None."""
     identifier = ob.get(TYPE_KEY) if ob is not None else None
+    identifier = RENAMED.get(identifier, identifier)
     return next((item for item in TYPES if item[0] == identifier), None)
 
 

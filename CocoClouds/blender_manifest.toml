@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoClouds"
 name = "CocoClouds"
-version = "0.21.0"
+version = "0.22.0"
 tagline = "Procedural volume clouds from a rough mesh"
 maintainer = "MoonCoconutz"
 type = "add-on"

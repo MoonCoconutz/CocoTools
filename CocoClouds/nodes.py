@@ -40,7 +40,7 @@ for the clouds already using them (see get_group).
 
 import bpy
 
-GROUP_VERSION = 15
+GROUP_VERSION = 16
 CLOUD_NAME = "CocoClouds Cloud"
 GRID = "density"
 # The grid the cloud's material reads besides, and how many coarse voxels it
@@ -89,6 +89,14 @@ SEED_SPAN = 97.0
 STROKE_HEAD = 0.1
 STROKE_TAIL = 0.2
 STROKE_SIDES = 8
+# A stroke is FIBRES fibres, the copies of it fanning apart towards its end
+# by up to FIBRE_FAN times Stroke Thickness (as the factor along it to
+# FIBRE_CURVE), each FIBRE_THIN as thick as the stroke: the streaks of a
+# cirrus are hair-like, not tubes.
+FIBRES = 9
+FIBRE_FAN = 8.0
+FIBRE_CURVE = 1.4
+FIBRE_THIN = 0.6
 
 # (name, socket type, default, min, max, subtype) for the group's inputs. The
 # operators and the UI address them by name. The limits are where a setting
@@ -260,16 +268,27 @@ def _build_cloud():
     g = Graph(ng)
     gi = g.node("NodeGroupInput").outputs
     go = g.node("NodeGroupOutput")
-    # A curve's strokes as closed tubes, joined to whatever mesh there is.
+    # A curve's strokes as fibres, closed tubes, joined to whatever mesh
+    # there is.
+    fibres = g.node("GeometryNodeDuplicateElements", {"Geometry": gi["Geometry"], "Amount": FIBRES},
+                    domain='SPLINE').outputs["Geometry"]
+    which = g.node("GeometryNodeFieldOnDomain", {"Value": g.node("GeometryNodeInputIndex").outputs[0]},
+                   domain='CURVE', data_type='INT').outputs[0]
+    way = g.node("FunctionNodeRandomValue", {"Min": (-1.0, -1.0, -0.4), "Max": (1.0, 1.0, 0.4), "ID": which,
+                                             "Seed": 7}, data_type='FLOAT_VECTOR').outputs[0]
+    along = g.math('POWER', g.node("GeometryNodeSplineParameter").outputs["Factor"], FIBRE_CURVE)
+    fan = g.math('MULTIPLY', g.math('MULTIPLY', along, gi["Stroke Thickness"]), FIBRE_FAN)
+    fibres = g.node("GeometryNodeSetPosition", {"Geometry": fibres, "Offset": g.vmath('SCALE', way, scale=fan)}
+                    ).outputs[0]
     taper = g.node("GeometryNodeSplineParameter").outputs["Factor"]
     taper = g.math('MULTIPLY', g.math('DIVIDE', taper, STROKE_HEAD, clamp=True),
                    g.math('SUBTRACT', 1.0, g.math('MULTIPLY', taper, 1.0 - STROKE_TAIL)))
     tubes = g.node("GeometryNodeCurveToMesh", {
-        "Curve": gi["Geometry"],
+        "Curve": fibres,
         "Profile Curve": g.node("GeometryNodeCurvePrimitiveCircle", {"Resolution": STROKE_SIDES, "Radius": 1.0},
                                 mode='RADIUS').outputs["Curve"],
         "Scale": g.math('MULTIPLY', g.math('MULTIPLY', g.node("GeometryNodeInputRadius").outputs[0], taper),
-                        gi["Stroke Thickness"]),
+                        g.math('MULTIPLY', gi["Stroke Thickness"], FIBRE_THIN)),
         "Fill Caps": True}).outputs[0]
     joined = g.node("GeometryNodeJoinGeometry").outputs[0]
     ng.links.new(tubes, joined.node.inputs[0])
