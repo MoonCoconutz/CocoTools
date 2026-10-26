@@ -2,8 +2,8 @@
 
 CocoTools holds Blender extensions, one per top-level folder, each with its
 own `blender_manifest.toml`: **CocoPies**, **CocoBackup**, **CocoSelections**,
-**CocoUVs**, **CocoCutter**, **CocoAttributes** and **CocoClouds**. All are Blender 5.2+
-only.
+**CocoUVs**, **CocoCutter**, **CocoAttributes**, **CocoClouds** and
+**CocoReduce**. All are Blender 5.2+ only.
 
 ## The documentation is in the Obsidian vault
 
