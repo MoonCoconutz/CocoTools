@@ -487,21 +487,33 @@ class _Run:
         # The original's triangles with their shading normals, by part, to
         # check the LOD's shading against (see original_normal).
         self.part_of = {v[self.orig]: part[v] for v in bm.verts}
-        # How far behind each vertex the next surface facing it is: the
-        # underside of a plate, the far wall of a box (see THIN_SHARE).
+        # How far behind each vertex the next surface of its own part facing
+        # it is: the underside of a plate, the far wall of a box (see
+        # THIN_SHARE). Another part's surface does not count: a pipe resting
+        # on a support 1 cm inside its wall kept every side there, and,
+        # halved everywhere else, filled with triangles (a pipe rack,
+        # 2026-10-27).
         bm.normal_update()
+        bm.faces.ensure_lookup_table()
         tree = BVHTree.FromBMesh(bm)
         self.room = {}
         for v in bm.verts:
             n = v.normal
             if n.length_squared < 0.5:
                 continue
-            hit = tree.ray_cast(v.co - n * 1e-6, -n)
-            if hit[0] is not None and hit[1].dot(n) < -0.3:
-                self.room[v[self.orig]] = hit[3]
+            start, d = v.co - n * 1e-6, 0.0
+            for _ in range(16):
+                hit = tree.ray_cast(start, -n)
+                if hit[0] is None:
+                    break
+                d += hit[3]
+                if part[bm.faces[hit[2]].verts[0]] == part[v]:
+                    if hit[1].dot(n) < -0.3:
+                        self.room[v[self.orig]] = d
+                    break
+                start = hit[0] - n * 1e-6
         # Open borders that meet another part's open border (see JOIN_GAP)
         # may barely move.
-        bm.faces.ensure_lookup_table()
         for v in bm.verts:
             if not v.is_boundary:
                 continue
@@ -1736,7 +1748,12 @@ def merge_flat(bm, layer, angle, tol, inside=lambda f: True):
     blend into a rounded edge is flat in shape, and joined to the face beside
     it spread the rounding over all of it (a locomotive's walkway beam,
     2026-10-10). Only faces for which inside(f) holds are joined, and only
-    vertices all of whose faces are."""
+    vertices all of whose faces are.
+
+    An edge between two quads is never dissolved, so edge loops stay: a
+    flange's flat face, halved to 12 quads, became one 14-sided n-gon each
+    side of its seam (a pipe rack, 2026-10-27). Triangles and n-gons left in
+    a flat area still join."""
     bm.normal_update()
     nrm = bm.loops.layers.float_vector.get(NORMAL)
     limit = math.cos(angle)
@@ -1767,6 +1784,7 @@ def merge_flat(bm, layer, angle, tol, inside=lambda f: True):
     # the whole mesh.
     inner = [e for e in bm.edges
              if not e[layer] and len(e.link_faces) == 2 and e.link_faces[0] in region_of
+             and not (len(e.link_faces[0].verts) == 4 and len(e.link_faces[1].verts) == 4)
              and region_of[e.link_faces[0]] is region_of.get(e.link_faces[1])]
     if inner:
         bmesh.ops.dissolve_edges(bm, edges=inner, use_verts=False, use_face_split=False)

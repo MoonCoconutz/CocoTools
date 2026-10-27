@@ -77,9 +77,10 @@ least first, and a change that would break something is never made:
 - **Shading stays**: every change is checked against the original's
   shading, which may differ by 10° at most, so rounded edges do not smear
   over flat panels.
-- **No see-through**: a surface never moves more than half the way to the
-  surface behind it (the underside of a thin plate), and two parts meeting
-  edge to edge keep meeting, so no cracks open between them.
+- **No see-through**: a surface never moves more than half the way to its
+  own surface behind it (the underside of a thin plate), and two parts
+  meeting edge to edge keep meeting, so no cracks open between them.
+  Another part close behind (a support a pipe rests on) does not hold it.
 
 ### Small Parts
 
@@ -119,11 +120,12 @@ of seams and hard edges, and curves already at half their sides.
 
 | Mode | For | What it does |
 | --- | --- | --- |
-| **Hard Surface** | Panels, bevels, sharp edges | Edges bent past the **Sharp Angle** (30°) are kept as lines. Fairly flat areas, faces within the **Flat Angle** (5°) of each other, become one n-gon |
+| **Hard Surface** | Panels, bevels, sharp edges | Edges bent past the **Sharp Angle** (30°) are kept as lines. In fairly flat areas, faces within the **Flat Angle** (5°) of each other, the triangles and n-gons left join into one n-gon; quads stay quads, so edge loops are kept |
 | **Organic** | Sculpts, scans, curved surfaces | Only seams, edges marked sharp and borders are kept as lines. No n-gons |
 
 The faces follow the original: a triangulated mesh stays triangles,
-otherwise nearly flat triangle pairs are joined back into quads.
+otherwise nearly flat triangle pairs are joined back into quads. Edge loops
+stay: a halved flange keeps a quad for every side left.
 
 ## Preferences
 

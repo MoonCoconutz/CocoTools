@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "CocoReduce"
 name = "CocoReduce"
-version = "1.0.0"
+version = "1.0.1"
 tagline = "Reduce meshes into LODs, keeping UV seams and sharp edges"
 maintainer = "MoonCoconutz"
 type = "add-on"

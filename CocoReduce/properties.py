@@ -59,7 +59,8 @@ class COCOREDUCE_Settings(PropertyGroup):
     )
     flat_angle: FloatProperty(
         name="Flat Angle",
-        description="Faces within this angle of each other are joined into one n-gon",
+        description="Triangles and n-gons left within this angle of each other are joined into one n-gon. "
+                    "Quads stay, so edge loops are kept",
         subtype='ANGLE',
         default=math.radians(5.0),
         min=0.0,
